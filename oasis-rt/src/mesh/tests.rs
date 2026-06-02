@@ -4,6 +4,34 @@ fn fp(i: u8) -> [u8; FP_LEN] {
     [i, 0, 0, 0, 0, 0, 0, 0]
 }
 
+#[test]
+fn tx_counter_restore_prevents_origin_counter_reuse() {
+    // Models a node restart. origin msg_id = origin_msg_id(fp, tx_counter), so a
+    // reused counter == a reused msg_id == a reopened replay window. After a
+    // restart the counter must continue forward, never reusing a prior value.
+    let id = fp(7);
+
+    // Pre-restart: emit 3 envelopes -> counter advances to 3.
+    let mut r1 = MeshRouter::new(id);
+    let _ = r1.origin_wrap(b"m1");
+    let _ = r1.origin_wrap(b"m2");
+    let _ = r1.origin_wrap(b"m3");
+    let saved = r1.tx_counter();
+    assert_eq!(saved, 3);
+
+    // BAD (no restore): a fresh router resets to 0 and reuses counter 1.
+    let mut r_bad = MeshRouter::new(id);
+    let _ = r_bad.origin_wrap(b"x");
+    assert_eq!(r_bad.tx_counter(), 1, "restart without restore reuses counter 1 (replay hazard)");
+
+    // GOOD (restore): continues from the persisted value, never reusing 1..=saved.
+    let mut r2 = MeshRouter::new(id);
+    r2.set_tx_counter(saved);
+    let _ = r2.origin_wrap(b"x");
+    assert_eq!(r2.tx_counter(), saved + 1, "restored counter advances past all prior values");
+    assert!(r2.tx_counter() > saved);
+}
+
 // ── AC round (Bloom auto-reset) ──────────────────────────────
 //
 // Validates the new bloom_auto_reset_threshold contract:

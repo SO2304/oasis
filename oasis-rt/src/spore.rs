@@ -87,14 +87,34 @@ fn mesh_router() -> &'static std::sync::Mutex<crate::mesh::MeshRouter> {
         };
         let ttl: u8 = std::env::var("OASIS_MESH_TTL").ok().and_then(|s| s.parse().ok()).unwrap_or(crate::mesh::DEFAULT_TTL);
         let cap: usize = std::env::var("OASIS_MESH_DEDUP_CAP").ok().and_then(|s| s.parse().ok()).unwrap_or(crate::mesh::DEFAULT_DEDUP_CAP);
-        std::sync::Mutex::new(crate::mesh::MeshRouter::with_config(my_fp, ttl, cap))
+        let mut router = crate::mesh::MeshRouter::with_config(my_fp, ttl, cap);
+        // Restore the monotonic sender counter across restarts so a rebooted node
+        // never reuses origin msg_ids (which would reopen the replay window and
+        // get its own fresh messages dropped as duplicates). Mirrors the
+        // COUNTER_TRACKER persistence above; see mesh::MeshRouter::set_tx_counter.
+        if let Ok(path) = std::env::var("OASIS_MESH_TX_COUNTER_FILE") {
+            if let Ok(s) = std::fs::read_to_string(&path) {
+                if let Ok(saved) = s.trim().parse::<u64>() {
+                    router.set_tx_counter(saved);
+                }
+            }
+        }
+        std::sync::Mutex::new(router)
     })
 }
 
 /// Wrap + broadcast a payload via mesh. Sends both the mesh envelope and
 /// (optionally) logs it — caller must re-broadcast wrapped via their transport.
 pub fn mesh_wrap_for_broadcast(inner: &[u8]) -> Vec<u8> {
-    mesh_router().lock().unwrap().origin_wrap(inner)
+    let mut router = mesh_router().lock().unwrap();
+    let out = router.origin_wrap(inner);
+    // Opportunistically persist the advanced counter (mirror tracker save). A
+    // brownout in the window between send and save reuses at most one counter,
+    // vs. resetting to 0 on every restart without this.
+    if let Ok(path) = std::env::var("OASIS_MESH_TX_COUNTER_FILE") {
+        let _ = std::fs::write(&path, router.tx_counter().to_string());
+    }
+    out
 }
 
 /// Process an incoming SPORE\x08 packet. If it should be forwarded, returns
