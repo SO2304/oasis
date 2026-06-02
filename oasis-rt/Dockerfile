@@ -3,7 +3,10 @@
 
 FROM rust:1.82-slim AS builder
 WORKDIR /build
-COPY oasis-rt/Cargo.toml oasis-rt/Cargo.lock ./
+# Build oasis-rt standalone (outside the workspace): copy only its manifest +
+# src. The per-member Cargo.lock was removed when oasis-rt joined the workspace
+# (the lock now lives at the repo root), so we let cargo resolve a fresh lock here.
+COPY oasis-rt/Cargo.toml ./Cargo.toml
 COPY oasis-rt/src ./src
 RUN cargo build --release --bin drone_bridge
 RUN cargo test --release --lib

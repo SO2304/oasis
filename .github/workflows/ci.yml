@@ -33,7 +33,7 @@ jobs:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: oasis-rt
+          workspaces: .   # Cargo.lock + target/ now live at the workspace root
       - name: cargo fmt --check
         run: cargo fmt --check
         continue-on-error: ${{ matrix.toolchain == 'beta' }}
@@ -50,7 +50,7 @@ jobs:
         run: |
           mkdir -p /tmp/oasis_shared
           printf '{"tick":1,"x":0,"y":0,"alt":0.5,"roll":0,"pitch":0,"gz":0,"rf":2,"rl":2,"rr":2,"rb":2,"vx":0,"vy":0}\n' \
-            | ./target/release/drone_bridge patrol1 0 2>&1 | head -5
+            | ../target/release/drone_bridge patrol1 0 2>&1 | head -5   # workspace target/ is at repo root
 
   security-audit:
     name: cargo-audit (RustSec)
@@ -62,6 +62,31 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           working-directory: oasis-rt
+
+  kani-proofs:
+    name: Kani proofs (oasis-rt lib)
+    runs-on: ubuntu-latest
+    # Authoritative formal-verification run for the ~113 #[kani::proof] harnesses.
+    # CBMC is RAM-heavy: a local 3.3 GB WSL2 VM could NOT finish the full suite
+    # (heavy mesh/spinal/synapse proofs OOM or time out). Hosted runners have far
+    # more RAM and no per-command time cap. If a heavy proof still exhausts the
+    # runner, lower -j or raise --harness-timeout (or split by module).
+    timeout-minutes: 90
+    defaults:
+      run:
+        working-directory: oasis-rt
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: .
+      - name: Install Kani
+        run: |
+          cargo install --locked kani-verifier
+          cargo kani setup
+      - name: cargo kani --lib (all proof harnesses)
+        run: cargo kani --lib -Z unstable-options --harness-timeout 600s -j 2 --output-format terse
 
   docker-build:
     name: Docker image build + healthcheck
