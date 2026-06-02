@@ -149,15 +149,3 @@ path = "src/bin/bench_mesh_signed.rs"
 [[bin]]
 name = "bench_payload_sweep"
 path = "src/bin/bench_payload_sweep.rs"
-
-[[bin]]
-name = "oasis_grid_demo"
-path = "src/bin/oasis_grid_demo.rs"
-
-[[bin]]
-name = "oasis_grid_demo_v3"
-path = "src/bin/oasis_grid_demo_v3.rs"
-
-[[bin]]
-name = "oasis_grid_demo_v4"
-path = "src/bin/oasis_grid_demo_v4.rs"
