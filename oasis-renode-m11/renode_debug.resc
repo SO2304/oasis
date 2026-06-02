@@ -1,0 +1,16 @@
+:name: M11 debug
+mach clear
+
+mach create "node_a"
+machine LoadPlatformDescription @platforms/boards/stm32f4_discovery.repl
+sysbus LoadELF @C:/dev/oasis/oasis-renode-m11/target/thumbv7em-none-eabihf/release/sender
+showAnalyzer sysbus.usart1
+sysbus.usart1 CreateFileBackend @C:/dev/oasis/oasis-renode-m11/log_node_a.txt true
+
+# Show CPU state before and after
+cpu PC
+start
+emulation RunFor "00:00:02"
+pause
+cpu PC
+quit

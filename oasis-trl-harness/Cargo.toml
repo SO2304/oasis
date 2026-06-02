@@ -1,0 +1,29 @@
+[package]
+name = "oasis-trl-harness"
+version = "0.1.0"
+edition = "2021"
+
+# Realistic-environment full-system harness pushing OASIS toward TRL 6.
+#
+# Honest TRL framing:
+#   TRL 5 = component validation in bench environment (where prior rounds
+#           sat — Wokwi/Renode cycle-accurate sim of individual MCU bins)
+#   TRL 6 = full system prototype in RELEVANT environment
+#   TRL 7 = system prototype in OPERATIONAL environment
+#
+# This crate builds the realistic-environment SOFTWARE half: a 3-node
+# mesh + WorldModel + revocation cascade running against simulated
+# noise + jitter + Gilbert-Elliott loss + adversary model + operator
+# workflow. Without real hardware, we sit at the TRL 5/6 boundary —
+# the "relevant environment" is software-emulated rather than real
+# RF + sensor silicon. The remaining gap is documented, not papered
+# over.
+
+[dependencies]
+oasis-rt = { path = "../oasis-rt", features = ["std", "mesh_v10"] }
+oasis-secure-element = { path = "../oasis-secure-element", features = ["std"] }
+oasis-operator-key = { path = "../oasis-operator-key", features = ["std"] }
+ed25519-compact = { version = "2.2.0", default-features = false, features = ["x25519"] }
+
+[lib]
+path = "src/lib.rs"

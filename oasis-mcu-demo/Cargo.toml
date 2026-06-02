@@ -1,0 +1,80 @@
+[package]
+name = "oasis-mcu-demo"
+version = "0.1.0"
+edition = "2021"
+
+# Minimal Wokwi-runnable demo of the OASIS kernel primitives on a real MCU.
+# Target: Raspberry Pi Pico (RP2040, Cortex-M0+, thumbv6m-none-eabi).
+# The firmware loops through several OASIS primitives and prints their
+# results over UART0 so Wokwi captures the output.
+#
+# Shipped 2026-04-22 as part of the TRL 6 readiness demo.
+
+[dependencies]
+# OASIS kernel: no_std + MCU Bloom profile.
+oasis-rt = { path = "../oasis-rt", default-features = false, features = ["mesh_bloom_mcu", "mesh_v10"] }
+
+# RP2040 runtime + HAL + board support
+cortex-m = "0.7"
+cortex-m-rt = "0.7"
+rp-pico = "0.9"
+embedded-hal = "0.2.7"
+panic-halt = "0.2"
+fugit = "0.3"
+
+# Heap allocator (OASIS's `alloc` prelude requires one on no_std targets).
+embedded-alloc = "0.6"
+
+# Needed for the shared-state Mutex in the GPIO IRQ handler.
+critical-section = "1.1"
+
+# Direct Ed25519 access for the [7] timing section. No `ed25519` feature
+# (that pulls the signature crate which isn't no_std-clean). `x25519`
+# feature to align with oasis-rt's feature set. No random / no std.
+ed25519-compact = { version = "2.2.0", default-features = false, features = ["x25519"] }
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = "symbols"
+debug = false
+overflow-checks = false
+
+[profile.dev]
+opt-level = 1
+debug = true
+panic = "abort"
+
+[[bin]]
+name = "revocation_lookup_mcu_bench"
+path = "src/bin/revocation_lookup_mcu_bench.rs"
+
+[[bin]]
+name = "revocation_steady_state_bench"
+path = "src/bin/revocation_steady_state_bench.rs"
+
+[[bin]]
+name = "bloom_vs_btreeset_bench"
+path = "src/bin/bloom_vs_btreeset_bench.rs"
+
+[[bin]]
+name = "bloom_param_sweep_bench"
+path = "src/bin/bloom_param_sweep_bench.rs"
+
+[[bin]]
+name = "m10_with_revocation_filter_bench"
+path = "src/bin/m10_with_revocation_filter_bench.rs"
+
+[[bin]]
+name = "m10_ttl_aging_soak_bench"
+path = "src/bin/m10_ttl_aging_soak_bench.rs"
+
+[[bin]]
+name = "m10_silent_cap_addressing_bench"
+path = "src/bin/m10_silent_cap_addressing_bench.rs"
+
+[[bin]]
+name = "m10_silent_cap_unsafe_demo_bench"
+path = "src/bin/m10_silent_cap_unsafe_demo_bench.rs"

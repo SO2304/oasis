@@ -1,0 +1,5 @@
+[Node A / Sender×2] Bloom-dedup demo
+  envelope built len=113 msg_id_in_hdr_offset_6_to_14
+  [1st] sent 119 bytes
+  [2nd] sent 119 bytes (identical)
+[Node A] BOTH SENDS COMPLETE

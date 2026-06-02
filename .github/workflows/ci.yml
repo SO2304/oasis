@@ -1,0 +1,80 @@
+name: OASIS-RT CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rust-tests:
+    name: Rust tests
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        toolchain: [stable]
+        include:
+          - os: ubuntu-latest
+            toolchain: beta
+    defaults:
+      run:
+        working-directory: oasis-rt
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.toolchain }}
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: oasis-rt
+      - name: cargo fmt --check
+        run: cargo fmt --check
+        continue-on-error: ${{ matrix.toolchain == 'beta' }}
+      - name: cargo clippy (warnings allowed for now, tracked for cleanup)
+        run: cargo clippy --release --bins --lib
+      - name: cargo build --release
+        run: cargo build --release --bins --lib
+      - name: cargo test --release --lib
+        run: cargo test --release --lib
+      - name: Smoke test drone_bridge (Linux/macOS)
+        if: runner.os != 'Windows'
+        env:
+          OASIS_SHARED: /tmp/oasis_shared/
+        run: |
+          mkdir -p /tmp/oasis_shared
+          printf '{"tick":1,"x":0,"y":0,"alt":0.5,"roll":0,"pitch":0,"gz":0,"rf":2,"rl":2,"rr":2,"rb":2,"vx":0,"vy":0}\n' \
+            | ./target/release/drone_bridge patrol1 0 2>&1 | head -5
+
+  security-audit:
+    name: cargo-audit (RustSec)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: rustsec/audit-check@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          working-directory: oasis-rt
+
+  docker-build:
+    name: Docker image build + healthcheck
+    runs-on: ubuntu-latest
+    needs: rust-tests
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build OASIS-RT image
+        run: docker build -f oasis-rt/Dockerfile -t oasis-rt:ci .
+      - name: Run image smoke test
+        run: |
+          output=$(docker run --rm oasis-rt:ci 2>&1)
+          echo "$output" | head -30
+          echo "$output" | grep -q 'TAKEOFF\|OASIS DRONE BRIDGE' \
+            || (echo 'Smoke test failed: no expected output'; exit 1)

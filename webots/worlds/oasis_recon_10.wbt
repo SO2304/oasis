@@ -1,0 +1,55 @@
+#VRML_SIM R2025a utf8
+
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/robots/bitcraze/crazyflie/protos/Crazyflie.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/backgrounds/protos/TexturedBackground.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/backgrounds/protos/TexturedBackgroundLight.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/floors/protos/Floor.proto"
+
+WorldInfo {
+  info [
+    "OASIS Recon-10: 10 drones with REAL drone_bridge.exe Rust kernel subprocess"
+    "Factory layout matches drone_bridge OBSTACLES array"
+    "Alternating EXTREME/CALM wind phases for habituation test (Mechanism 5)"
+  ]
+  title "OASIS Recon-10"
+  basicTimeStep 32
+}
+Viewpoint {
+  orientation -0.25 0.4 0.88 1.1
+  position -5 -5 5
+}
+TexturedBackground {
+}
+TexturedBackgroundLight {
+}
+Floor {
+  size 8 6
+  appearance PBRAppearance { baseColor 0.6 0.6 0.6 roughness 0.8 }
+}
+# Factory walls (matches factory layout)
+Solid { translation 0 2.5 1.0 children [ Shape { appearance PBRAppearance { baseColor 0.5 0.5 0.5 } geometry Box { size 7.0 0.1 2.0 } } ] name "wall_n" boundingObject Box { size 7.0 0.1 2.0 } }
+Solid { translation 0 -2.5 1.0 children [ Shape { appearance PBRAppearance { baseColor 0.5 0.5 0.5 } geometry Box { size 7.0 0.1 2.0 } } ] name "wall_s" boundingObject Box { size 7.0 0.1 2.0 } }
+Solid { translation 3.0 0 1.0 children [ Shape { appearance PBRAppearance { baseColor 0.5 0.5 0.5 } geometry Box { size 0.1 5.0 2.0 } } ] name "wall_e" boundingObject Box { size 0.1 5.0 2.0 } }
+Solid { translation -3.0 0 1.0 children [ Shape { appearance PBRAppearance { baseColor 0.5 0.5 0.5 } geometry Box { size 0.1 5.0 2.0 } } ] name "wall_w" boundingObject Box { size 0.1 5.0 2.0 } }
+# Factory machines (positions must match drone_bridge OBSTACLES array)
+Solid { translation -1.5 1.0 0.75 children [ Shape { appearance PBRAppearance { baseColor 0.3 0.3 0.8 } geometry Box { size 1.2 0.8 1.5 } } ] name "cnc_machine" boundingObject Box { size 1.2 0.8 1.5 } }
+Solid { translation 0.5 0 0.5 children [ Shape { appearance PBRAppearance { baseColor 0.8 0.3 0.1 } geometry Box { size 0.6 0.6 1.0 } } ] name "press" boundingObject Box { size 0.6 0.6 1.0 } }
+Solid { translation 1.8 -1.0 0.6 children [ Shape { appearance PBRAppearance { baseColor 0.9 0.9 0.1 } geometry Cylinder { height 1.2 radius 0.3 } } ] name "welder" boundingObject Cylinder { height 1.2 radius 0.3 } }
+Solid { translation 1.5 1.5 0.5 children [ Shape { appearance PBRAppearance { baseColor 0.2 0.8 0.2 } geometry Box { size 0.5 0.5 1.0 } } ] name "assembly" boundingObject Box { size 0.5 0.5 1.0 } }
+Solid { translation 0 -1.5 0.25 children [ Shape { appearance PBRAppearance { baseColor 0.2 0.2 0.2 } geometry Box { size 3.0 0.3 0.5 } } ] name "conveyor" boundingObject Box { size 3.0 0.3 0.5 } }
+Solid { translation -2.0 -0.5 1.0 children [ Shape { appearance PBRAppearance { baseColor 0.6 0.4 0.2 } geometry Box { size 0.4 1.5 2.0 } } ] name "rack1" boundingObject Box { size 0.4 1.5 2.0 } }
+Solid { translation 2.2 0.8 1.0 children [ Shape { appearance PBRAppearance { baseColor 0.6 0.4 0.2 } geometry Box { size 0.4 1.5 2.0 } } ] name "rack2" boundingObject Box { size 0.4 1.5 2.0 } }
+Solid { translation -1.0 -1.0 1.0 children [ Shape { appearance PBRAppearance { baseColor 0.7 0.7 0.7 } geometry Cylinder { height 2.0 radius 0.1 } } ] name "pillar1" boundingObject Cylinder { height 2.0 radius 0.1 } }
+Solid { translation 1.0 1.0 1.0 children [ Shape { appearance PBRAppearance { baseColor 0.7 0.7 0.7 } geometry Cylinder { height 2.0 radius 0.1 } } ] name "pillar2" boundingObject Cylinder { height 2.0 radius 0.1 } }
+# 10 Drones spread across the arena (home positions spaced >=1.2m apart)
+# Bridge controller names: patrol1, patrol2, or fallthrough (supervisor target list, 8 targets).
+Crazyflie { translation -2.5 -2.0 0.015 name "d00" controller "oasis_recon_10" controllerArgs ["d00" "0"] }
+Crazyflie { translation -1.2 -2.0 0.015 name "d01" controller "oasis_recon_10" controllerArgs ["d01" "1"] }
+Crazyflie { translation  0.0 -2.0 0.015 name "d02" controller "oasis_recon_10" controllerArgs ["d02" "2"] }
+Crazyflie { translation  1.2 -2.0 0.015 name "d03" controller "oasis_recon_10" controllerArgs ["d03" "3"] }
+Crazyflie { translation  2.5 -2.0 0.015 name "d04" controller "oasis_recon_10" controllerArgs ["d04" "4"] }
+Crazyflie { translation -2.5  2.0 0.015 name "d05" controller "oasis_recon_10" controllerArgs ["d05" "5"] }
+Crazyflie { translation -1.2  2.0 0.015 name "d06" controller "oasis_recon_10" controllerArgs ["d06" "6"] }
+Crazyflie { translation  0.0  2.0 0.015 name "d07" controller "oasis_recon_10" controllerArgs ["d07" "7"] }
+Crazyflie { translation  1.2  2.0 0.015 name "d08" controller "oasis_recon_10" controllerArgs ["d08" "8"] }
+Crazyflie { translation  2.5  2.0 0.015 name "d09" controller "oasis_recon_10" controllerArgs ["d09" "9"] }

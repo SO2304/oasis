@@ -1,0 +1,16 @@
+name: "OASIS M9 reflex on GP15 button IRQ"
+version: 1
+author: "OASIS"
+steps:
+  - wait-serial: "press GP15 to inject obstacle-spike"
+  - delay: 200ms
+  - set-control:
+      part-id: btn1
+      control: pressed
+      value: 1
+  - delay: 150ms
+  - set-control:
+      part-id: btn1
+      control: pressed
+      value: 0
+  - wait-serial: "REFLEX FIRED"

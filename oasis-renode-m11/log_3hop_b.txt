@@ -1,0 +1,9 @@
+
+[Node B / Forwarder] OASIS M11 multi-hop relay
+  USART2 = inbound from A; USART3 = outbound to C
+  router built, awaiting frame on USART2
+  RX 125 bytes
+  inbound TTL=8 hops=0
+  [VERIFIED] msg_id=0x100ba66a4ed81db5 hops_seen=0 forward=true
+  outbound TTL=7 hops=1
+[Node B] FORWARDED to USART3

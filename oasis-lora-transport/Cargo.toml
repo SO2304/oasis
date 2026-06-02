@@ -1,0 +1,32 @@
+[package]
+name = "oasis-lora-transport"
+version = "0.1.0"
+edition = "2021"
+
+# Gap 1 (radio transport) scaffolding for OASIS defense vertical.
+# Provides the LoRaRadio trait matching SX126x-family chip APIs, a
+# channel-backed SimulatedLoRaRadio for tests, and the hook points
+# where a real `sx126x` / `lora-phy` driver plugs in. Compiles for
+# host (std test), thumbv6m-none-eabi (RP2040), and thumbv7em-none-eabihf
+# (STM32F4 / nRF52). No embedded-hal dep in the public API yet — that
+# gets added when a concrete SX1262 implementation lands.
+
+[dependencies]
+oasis-rt = { path = "../oasis-rt", default-features = false, features = ["mesh_bloom_mcu", "mesh_v10"] }
+# FHSS seed-derived hop sequence uses SHA-256 over (seed || ctx || counter).
+# Already compiled by oasis-rt for HMAC — small extra cost, keeps FHSS
+# self-contained in this crate without reaching into oasis-rt internals.
+sha2 = { version = "0.11", default-features = false }
+
+[dev-dependencies]
+# Host tests use std (spawn threads for the two simulated nodes talking
+# via crossbeam channels). MCU builds use `--no-default-features`.
+oasis-rt = { path = "../oasis-rt", features = ["std", "mesh_v10"] }
+
+[features]
+default = []
+# std enables the host-only simulation backend (uses Mutex + channels).
+std = []
+
+[lib]
+path = "src/lib.rs"

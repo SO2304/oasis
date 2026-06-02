@@ -1,0 +1,12 @@
+
+[Node B / Receiver] OASIS M11 Federated Resonance demo
+  target : thumbv7em-none-eabihf (Cortex-M4F, STM32F407)
+  sim    : Renode (multi-node, UART bridged)
+  waiting for frame header FA CE BE EF + u16 length...
+  sync acquired
+  frame length = 125
+  RECEIVED 125 bytes
+  magic    = 53 50 4f 52 45 0a
+  sig_head = [f5 f1 0f 1e 95 11 81 9b]
+  [M11] ED25519 SIGNATURE VERIFIED — federation attested
+[Node B] M11 RECV COMPLETE — VERIFIED

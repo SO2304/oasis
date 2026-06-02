@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "author": "OASIS",
+  "editor": "wokwi",
+  "parts": [
+    { "type": "wokwi-pi-pico", "id": "pico", "top": 0, "left": 0, "attrs": {} },
+    { "type": "wokwi-pushbutton", "id": "btn1", "top": 64.8, "left": 220, "attrs": { "color": "red", "bounce": "0" } }
+  ],
+  "connections": [
+    [ "pico:GP0", "$serialMonitor:RX", "green", [] ],
+    [ "pico:GP1", "$serialMonitor:TX", "green", [] ],
+    [ "pico:GND.1", "$serialMonitor:GND", "black", [] ],
+    [ "btn1:1.l", "pico:GP15", "blue", [ "h0" ] ],
+    [ "btn1:2.l", "pico:GND.2", "black", [ "h0" ] ]
+  ],
+  "dependencies": {}
+}

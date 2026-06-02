@@ -1,0 +1,42 @@
+[package]
+name = "oasis-secure-element"
+version = "0.1.0"
+edition = "2021"
+
+# Gap 4 step 1 (anti-tampering) scaffolding for the OASIS defense
+# vertical. Defines the SecureElement trait that production deployments
+# will satisfy with an ATECC608B / OPTIGA Trust M / NXP SE050 driver.
+# Ships a SimSecureElement for tests + an honest Sx126x-style stub.
+#
+# The point: the Ed25519 mesh seed must NEVER appear in MCU SRAM in a
+# production deployment. An attacker with physical access to the chip
+# can extract SRAM contents (cold-boot, JTAG, glitching). Keys must
+# live behind a tamper-respondent boundary. This crate provides the
+# software contract; the silicon piece comes when hardware is procured.
+
+[dependencies]
+# IMPORTANT: do NOT unconditionally enable `mesh_bloom_mcu` here. Cargo
+# unifies features additively across the dependency graph — if this
+# mid-stack library forced the small (2 KiB) MCU Bloom, every downstream
+# host consumer (e.g., oasis-trl-harness, future operator dashboards)
+# would silently inherit the 1.6 k-insert FPR threshold instead of the
+# documented 52 k. That bug was the root cause of the Z4 24h soak's
+# discovered throughput regression — see SHADOW_AUDIT_AB_BLOOM_FEATURE_LEAK.md.
+# Bloom-size selection is an APPLICATION-layer decision; we forward it
+# via the `mesh_bloom_mcu` feature on this crate so MCU consumers can
+# opt in explicitly without poisoning host builds.
+oasis-rt = { path = "../oasis-rt", default-features = false, features = ["mesh_v10"] }
+ed25519-compact = { version = "2.2.0", default-features = false, features = ["x25519"] }
+
+[dev-dependencies]
+oasis-rt = { path = "../oasis-rt", features = ["std", "mesh_v10"] }
+
+[features]
+default = []
+std = ["oasis-rt/std"]
+# Forward the small-Bloom MCU optimization. MCU applications opt in
+# explicitly; host applications get the 64 KiB Bloom by default.
+mesh_bloom_mcu = ["oasis-rt/mesh_bloom_mcu"]
+
+[lib]
+path = "src/lib.rs"

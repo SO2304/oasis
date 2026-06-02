@@ -1,0 +1,39 @@
+:name: OASIS M11 Federated Resonance
+:description: Two STM32F4 (Cortex-M4F) nodes cross-wired on USART2.
+:description: Node A signs v0A envelope; Node B verifies. Both log to
+:description: USART1 captured to files for shadow audit.
+
+mach clear
+
+# Virtual wire between the two nodes' USART2s.
+emulation CreateUARTHub "mesh_bus"
+
+# Helper macro: after LoadELF, flash vector table lives at 0x08000000
+# but the Cortex-M4 on reset reads initial SP and PC from 0x00000000
+# and 0x00000004 (BOOT0=0 alias). Renode's stm32f4 .repl doesn't alias
+# those addresses, so we must set PC/SP explicitly from the ELF's
+# reset vector. This is the canonical Renode workaround for stm32f4.
+macro reset_cortex_m
+"""
+    cpu VectorTableOffset 0x08000000
+"""
+
+# ── Node A (sender) ────────────────────────────────────────────────
+mach create "node_a"
+machine LoadPlatformDescription @platforms/boards/stm32f4_discovery.repl
+sysbus.usart1 CreateFileBackend $ORIGIN/log_node_a.txt true
+connector Connect sysbus.usart2 mesh_bus
+sysbus LoadELF $ORIGIN/target/thumbv7em-none-eabihf/release/sender
+runMacro $reset_cortex_m
+
+# ── Node B (receiver) ──────────────────────────────────────────────
+mach create "node_b"
+machine LoadPlatformDescription @platforms/boards/stm32f4_discovery.repl
+sysbus.usart1 CreateFileBackend $ORIGIN/log_node_b.txt true
+connector Connect sysbus.usart2 mesh_bus
+sysbus LoadELF $ORIGIN/target/thumbv7em-none-eabihf/release/receiver
+runMacro $reset_cortex_m
+
+# ── Run ────────────────────────────────────────────────────────────
+emulation RunFor "00:00:15"
+quit

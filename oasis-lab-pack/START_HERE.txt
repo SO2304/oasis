@@ -1,0 +1,63 @@
+OASIS Grid Demo — 30-second start guide
+=========================================
+
+
+Linux / macOS / WSL
+-------------------
+    chmod +x run_demo.sh
+    ./run_demo.sh
+
+
+Windows
+-------
+    Double-click run_demo.bat
+    (or from cmd: .\run_demo.bat)
+
+
+That's it. All 3 demos run in under 3 seconds total.
+Expected: v2 = 8 PASS, v3 = 4 PASS, v4 = 11 PASS (6 PROVEN + 5 EXP), exit 0.
+
+Three demos run in sequence:
+
+v2 — 5 layers exercised IN ISOLATION (8 scenarios)
+  L1  M11 mesh signing      (3 — insider, replay, tamper)
+  L2  R14 entropy gate      (1 — refuses on uncertainty)
+  L3  M9  reflex arc        (1 — fires on sigma-outlier)
+  L4  M10 pressure field    (1 — navigates AWAY from danger)
+  L5  Vitality + KillSwitch (2 — degrade + last-resort halt)
+
+v3 — layers COORDINATED on the same packet/fault/window (4 scenarios)
+  C1  L1 ∩ L2  signed-but-refused (sig OK + R14 says no = REFUSE)
+  C2  L3 → L4  reflex injects repulsive zone, M10 reroutes
+  C3  L5⇒L5    sensor cascade triggers KillSwitch via VitalityDead
+  C4  L1→L5    full pipeline on one DER setpoint, all 5 gates traversed
+
+v4 — ALL 11 OASIS MECHANISMS (M1..M11), PROVEN vs EXPERIMENTAL tagged
+  PROVEN (6):       M1 tension, M2 R14, M5 emotion, M7 synaptic,
+                    M9 reflex, M11 federated mesh
+  EXPERIMENTAL (5): M3 efference, M4 branching, M6 morpho,
+                    M8 dreams, M10 world model
+  EXPERIMENTAL = API responsive, NOT production-validated.
+  No mechanism is hidden, no mechanism is over-claimed.
+
+
+If the demo runs
+----------------
+Read README.md for the Level 2 evaluation (1 hour).
+The three one-pagers in docs/ are the decision material.
+
+
+If the demo does NOT run
+------------------------
+Do not troubleshoot it yourself — it's on us, not you.
+Send whatever error you got to:
+
+    Souhayb Rharrab
+    souhaybrharrab@gmail.com
+    +32 486 32 64 46
+
+
+Binary integrity
+----------------
+If your org requires SHA-256 verification before running,
+see the "Binary integrity" section in README.md.
