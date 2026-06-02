@@ -6,6 +6,25 @@ signing. Every perf number below now has K=10 statistical bands.
 Aspirational framing has been removed. When a claim here conflicts with
 an older doc, this file wins.
 
+**Recalibrated 2026-06-02 (pure-Rust migration)**: the repo is now
+**exclusively Rust**. Removed the TypeScript `kernel/` (~27k LOC), the
+root TS demos, the npm toolchain (`package.json`/`tsconfig`/`vitest`),
+`node_modules/`, `dist/`, all 28 Python harnesses, ~300 MB of root
+`*.zip` snapshots, and 3 undocumented `oasis_grid_demo*` bins. Git
+history was initialized — it previously had **zero commits**, so the
+older "preserved in git for archaeology" claims were *false*; all
+removed content now lives in baseline commit `d8681c5`. The 4 std crates
+are a Cargo **workspace** (`resolver = "2"`); the 3 MCU crates are
+*excluded* so `mesh_bloom_mcu` feature-unification can no longer shrink
+the host Bloom (64 KiB → 2 KiB). Re-measured headline numbers (commands
+reproduce them): **443 lib tests** (`cargo test --workspace --release`),
+**113 Kani proof harnesses** (`grep -rE 'kani::proof' oasis-rt/src | wc -l`;
+full CBMC pass *not* re-run this session — slow under WSL), **30 modules**,
+**18 `[[bin]]`**, **32 `src/*.rs`** files (largest: `mesh.rs` 3049 L —
+omitted from the tree below). ⚠️ The per-file line counts in the tree
+below are stale snapshots (drift +20 % to +115 %); the authoritative
+source is `wc -l oasis-rt/src/*.rs`.
+
 ---
 
 ## What OASIS IS (two faces, both validated)
@@ -33,7 +52,7 @@ Both faces share the `oasis-rt` crate. No TS runtime is deployed.
 - Not flight-certified / audited externally
 - Not a chatbot, SaaS, or web framework
 - Not production-ready — pre-1.0
-- Not currently in active maintenance on the TypeScript kernel spec (archived as reference only)
+- No longer ships any TypeScript — the `kernel/` reference spec (~27k LOC) was removed 2026-06-02 and exists only in git history (baseline `d8681c5`). The runtime is exclusively Rust.
 - Not using Webots any more (PX4 SITL replaced it 20+ rounds ago)
 
 ---
@@ -44,7 +63,7 @@ Both faces share the `oasis-rt` crate. No TS runtime is deployed.
 oasis/
 ├── oasis-rt/                 Production Rust kernel
 │   ├── src/
-│   │   ├── lib.rs            crate root, 33 modules (adds mesh, topics, nav, services, actions, transforms, timers, parameters, fmath, + ROS-2-equivalent rclcpp primitives)
+│   │   ├── lib.rs            crate root, 30 modules (incl. mesh, topics, nav, services, actions, transforms, timers, parameters, fmath, + ROS-2-equivalent rclcpp primitives)
 │   │   ├── main.rs    604L   Android Termux daemon (Face 2)
 │   │   ├── vec.rs     190L   128D vector algebra, zero-alloc
 │   │   ├── hyper_state.rs 436L  M2 entropy + R14 + 3 Kani proofs
@@ -60,7 +79,8 @@ oasis/
 │   │   ├── world_model.rs 239L M10 non-Euclidean pressure (EXPERIMENTAL)
 │   │   ├── audio.rs   221L   RMS, FFT, pitch, no ML
 │   │   ├── spore.rs  1232L   P2P transport + rate limiter + listener
-│   │   ├── spore_crypto.rs 2152L  ChaCha20-Poly1305 AEAD + X25519 ECDH + revocation + counter tracker
+│   │   ├── mesh.rs    3049L   multi-hop mesh v8/v9/v0A envelopes + Bloom dedup (46 Kani proofs)
+│   │   ├── spore_crypto.rs 2583L  ChaCha20-Poly1305 AEAD + X25519 ECDH + revocation + counter tracker
 │   │   ├── mavlink_min.rs 1420L  MAVLink v2 parser/signer/replay
 │   │   ├── hal.rs     288L   KillSwitch + physics constraints
 │   │   ├── nerve.rs   450L   24 afferent + 8 efferent dims
@@ -159,8 +179,8 @@ Performance trade across the 3 mesh variants (Linux WSL, K=10 medians):
 
 | Capability | Evidence | Status |
 |---|---|---|
-| **427 unit tests pass in parallel** | `cargo test --lib --release` | ✅ |
-| **77 Kani proofs VERIFIED, 0 failures** | `cargo kani --lib` (WSL) | ✅ |
+| **443 unit tests pass in parallel** | `cargo test --workspace --release` | ✅ |
+| **113 Kani proof harnesses** (46 in mesh.rs) | `cargo kani --lib` (WSL) — full CBMC pass NOT re-run 2026-06-02 (slow under WSL); 4/4 sampled passed | ⚠️ count verified, end-to-end pass not reproduced |
 | MAVLink v2 CRC + signing + replay | 29 in-suite tests + 300 real PX4 frames | ✅ |
 | Ed25519 federation + signing | `ed25519_signing_roundtrip` + tamper rejection | ✅ |
 | **Ed25519 per-node mesh signing (v0A)** | 10 tests inc. `v10_spoofed_origin_fp_rejected` | ✅ |
@@ -170,7 +190,7 @@ Performance trade across the 3 mesh variants (Linux WSL, K=10 medians):
 | Altitude hold closed-loop | 1.94 m vs 2.0 m target (±6 cm) | ✅ |
 | Spore v7 loss + FEC real UDP | bench + loss proxy: 98% @ 30% uniform, 82-90% @ 30% burst | ✅ |
 | RFC 8439 ChaCha20-Poly1305 vector | test vector matches byte-for-byte | ✅ |
-| All 11 mechanisms compile + test | 427 Rust tests across 33 modules | ✅ |
+| All 11 mechanisms compile + test | 443 Rust tests across 30 modules | ✅ |
 | Android daemon 3h+ run | session_v0_5 on S23 FE, 121 290 ticks | ✅ |
 | **MCU cross-compile** (`thumbv7em-none-eabi`) | `cargo build --target thumbv7em-none-eabi --lib --no-default-features --features mesh_bloom_mcu --release` | ✅ 0 errors |
 | **A/B vs ROS 2 Jazzy** (Linux intra-process, K=10 medians) | OASIS 241 ns vs rclcpp intra 5 624 ns vs rclcpp DDS 52 411 ns at 16 B — 23–217× faster | ✅ measured |
@@ -297,7 +317,7 @@ payload size via function-call dispatch; rclcpp's cost is executor
 ## Mental loop (specialist discipline)
 
 1. **Is it proven?** — ruthless test or it doesn't exist
-2. **Does it break?** — 427 Rust tests + 77 Kani proofs must pass before and after
+2. **Does it break?** — 443 Rust tests + 113 Kani proof harnesses must pass before and after
 3. **Is it bounded?** — fear ≤ 5×, entropy [0,1], latency < 1 ms, lux < 100 000
 4. **Is it honest?** — every mechanism explicitly PROVEN vs EXPERIMENTAL
 5. **Is it banded?** — **no single-shot bench number in the repo**. K=10 median ± half-spread or equivalent (Spore loss bench uses N=200 internal trials). Single-number claims are suspect.
@@ -341,4 +361,8 @@ linking against `cortex-m-rt` runtime).
 - Kept on disk for spec reference, but flagged ARCHIVED (unmaintained)
 - 1 known failing test (`integration-final.test.ts`); not a release blocker for the Rust path
 
-Nothing deleted from git history. `oasis-rt/` and `webots/` now reflect only what is ACTIVE.
+Git history was initialized 2026-06-02 (baseline commit `d8681c5`) — the repo
+previously had zero commits, so earlier "git history" claims were false. The
+removed TypeScript, Python, demos, and archives are preserved in that baseline.
+The Cargo workspace (`oasis-rt` + 3 std crates) and the 3 excluded MCU crates
+now reflect only active Rust.

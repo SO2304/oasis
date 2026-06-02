@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 
 Bio-inspired agentic middleware: tension fields, Hebbian/STDP synapses, emotional
-modulation, reflex arcs, federated learning. Runtime in Rust (22 modules, 125
+modulation, reflex arcs, federated learning. Runtime in Rust (30 modules, 443
 unit tests). Validated on:
 
 - **Real hardware** — Samsung S23 FE (Android/Termux), 3h23 continuous session
@@ -72,8 +72,7 @@ federated resonance.
 
 Source layout:
 ```
-kernel/                  # TypeScript — specification (16 860 lines)
-oasis-rt/                # Rust — production runtime (22 modules, 125 tests)
+oasis-rt/                # Rust — production runtime (30 modules, 443 tests, 18 bins)
   src/vec.rs              # 128D vector algebra, zero-alloc
   src/hyper_state.rs      # Mechanism 2 — continuous state + entropy gate
   src/tension.rs          # Mechanism 1 — tension field, interference
@@ -99,7 +98,7 @@ docker run --rm oasis-rt
 ```bash
 cd oasis-rt
 cargo build --release
-cargo test --release --lib       # 125 unit tests
+cargo test --workspace --release # 443 unit tests
 ./target/release/drone_bridge patrol1 0 < sensor_stream.jsonl
 ```
 
@@ -137,7 +136,7 @@ Active mechanisms in `drone_bridge.rs` (400L, R10 respected):
 - **Memory**: persistent on /sdcard/ (pain + federated digests, ~7 KB)
 - **Industrial hardening**: 7/7 tests passed with real physical perturbations
 
-## Inviolable Rules (Rust + TypeScript)
+## Inviolable Rules (Rust)
 
 | # | Rule | Status |
 |---|------|--------|
@@ -153,8 +152,8 @@ Active mechanisms in `drone_bridge.rs` (400L, R10 respected):
 fmt` with `max_width=200` still expands 5 files (federation, nerve, spinal,
 main, drone_bridge) past the limit due to struct literal and match-arm rules.
 The codebase is now fmt-clean at the cost of this R10 breach; we are working
-on compact idioms to restore it. R1 (strict typing) applies to the TypeScript
-spec; Rust is strict by default.
+on compact idioms to restore it. R1 (strict typing) is satisfied by Rust,
+which is strictly typed by default.
 
 ## Honest Positioning
 
@@ -181,7 +180,7 @@ MIT — see [LICENSE](./LICENSE).
 
 Issues and PRs welcome. Baseline expectations:
 - R10: no file > 400 lines
-- R1: strict typing (zero `any` in TypeScript)
+- R1: strict typing (Rust is strictly typed by default; no `any` equivalent)
 - New features require hardware or ruthless simulation tests
 
 ## Citation
