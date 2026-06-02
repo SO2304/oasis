@@ -9,9 +9,11 @@ unit tests). Validated on:
 
 - **Real hardware** — Samsung S23 FE (Android/Termux), 3h23 continuous session
   with real sensors (LSM6DSVTR IMU, barometer, light, mic), 121 290 ticks.
-- **Simulation** — Webots multi-drone factory inspection, 168 full coverage
-  loops by patrol1 over ~76 000 sim ticks in `--mode=fast --no-rendering`
-  (wall-clock ~10 minutes; Webots runs faster than real-time).
+- **Simulation** — PX4 SITL + jmavsim over MAVLink v2: OASIS auto-armed PX4,
+  triggered takeoff, and flew a 4-waypoint mission with closed-loop altitude
+  hold (1.94 m vs 2.0 m target, ±6 cm). One successful end-to-end run; no real
+  Pixhawk hardware yet. (Earlier Webots factory runs are kept as legacy results
+  below — the Webots simulator was replaced by PX4 SITL.)
 
 Mechanisms 1, 2, 5, 7, 9, 11 are **proven** on real hardware. Mechanisms 4, 6, 8, 10
 are **wired and tested** in shorter runs. Mechanism 3 is **partial** (sensors yes,
@@ -51,7 +53,7 @@ federated resonance.
 ## Architecture
 
 ```
-    Webots / Crazyflie / phone sensors  ────┐
+    PX4 SITL (MAVLink v2) / phone sensors ───┐
                                              │  (JSON sensor stream)
                                              ▼
   ┌─────────────────────────────────────────────────────┐
@@ -67,7 +69,7 @@ federated resonance.
   └─────────────────────────────────────────────────────┘
                                              │  (JSON motor commands)
                                              ▼
-                 Webots / Crazyflie / motors
+                 PX4 / MAVLink actuators
 ```
 
 Source layout:
@@ -81,9 +83,9 @@ oasis-rt/                # Rust — production runtime (30 modules, 443 tests, 1
   src/reflex.rs           # Mechanism 9 — reflex arc, adaptive calibration
   src/federation.rs       # Mechanism 11 — vectorial resonance
   src/world_model.rs      # Mechanism 10 — non-Euclidean pressure fields
-  src/bin/drone_bridge.rs # Thin drone brain for Webots/Crazyflie (400L R10)
-webots/                  # Factory inspection demo (3 drones, 8 machines)
-crazyflie-bridge/        # cflib wrapper for Crazyflie 2.1 (SITL + hardware)
+  src/bin/drone_bridge.rs    # OASIS kernel <-> MAVLink JSON bridge
+  src/bin/mavlink_adapter.rs # PX4 adapter: OFFBOARD, PARAM_SET, waypoint loop
+webots/                  # Legacy Webots audit docs (simulator no longer used)
 ```
 
 ## Quickstart
@@ -102,14 +104,23 @@ cargo test --workspace --release # 443 unit tests
 ./target/release/drone_bridge patrol1 0 < sensor_stream.jsonl
 ```
 
-### Webots factory demo
+### PX4 SITL (MAVLink)
 ```bash
-cargo build --release --bin drone_bridge
-webots --mode=fast --no-rendering webots/worlds/oasis_factory.wbt
-tail -f webots/factory_patrol1.log
+cargo build --release --bin mavlink_adapter
+# with PX4 SITL + jmavsim running and exposing MAVLink on udp:14540
+./target/release/mavlink_adapter   # auto-arm -> takeoff -> 4-waypoint OFFBOARD loop
 ```
 
-## Factory Inspection Results (Webots simulation, `--mode=fast`)
+## Validation Results
+
+### PX4 SITL (current drone path)
+
+OASIS drives PX4 over MAVLink v2 end-to-end: PX4 logged `Armed by external
+command` → `Takeoff detected` → 3× `WAYPOINT_REACHED`, then held altitude
+closed-loop at 1.94 m vs a 2.0 m target (±6 cm). One successful end-to-end run;
+**no real Pixhawk hardware tested yet.**
+
+### Webots factory inspection (legacy — simulator since replaced by PX4 SITL)
 
 3 autonomous drones in a 6×5m factory with 9 obstacles of varying height.
 Emergent navigation via OASIS kernel (no scripted waypoints):
@@ -120,7 +131,7 @@ Emergent navigation via OASIS kernel (no scripted waypoints):
 | patrol2 (1.30m cruise) | 14 | 3 × 4/4 | 1 (post-loop-3) | 31 |
 | supervisor (1.70m cruise) | 10 | 1 × 8/8 | 0 | 200+ |
 
-Active mechanisms in `drone_bridge.rs` (400L, R10 respected):
+Active mechanisms in `drone_bridge.rs`:
 - **C2 HyperState + R14** — entropy gate blocks actuation when sensor loss
 - **C5 Emotion** — fear modulates speed continuously
 - **C7 Hebbian 4-agent** — motor/goal/obstacle/fear synapses
@@ -165,7 +176,7 @@ ideas and hardware validation.
 
 ### Roadmap toward market relevance
 
-- [ ] Crazyflie 2.1 physical port (cflib bridge prototype in this repo)
+- [ ] Crazyflie 2.1 physical port (planned; prior Python cflib bridge removed in the pure-Rust migration)
 - [ ] OAK-D vision integration (addresses #1 market gap)
 - [ ] ROS2 / Crazyswarm2 node wrapper
 - [ ] External quantitative benchmark vs Nav2 on standardized scenarios
