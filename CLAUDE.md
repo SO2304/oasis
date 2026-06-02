@@ -20,8 +20,9 @@ the host Bloom (64 KiB → 2 KiB). Re-measured headline numbers (commands
 reproduce them): **443 lib tests** (`cargo test --workspace --release`),
 **113 Kani proof harnesses** (`grep -rE 'kani::proof' oasis-rt/src | wc -l`;
 full CBMC pass *not* re-run this session — slow under WSL), **30 modules**,
-**18 `[[bin]]`**, **32 `src/*.rs`** files (largest: `mesh.rs` 3049 L —
-omitted from the tree below). ⚠️ The per-file line counts in the tree
+**18 `[[bin]]`**, **32 `src/*.rs`** files (largest module now `spore_crypto.rs`
+2583 L; `mesh.rs` was split 2026-06-02 — its tests + 46 Kani proofs moved to
+`src/mesh/{tests,kani_proofs}.rs`, leaving a 1099 L protocol core). ⚠️ The per-file line counts in the tree
 below are stale snapshots (drift +20 % to +115 %); the authoritative
 source is `wc -l oasis-rt/src/*.rs`.
 
@@ -79,7 +80,7 @@ oasis/
 │   │   ├── world_model.rs 239L M10 non-Euclidean pressure (EXPERIMENTAL)
 │   │   ├── audio.rs   221L   RMS, FFT, pitch, no ML
 │   │   ├── spore.rs  1232L   P2P transport + rate limiter + listener
-│   │   ├── mesh.rs    3049L   multi-hop mesh v8/v9/v0A envelopes + Bloom dedup (46 Kani proofs)
+│   │   ├── mesh.rs    1099L   multi-hop mesh v8/v9/v0A + Bloom dedup (tests + 46 Kani proofs → src/mesh/)
 │   │   ├── spore_crypto.rs 2583L  ChaCha20-Poly1305 AEAD + X25519 ECDH + revocation + counter tracker
 │   │   ├── mavlink_min.rs 1420L  MAVLink v2 parser/signer/replay
 │   │   ├── hal.rs     288L   KillSwitch + physics constraints
@@ -304,7 +305,7 @@ payload size via function-call dispatch; rclcpp's cost is executor
 | R2 | Inter-agent comms only via tension field (never direct calls) |
 | R5 | Validation on all mutations |
 | R9 | No physical agent without safety sandbox active |
-| R10 | Files < 400 lines (exceptions: spore.rs, spore_crypto.rs, mavlink_min.rs, federation.rs — crypto/protocol modules) |
+| R10 | Files < 400 lines (exceptions: spore.rs, spore_crypto.rs, mavlink_min.rs, federation.rs, mesh.rs — cohesive crypto/protocol modules; mesh.rs tests + Kani proofs were split into src/mesh/ to shrink the core 3049→1099 L) |
 | R13 | Inter-agent comms via vectorial tension |
 | R14 | No physical action if entropy > critical threshold |
 | R15 | Sensor loss = entropy spike + actuation freeze |
