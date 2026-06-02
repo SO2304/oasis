@@ -1,4 +1,4 @@
-//! OASIS Drone Bridge — real OASIS kernel for Webots drones. JSON stdin→stdout.
+//! OASIS Drone Bridge — OASIS kernel as a JSON stdin→stdout bridge for drone control (PX4 via mavlink_adapter, or a sim source).
 
 use oasis_rt::emotion::*;
 use oasis_rt::federation::*;
@@ -11,7 +11,9 @@ use oasis_rt::world_model::*;
 use std::collections::HashSet;
 use std::io::{self, BufRead, Write};
 fn shared() -> String {
-    std::env::var("OASIS_SHARED").unwrap_or_else(|_| "C:/dev/oasis/webots/factory_shared/".into())
+    let dir = std::env::var("OASIS_SHARED").unwrap_or_else(|_| "./oasis_shared/".into());
+    let _ = std::fs::create_dir_all(&dir); // ensure the IPC dir exists; portable default (was a hardcoded local webots path)
+    dir
 }
 fn enc(x: f64, y: f64, alt: f64) -> V {
     let mut v = vz();

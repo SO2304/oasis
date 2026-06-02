@@ -74,5 +74,8 @@ oasis-rt/eeprom/
 oasis-rt/log/
 oasis-rt/mavlink/
 
+# drone_bridge file-based IPC dir (portable default of the $OASIS_SHARED path)
+oasis_shared/
+
 # Prebuilt/compiled binaries — never commit (regenerable via cargo build)
 oasis-lab-pack/binaries/

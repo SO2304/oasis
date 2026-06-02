@@ -1,7 +1,7 @@
 # OASIS-RT — bio-inspired Rust kernel + drone_bridge binary
 # Multi-stage: compile Rust → minimal runtime image
 
-FROM rust:1.82-slim AS builder
+FROM rust:1.95-slim AS builder
 WORKDIR /build
 # Build oasis-rt standalone (outside the workspace): copy only its manifest +
 # src. The per-member Cargo.lock was removed when oasis-rt joined the workspace
