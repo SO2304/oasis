@@ -57,7 +57,9 @@ fn walk_md(root: &Path, out: &mut Vec<PathBuf>) {
         for entry in rd.flatten() {
             let p = entry.path();
             if p.is_dir() {
-                if p.file_name().and_then(|n| n.to_str()) == Some("_archive") { continue; }
+                if p.file_name().and_then(|n| n.to_str()) == Some("_archive") {
+                    continue;
+                }
                 walk_md(&p, out);
             } else if p.extension().and_then(|e| e.to_str()) == Some("md") {
                 out.push(p);
@@ -74,15 +76,21 @@ fn main() -> ExitCode {
     }
     println!();
     println!("╔══════════════════════════════════════════════════════════════════╗");
-    println!("║  AH — audit_lint: arithmetic verification (tolerance {}%)         ║", TOLERANCE_PCT as u32);
+    println!(
+        "║  AH — audit_lint: arithmetic verification (tolerance {}%)         ║",
+        TOLERANCE_PCT as u32
+    );
     println!("╚══════════════════════════════════════════════════════════════════╝");
     println!();
 
     let mut files: Vec<PathBuf> = Vec::new();
     for arg in &args {
         let p = Path::new(arg);
-        if p.is_dir() { walk_md(p, &mut files); }
-        else if p.is_file() { files.push(p.to_path_buf()); }
+        if p.is_dir() {
+            walk_md(p, &mut files);
+        } else if p.is_file() {
+            files.push(p.to_path_buf());
+        }
     }
     files.sort();
     println!("  Scanning {} markdown files...", files.len());
@@ -99,8 +107,10 @@ fn main() -> ExitCode {
             println!();
             println!("  {}:", path.display());
             for f in &findings {
-                println!("    line {}: \"{}\" — claimed {}, computed {} ({:.1}% off)",
-                    f.line_no, f.expression, f.claimed, f.computed, f.error_pct);
+                println!(
+                    "    line {}: \"{}\" — claimed {}, computed {} ({:.1}% off)",
+                    f.line_no, f.expression, f.claimed, f.computed, f.error_pct
+                );
                 println!("      context: {}", f.line.trim());
             }
         }
@@ -113,13 +123,20 @@ fn main() -> ExitCode {
     println!("──────────────────────────────────────────────────────────────────");
     println!("  Files scanned:       {}", files.len());
     println!("  Expressions checked: {}", expressions_checked);
-    println!("  Discrepancies > {}%: {}", TOLERANCE_PCT as u32, all_findings.len());
+    println!(
+        "  Discrepancies > {}%: {}",
+        TOLERANCE_PCT as u32,
+        all_findings.len()
+    );
     println!();
     if all_findings.is_empty() {
         println!("  [CLEAN] no arithmetic discrepancies found");
         ExitCode::SUCCESS
     } else {
-        eprintln!("  [FAIL] {} expressions exceed tolerance — see above", all_findings.len());
+        eprintln!(
+            "  [FAIL] {} expressions exceed tolerance — see above",
+            all_findings.len()
+        );
         ExitCode::FAILURE
     }
 }
@@ -129,7 +146,10 @@ mod tests {
     use oasis_trl_harness::audit_lint::scan_line;
 
     fn check_one(line: &str) -> Vec<(String, f64, f64)> {
-        scan_line(line).into_iter().map(|m| (m.expression, m.claimed, m.computed)).collect()
+        scan_line(line)
+            .into_iter()
+            .map(|m| (m.expression, m.claimed, m.computed))
+            .collect()
     }
 
     #[test]
@@ -182,21 +202,32 @@ mod tests {
     #[test]
     fn skips_range_with_unit() {
         let r = check_one("Pattern A 10k × 100 = 5-15 ms");
-        assert!(r.is_empty(), "range with unit should be skipped, got {:?}", r);
+        assert!(
+            r.is_empty(),
+            "range with unit should be skipped, got {:?}",
+            r
+        );
     }
 
     #[test]
     fn skips_unit_after_result() {
         let r = check_one("baseline 2 × 5 = 10 ms");
-        assert!(r.is_empty(), "unit after result should be skipped, got {:?}", r);
+        assert!(
+            r.is_empty(),
+            "unit after result should be skipped, got {:?}",
+            r
+        );
     }
 
     #[test]
     fn skips_fragment_inside_larger_expression() {
         let r = check_one("formula 60/30 × 14 = 28");
         let exprs: Vec<&str> = r.iter().map(|(e, _, _)| e.as_str()).collect();
-        assert!(!exprs.iter().any(|e| e.contains("14 = 28")),
-            "14 = 28 fragment must be skipped, got {:?}", exprs);
+        assert!(
+            !exprs.iter().any(|e| e.contains("14 = 28")),
+            "14 = 28 fragment must be skipped, got {:?}",
+            exprs
+        );
     }
 
     #[test]

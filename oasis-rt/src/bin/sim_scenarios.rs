@@ -38,7 +38,7 @@ fn main() {
     let (c_ok, c_max) = scenario_c_safety_gate();
 
     total_score += a_ok + b_ok + c_ok;
-    max_score   += a_max + b_max + c_max;
+    max_score += a_max + b_max + c_max;
 
     println!();
     println!("╔════════════════════════════════════════════════════════════╗");
@@ -65,11 +65,15 @@ fn scenario_a_multi_vendor() -> (u32, u32) {
     println!();
 
     // Define 3 "vendors" with different schemas (different tensor axes)
-    struct Vendor { name: &'static str, axis_dims: [usize; 3], magnitude: f64 }
+    struct Vendor {
+        name: &'static str,
+        axis_dims: [usize; 3],
+        magnitude: f64,
+    }
     let vendors = [
-        Vendor { name: "Pixhawk",  axis_dims: [10, 11, 12], magnitude: 1.0 },
-        Vendor { name: "DJI",      axis_dims: [30, 31, 32], magnitude: 0.8 },
-        Vendor { name: "Clearpath",axis_dims: [50, 51, 52], magnitude: 1.2 },
+        Vendor { name: "Pixhawk", axis_dims: [10, 11, 12], magnitude: 1.0 },
+        Vendor { name: "DJI", axis_dims: [30, 31, 32], magnitude: 0.8 },
+        Vendor { name: "Clearpath", axis_dims: [50, 51, 52], magnitude: 1.2 },
     ];
 
     // Each robot has its own FederatedMesh (the common layer)
@@ -93,7 +97,9 @@ fn scenario_a_multi_vendor() -> (u32, u32) {
     let robot_names: Vec<String> = meshes.iter().map(|(n, _)| n.clone()).collect();
     for i in 0..meshes.len() {
         for j in 0..meshes.len() {
-            if i == j { continue; }
+            if i == j {
+                continue;
+            }
             // Robot i sends its digest; robot j receives — pure OASIS layer,
             // no per-vendor code path
             let digest_bytes = meshes[i].1.serialize_to_vec();
@@ -110,11 +116,14 @@ fn scenario_a_multi_vendor() -> (u32, u32) {
     let mut cross_vendor_sync = 0;
     for va in &vendors {
         for vb in &vendors {
-            if va.name == vb.name { continue; }
+            if va.name == vb.name {
+                continue;
+            }
             // If any robot of va synced with any robot of vb
-            let synced = meshes.iter().any(|(n, _)| n.starts_with(va.name)) &&
-                         meshes.iter().any(|(n, _)| n.starts_with(vb.name));
-            if synced { cross_vendor_sync += 1; }
+            let synced = meshes.iter().any(|(n, _)| n.starts_with(va.name)) && meshes.iter().any(|(n, _)| n.starts_with(vb.name));
+            if synced {
+                cross_vendor_sync += 1;
+            }
         }
     }
     let expected_cross_vendor = 6; // 3 × 2
@@ -153,9 +162,7 @@ fn scenario_b_connectivity_challenged() -> (u32, u32) {
         })
         .collect();
     // Neighbors: every robot connects to every other (full mesh for test)
-    let neighbors: Vec<Vec<usize>> = (0..N)
-        .map(|i| (0..N).filter(|&j| j != i).collect())
-        .collect();
+    let neighbors: Vec<Vec<usize>> = (0..N).map(|i| (0..N).filter(|&j| j != i).collect()).collect();
 
     // Counterfactual baseline: cloud-only delivery when 60% of cloud packets drop
     let cloud_drop_rate = 0.6_f64;
@@ -167,13 +174,19 @@ fn scenario_b_connectivity_challenged() -> (u32, u32) {
 
     // Operator sends 100 commands via one robot (robot 0)
     let n_commands = 100u32;
-    let mut cloud_reach = 0u32;   // command reaches a destination via cloud alone
-    let mut mesh_reach = 0u32;    // command reaches all 8 peers via mesh
+    let mut cloud_reach = 0u32; // command reaches a destination via cloud alone
+    let mut mesh_reach = 0u32; // command reaches all 8 peers via mesh
     for _cmd_i in 0..n_commands {
         // Simulate cloud-only path: each peer independently has 60% drop
         let mut cloud_ok = 0u32;
-        for _peer in 1..N { if rnd() > cloud_drop_rate { cloud_ok += 1; } }
-        if cloud_ok == (N - 1) as u32 { cloud_reach += 1; }
+        for _peer in 1..N {
+            if rnd() > cloud_drop_rate {
+                cloud_ok += 1;
+            }
+        }
+        if cloud_ok == (N - 1) as u32 {
+            cloud_reach += 1;
+        }
 
         // Simulate mesh: robot 0 originates, mesh floods
         let payload = b"goto waypoint X";
@@ -191,7 +204,9 @@ fn scenario_b_connectivity_challenged() -> (u32, u32) {
                     reached[dst] = true;
                     if forward {
                         for &n in &neighbors[dst] {
-                            if !reached[n] { queue.push((n, envelope.clone())); }
+                            if !reached[n] {
+                                queue.push((n, envelope.clone()));
+                            }
                         }
                     }
                 }
@@ -199,13 +214,15 @@ fn scenario_b_connectivity_challenged() -> (u32, u32) {
             }
         }
         let peers_reached = reached.iter().filter(|&&r| r).count() - 1; // exclude origin
-        if peers_reached == N - 1 { mesh_reach += 1; }
+        if peers_reached == N - 1 {
+            mesh_reach += 1;
+        }
     }
 
     let cloud_pct = 100.0 * cloud_reach as f64 / n_commands as f64;
-    let mesh_pct  = 100.0 * mesh_reach  as f64 / n_commands as f64;
+    let mesh_pct = 100.0 * mesh_reach as f64 / n_commands as f64;
     println!("  Cloud-only full delivery: {}/{}  ({:.1}%)", cloud_reach, n_commands, cloud_pct);
-    println!("  OASIS mesh full delivery: {}/{}  ({:.1}%)", mesh_reach,  n_commands, mesh_pct);
+    println!("  OASIS mesh full delivery: {}/{}  ({:.1}%)", mesh_reach, n_commands, mesh_pct);
 
     let score = if mesh_pct > cloud_pct + 20.0 { 1 } else { 0 };
     let status = if score == 1 { "✅ PASS" } else { "❌ FAIL" };

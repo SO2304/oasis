@@ -3,11 +3,11 @@
 //! Entities are continuous pressure zones, not geometric objects.
 //! Navigation = gradient descent through combined field. No A*/RRT*.
 
-use crate::vec::*;
-#[cfg(not(feature = "std"))]
-use alloc::{vec::Vec, string::String, vec, format};
 #[cfg(not(feature = "std"))]
 use crate::fmath::F64Ext;
+use crate::vec::*;
+#[cfg(not(feature = "std"))]
+use alloc::{format, string::String, vec, vec::Vec};
 
 const MAX_ZONES: usize = 32;
 
@@ -60,8 +60,10 @@ impl WorldModel {
     /// Audit history: this was identified as a fail-mode defect (worse
     /// than unbounded growth) on 2026-05-10 and the cap_hit_count +
     /// try_add_zone API were added to expose / replace the silent path.
-    #[deprecated(since = "0.3.1",
-        note = "use try_add_zone() — it returns Result<(), ZoneError> so the cap-overflow case CANNOT be silently ignored. See SHADOW_AUDIT_SILENT_CAP_ADDRESSING.md.")]
+    #[deprecated(
+        since = "0.3.1",
+        note = "use try_add_zone() — it returns Result<(), ZoneError> so the cap-overflow case CANNOT be silently ignored. See SHADOW_AUDIT_SILENT_CAP_ADDRESSING.md."
+    )]
     pub fn add_zone(&mut self, zone_type: ZoneType, center: V, intensity: f64, falloff: f64) {
         if self.zones.len() < MAX_ZONES {
             self.zones.push(PressureZone { zone_type, center, falloff, intensity, active: true });
@@ -83,10 +85,7 @@ impl WorldModel {
     /// remove → try_add was failing because Vec.len() stayed at cap
     /// even though active count had dropped. THE slot-reuse path is
     /// what lets eviction-then-add patterns succeed.
-    pub fn try_add_zone(&mut self, zone_type: ZoneType, center: V,
-                        intensity: f64, falloff: f64)
-        -> Result<(), ZoneError>
-    {
+    pub fn try_add_zone(&mut self, zone_type: ZoneType, center: V, intensity: f64, falloff: f64) -> Result<(), ZoneError> {
         // First: try to reuse an inactive slot (from prior remove_zone)
         for slot in self.zones.iter_mut() {
             if !slot.active {
@@ -100,10 +99,7 @@ impl WorldModel {
             Ok(())
         } else {
             self.cap_hit_count = self.cap_hit_count.saturating_add(1);
-            Err(ZoneError::CapacityExceeded {
-                current: self.zones.len(),
-                cap: MAX_ZONES,
-            })
+            Err(ZoneError::CapacityExceeded { current: self.zones.len(), cap: MAX_ZONES })
         }
     }
 
@@ -223,7 +219,9 @@ impl WorldModel {
 pub fn repulsive_grad_1d(x: f64, center_x: f64, pressure: f64) -> f64 {
     let diff = x - center_x;
     let diff_abs = diff.abs();
-    if diff_abs < 1e-10 || pressure <= 0.0 { return 0.0; }
+    if diff_abs < 1e-10 || pressure <= 0.0 {
+        return 0.0;
+    }
     // `push = diff * pressure / |diff|` → same sign as diff
     diff * pressure / diff_abs
 }
@@ -234,7 +232,9 @@ pub fn repulsive_grad_1d(x: f64, center_x: f64, pressure: f64) -> f64 {
 pub fn attractive_grad_1d(x: f64, center_x: f64, pressure: f64) -> f64 {
     let diff = x - center_x;
     let diff_abs = diff.abs();
-    if diff_abs < 1e-10 || pressure <= 0.0 { return 0.0; }
+    if diff_abs < 1e-10 || pressure <= 0.0 {
+        return 0.0;
+    }
     -diff * pressure / diff_abs
 }
 
@@ -284,8 +284,7 @@ mod kani_proofs {
         let pA: f64 = kani::any();
         let cB: f64 = kani::any();
         let pB: f64 = kani::any();
-        kani::assume(x.is_finite() && cA.is_finite() && cB.is_finite()
-                    && pA.is_finite() && pB.is_finite());
+        kani::assume(x.is_finite() && cA.is_finite() && cB.is_finite() && pA.is_finite() && pB.is_finite());
         kani::assume(pA > 0.0 && pA < 10.0 && pB > 0.0 && pB < 10.0);
         kani::assume((x - cA).abs() > 1e-6 && (x - cB).abs() > 1e-6);
         kani::assume(x.abs() < 1e3 && cA.abs() < 1e3 && cB.abs() < 1e3);
@@ -407,18 +406,20 @@ mod tests {
     fn invariant_gradient_descent_converges_to_goal() {
         let world = WorldModel::new();
         let start = vz();
-        let mut goal = vz(); goal[0] = 3.0;
+        let mut goal = vz();
+        goal[0] = 3.0;
         let path = world.navigate(&start, &goal, 100);
         let end = path.last().unwrap();
         let end_dist = vd(end, &goal);
-        assert!(end_dist < 0.15,
-            "navigation did not converge: {} from goal", end_dist);
+        assert!(end_dist < 0.15, "navigation did not converge: {} from goal", end_dist);
         // Strict monotonic distance decrease
         let mut last = vd(&path[0], &goal);
         let mut violations = 0;
         for p in path.iter().skip(1) {
             let d = vd(p, &goal);
-            if d > last + 0.01 { violations += 1; }
+            if d > last + 0.01 {
+                violations += 1;
+            }
             last = d;
         }
         assert_eq!(violations, 0, "monotonicity violated {} times", violations);
@@ -427,8 +428,10 @@ mod tests {
     /// Invariant 2 — Field is linear: sample(A∪B) = sample(A) + sample(B).
     #[test]
     fn invariant_field_superposition_linear() {
-        let mut ca = vz(); ca[0] = 2.0;
-        let mut cb = vz(); cb[1] = 3.0;
+        let mut ca = vz();
+        ca[0] = 2.0;
+        let mut cb = vz();
+        cb[1] = 3.0;
         let mut wa = WorldModel::new();
         wa.try_add_zone(ZoneType::Repulsive, ca, 1.5, 0.8).expect("test");
         let mut wb = WorldModel::new();
@@ -436,13 +439,14 @@ mod tests {
         let mut wab = WorldModel::new();
         wab.try_add_zone(ZoneType::Repulsive, ca, 1.5, 0.8).expect("test");
         wab.try_add_zone(ZoneType::Attractive, cb, 2.0, 0.5).expect("test");
-        let mut pos = vz(); pos[0] = 1.0; pos[1] = 1.0;
+        let mut pos = vz();
+        pos[0] = 1.0;
+        pos[1] = 1.0;
         let (ga, _, _, _) = wa.sample(&pos);
         let (gb, _, _, _) = wb.sample(&pos);
         let (gboth, _, _, _) = wab.sample(&pos);
         for i in 0..DIM {
-            assert!((gboth[i] - (ga[i] + gb[i])).abs() < 1e-9,
-                "superposition broken at dim {}", i);
+            assert!((gboth[i] - (ga[i] + gb[i])).abs() < 1e-9, "superposition broken at dim {}", i);
         }
     }
 
@@ -452,15 +456,14 @@ mod tests {
         let center = vz();
         let mut world = WorldModel::new();
         world.try_add_zone(ZoneType::Repulsive, center, 2.0, 0.3).expect("test setup must not exceed cap");
-        for (dx, dy) in [(1.0, 0.0), (-1.0, 0.0), (0.0, 1.0), (0.0, -1.0),
-                         (0.7, 0.7), (-0.7, 0.7), (1.5, 0.5), (0.3, -2.0)] {
-            let mut pos = vz(); pos[0] = dx; pos[1] = dy;
+        for (dx, dy) in [(1.0, 0.0), (-1.0, 0.0), (0.0, 1.0), (0.0, -1.0), (0.7, 0.7), (-0.7, 0.7), (1.5, 0.5), (0.3, -2.0)] {
+            let mut pos = vz();
+            pos[0] = dx;
+            pos[1] = dy;
             let (grad, _, _, _) = world.sample(&pos);
             let diff = vsub(&pos, &center);
             let dot: f64 = (0..DIM).map(|i| grad[i] * diff[i]).sum();
-            assert!(dot >= 0.0,
-                "repulsive gradient at ({},{}) points INTO source: dot={}",
-                dx, dy, dot);
+            assert!(dot >= 0.0, "repulsive gradient at ({},{}) points INTO source: dot={}", dx, dy, dot);
         }
     }
 
@@ -470,14 +473,14 @@ mod tests {
         let center = vz();
         let mut world = WorldModel::new();
         world.try_add_zone(ZoneType::Attractive, center, 2.0, 0.3).expect("test setup must not exceed cap");
-        for (dx, dy) in [(1.0, 0.0), (-1.0, 0.0), (0.0, 1.0), (0.0, -1.0),
-                         (0.7, 0.7), (-0.7, 0.7), (1.5, 0.5), (0.3, -2.0)] {
-            let mut pos = vz(); pos[0] = dx; pos[1] = dy;
+        for (dx, dy) in [(1.0, 0.0), (-1.0, 0.0), (0.0, 1.0), (0.0, -1.0), (0.7, 0.7), (-0.7, 0.7), (1.5, 0.5), (0.3, -2.0)] {
+            let mut pos = vz();
+            pos[0] = dx;
+            pos[1] = dy;
             let (grad, _, _, _) = world.sample(&pos);
             let diff = vsub(&pos, &center);
             let dot: f64 = (0..DIM).map(|i| grad[i] * diff[i]).sum();
-            assert!(dot <= 0.0,
-                "attractive gradient at ({},{}) points AWAY: dot={}", dx, dy, dot);
+            assert!(dot <= 0.0, "attractive gradient at ({},{}) points AWAY: dot={}", dx, dy, dot);
         }
     }
 
@@ -488,28 +491,29 @@ mod tests {
         let mut world = WorldModel::new();
         let falloff = 0.5;
         world.try_add_zone(ZoneType::Repulsive, center, 10.0, falloff).expect("test setup must not exceed cap");
-        let mut pos1 = vz(); pos1[0] = 1.0;
+        let mut pos1 = vz();
+        pos1[0] = 1.0;
         let (_, r1, _, _) = world.sample(&pos1);
-        let mut pos2 = vz(); pos2[0] = 2.0;
+        let mut pos2 = vz();
+        pos2[0] = 2.0;
         let (_, r2, _, _) = world.sample(&pos2);
         let ratio = r2 / r1;
         let expected = (-falloff).exp();
-        assert!((ratio - expected).abs() < 0.01,
-            "decay ratio {} ≠ exp(-{})={}", ratio, falloff, expected);
+        assert!((ratio - expected).abs() < 0.01, "decay ratio {} ≠ exp(-{})={}", ratio, falloff, expected);
     }
 
     /// Invariant 6 — Navigation avoids obstacles by a positive margin.
     #[test]
     fn invariant_navigation_avoids_obstacle_by_margin() {
-        let mut obs = vz(); obs[0] = 3.0;
+        let mut obs = vz();
+        obs[0] = 3.0;
         let mut world = WorldModel::new();
         world.try_add_zone(ZoneType::Repulsive, obs, 8.0, 0.8).expect("test setup must not exceed cap");
         let start = vz();
-        let mut goal = vz(); goal[0] = 6.0;
+        let mut goal = vz();
+        goal[0] = 6.0;
         let path = world.navigate(&start, &goal, 100);
-        let min_dist = path.iter().map(|p| vd(p, &obs))
-            .fold(f64::INFINITY, f64::min);
-        assert!(min_dist > 0.3,
-            "navigation got too close to obstacle: min={}", min_dist);
+        let min_dist = path.iter().map(|p| vd(p, &obs)).fold(f64::INFINITY, f64::min);
+        assert!(min_dist > 0.3, "navigation got too close to obstacle: min={}", min_dist);
     }
 }

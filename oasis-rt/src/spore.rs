@@ -43,21 +43,18 @@ fn maybe_encrypt(plaintext: &[u8]) -> Vec<u8> {
 
 /// Process-global replay window. Protects against an attacker replaying a
 /// captured encrypted envelope to the same receiver.
-static REPLAY_WINDOW: std::sync::OnceLock<std::sync::Mutex<spore_crypto::ReplayWindow>>
-    = std::sync::OnceLock::new();
+static REPLAY_WINDOW: std::sync::OnceLock<std::sync::Mutex<spore_crypto::ReplayWindow>> = std::sync::OnceLock::new();
 
 fn replay_window() -> &'static std::sync::Mutex<spore_crypto::ReplayWindow> {
     REPLAY_WINDOW.get_or_init(|| {
-        let cap: usize = std::env::var("OASIS_SPORE_REPLAY_CAP")
-            .ok().and_then(|s| s.parse().ok()).unwrap_or(1024);
+        let cap: usize = std::env::var("OASIS_SPORE_REPLAY_CAP").ok().and_then(|s| s.parse().ok()).unwrap_or(1024);
         std::sync::Mutex::new(spore_crypto::ReplayWindow::new(cap))
     })
 }
 
 /// Process-global counter tracker for v7 envelopes. Persisted to
 /// `OASIS_COUNTER_TRACKER_FILE` if configured. Hydrated on first access.
-static COUNTER_TRACKER: std::sync::OnceLock<std::sync::Mutex<spore_crypto::CounterTracker>>
-    = std::sync::OnceLock::new();
+static COUNTER_TRACKER: std::sync::OnceLock<std::sync::Mutex<spore_crypto::CounterTracker>> = std::sync::OnceLock::new();
 
 fn counter_tracker() -> &'static std::sync::Mutex<spore_crypto::CounterTracker> {
     COUNTER_TRACKER.get_or_init(|| {
@@ -75,8 +72,7 @@ fn counter_tracker() -> &'static std::sync::Mutex<spore_crypto::CounterTracker> 
 /// Configured lazily: origin fingerprint is read from env `OASIS_SPORE_ID_PUB_HEX`
 /// (first 8 bytes of SHA-256 of the X25519 pub), which matches the v5/v7 sender FP.
 /// If the pub isn't configured, the router uses a zero fingerprint (no identity).
-static MESH_ROUTER: std::sync::OnceLock<std::sync::Mutex<crate::mesh::MeshRouter>>
-    = std::sync::OnceLock::new();
+static MESH_ROUTER: std::sync::OnceLock<std::sync::Mutex<crate::mesh::MeshRouter>> = std::sync::OnceLock::new();
 
 fn mesh_router() -> &'static std::sync::Mutex<crate::mesh::MeshRouter> {
     MESH_ROUTER.get_or_init(|| {
@@ -89,10 +85,8 @@ fn mesh_router() -> &'static std::sync::Mutex<crate::mesh::MeshRouter> {
         } else {
             [0u8; crate::mesh::FP_LEN]
         };
-        let ttl: u8 = std::env::var("OASIS_MESH_TTL")
-            .ok().and_then(|s| s.parse().ok()).unwrap_or(crate::mesh::DEFAULT_TTL);
-        let cap: usize = std::env::var("OASIS_MESH_DEDUP_CAP")
-            .ok().and_then(|s| s.parse().ok()).unwrap_or(crate::mesh::DEFAULT_DEDUP_CAP);
+        let ttl: u8 = std::env::var("OASIS_MESH_TTL").ok().and_then(|s| s.parse().ok()).unwrap_or(crate::mesh::DEFAULT_TTL);
+        let cap: usize = std::env::var("OASIS_MESH_DEDUP_CAP").ok().and_then(|s| s.parse().ok()).unwrap_or(crate::mesh::DEFAULT_DEDUP_CAP);
         std::sync::Mutex::new(crate::mesh::MeshRouter::with_config(my_fp, ttl, cap))
     })
 }
@@ -125,17 +119,13 @@ pub(crate) fn reset_mesh_for_tests() {
 /// whose signature verifies under the operator's Ed25519 pubkey (from
 /// `OASIS_OP_ED25519_PUB_HEX` env var). Updates also persist to
 /// `OASIS_REVOCATION_FILE` if configured.
-static REVOCATION_LIST: std::sync::OnceLock<std::sync::Mutex<spore_crypto::RevocationList>>
-    = std::sync::OnceLock::new();
+static REVOCATION_LIST: std::sync::OnceLock<std::sync::Mutex<spore_crypto::RevocationList>> = std::sync::OnceLock::new();
 
 fn revocation_list() -> &'static std::sync::Mutex<spore_crypto::RevocationList> {
     REVOCATION_LIST.get_or_init(|| {
         let mut rl = spore_crypto::RevocationList::new();
         // If a file path and op pubkey are configured, hydrate on first access
-        if let (Ok(path), Some(op_pub)) = (
-            std::env::var("OASIS_REVOCATION_FILE"),
-            load_op_pubkey_from_env(),
-        ) {
+        if let (Ok(path), Some(op_pub)) = (std::env::var("OASIS_REVOCATION_FILE"), load_op_pubkey_from_env()) {
             if let Ok(loaded) = spore_crypto::load_revocation_file(&path, &op_pub) {
                 rl = loaded;
             }
@@ -167,25 +157,19 @@ pub fn ingest_v7_envelope(buf: &[u8]) -> Result<Vec<u8>, &'static str> {
     if buf.len() < 6 || &buf[..6] != spore_crypto::SPORE_V7_MAGIC {
         return Err("not a v7 envelope");
     }
-    let recipient_priv_hex = std::env::var("OASIS_SPORE_ID_PRIV_HEX")
-        .map_err(|_| "OASIS_SPORE_ID_PRIV_HEX not set")?;
-    let recipient_priv = spore_crypto::parse_key_hex(&recipient_priv_hex)
-        .ok_or("bad OASIS_SPORE_ID_PRIV_HEX")?;
+    let recipient_priv_hex = std::env::var("OASIS_SPORE_ID_PRIV_HEX").map_err(|_| "OASIS_SPORE_ID_PRIV_HEX not set")?;
+    let recipient_priv = spore_crypto::parse_key_hex(&recipient_priv_hex).ok_or("bad OASIS_SPORE_ID_PRIV_HEX")?;
     let psk = load_key_from_env().ok_or("no OASIS_SPORE_KEY_HEX configured for v7")?;
 
     let (fp, _counter) = spore_crypto::v7_envelope_header(buf)?;
     // Resolve sender pub via per-sender env var: OASIS_SPORE_SENDER_PUB_HEX__<hex_fp>
     let fp_hex: String = fp.iter().map(|b| format!("{:02x}", b)).collect();
-    let sender_pub_hex = std::env::var(format!("OASIS_SPORE_SENDER_PUB_HEX__{}", fp_hex))
-        .map_err(|_| "sender pub not configured for this fingerprint")?;
-    let sender_pub = spore_crypto::parse_key_hex(&sender_pub_hex)
-        .ok_or("bad sender pub hex")?;
+    let sender_pub_hex = std::env::var(format!("OASIS_SPORE_SENDER_PUB_HEX__{}", fp_hex)).map_err(|_| "sender pub not configured for this fingerprint")?;
+    let sender_pub = spore_crypto::parse_key_hex(&sender_pub_hex).ok_or("bad sender pub hex")?;
 
     let rl = revocation_list().lock().unwrap().clone();
     let mut tracker = counter_tracker().lock().unwrap();
-    let pt = spore_crypto::decrypt_envelope_v7_checked(
-        &sender_pub, &recipient_priv, &psk, buf, b"", &mut tracker, &rl,
-    )?;
+    let pt = spore_crypto::decrypt_envelope_v7_checked(&sender_pub, &recipient_priv, &psk, buf, b"", &mut tracker, &rl)?;
     // Opportunistic persistence
     if let Ok(path) = std::env::var("OASIS_COUNTER_TRACKER_FILE") {
         let _ = tracker.save_to_file(&path);
@@ -208,16 +192,12 @@ pub fn ingest_revocation_envelope(buf: &[u8]) -> Result<usize, &'static str> {
     if buf.len() < 6 || &buf[..6] != spore_crypto::SPORE_V6_MAGIC {
         return Ok(0); // not a revocation envelope
     }
-    let op_pub = load_op_pubkey_from_env()
-        .ok_or("no OASIS_OP_ED25519_PUB_HEX configured")?;
+    let op_pub = load_op_pubkey_from_env().ok_or("no OASIS_OP_ED25519_PUB_HEX configured")?;
     let mut rl = revocation_list().lock().unwrap();
     let (_, added) = spore_crypto::merge_revocation_envelope(&mut rl, buf, &op_pub)?;
     // Opportunistic persistence — ignore errors (transient disk issues)
     if added > 0 {
-        if let (Ok(path), Ok(seed_hex)) = (
-            std::env::var("OASIS_REVOCATION_FILE"),
-            std::env::var("OASIS_OP_ED25519_SEED_HEX"),
-        ) {
+        if let (Ok(path), Ok(seed_hex)) = (std::env::var("OASIS_REVOCATION_FILE"), std::env::var("OASIS_OP_ED25519_SEED_HEX")) {
             if let Some(seed) = spore_crypto::parse_key_hex(&seed_hex) {
                 let _ = spore_crypto::save_revocation_file(&rl, &path, &seed);
             }
@@ -262,8 +242,7 @@ fn maybe_decrypt(buf: &[u8]) -> Result<Vec<u8>, &'static str> {
 #[cfg(test)]
 pub(crate) fn reset_replay_window_for_tests() {
     if let Some(rw) = REPLAY_WINDOW.get() {
-        let cap: usize = std::env::var("OASIS_SPORE_REPLAY_CAP")
-            .ok().and_then(|s| s.parse().ok()).unwrap_or(1024);
+        let cap: usize = std::env::var("OASIS_SPORE_REPLAY_CAP").ok().and_then(|s| s.parse().ok()).unwrap_or(1024);
         *rw.lock().unwrap() = spore_crypto::ReplayWindow::new(cap);
     }
 }
@@ -304,17 +283,13 @@ impl RateLimiter {
 
     /// Full constructor. `global_rps` and `global_burst` apply to the total
     /// traffic across ALL source IPs — protects against spoof floods.
-    pub fn new_with_global(rps: f64, burst: f64, max_peers: usize,
-                           global_rps: f64, global_burst: f64) -> Self {
+    pub fn new_with_global(rps: f64, burst: f64, max_peers: usize, global_rps: f64, global_burst: f64) -> Self {
         Self {
             rps: rps.max(0.0),
             burst: burst.max(1.0),
             max_peers: max_peers.max(2),
             state: std::sync::Mutex::new(HashMap::new()),
-            global: std::sync::Mutex::new(TokenState {
-                tokens: global_burst.max(1.0),
-                last_update: Instant::now(),
-            }),
+            global: std::sync::Mutex::new(TokenState { tokens: global_burst.max(1.0), last_update: Instant::now() }),
             global_rps: global_rps.max(0.0),
             global_burst: global_burst.max(1.0),
         }
@@ -332,23 +307,20 @@ impl RateLimiter {
             let elapsed = now.duration_since(g.last_update).as_secs_f64();
             g.tokens = (g.tokens + elapsed * self.global_rps).min(self.global_burst);
             g.last_update = now;
-            if g.tokens < 1.0 { return false; }
+            if g.tokens < 1.0 {
+                return false;
+            }
             g.tokens -= 1.0;
         }
         // Per-IP bucket
         let mut map = self.state.lock().unwrap();
         let now = Instant::now();
         if !map.contains_key(&addr) && map.len() >= self.max_peers {
-            if let Some(oldest_key) = map.iter()
-                .min_by_key(|(_, v)| v.last_update)
-                .map(|(k, _)| *k) {
+            if let Some(oldest_key) = map.iter().min_by_key(|(_, v)| v.last_update).map(|(k, _)| *k) {
                 map.remove(&oldest_key);
             }
         }
-        let entry = map.entry(addr).or_insert(TokenState {
-            tokens: self.burst,
-            last_update: now,
-        });
+        let entry = map.entry(addr).or_insert(TokenState { tokens: self.burst, last_update: now });
         let elapsed = now.duration_since(entry.last_update).as_secs_f64();
         entry.tokens = (entry.tokens + elapsed * self.rps).min(self.burst);
         entry.last_update = now;
@@ -367,18 +339,13 @@ impl RateLimiter {
 
 impl Default for RateLimiter {
     fn default() -> Self {
-        let rps: f64 = std::env::var("OASIS_RATE_LIMIT_RPS")
-            .ok().and_then(|s| s.parse().ok()).unwrap_or(100.0);
-        let burst: f64 = std::env::var("OASIS_RATE_LIMIT_BURST")
-            .ok().and_then(|s| s.parse().ok()).unwrap_or(200.0);
-        let max_peers: usize = std::env::var("OASIS_RATE_LIMIT_MAX_PEERS")
-            .ok().and_then(|s| s.parse().ok()).unwrap_or(10_000);
+        let rps: f64 = std::env::var("OASIS_RATE_LIMIT_RPS").ok().and_then(|s| s.parse().ok()).unwrap_or(100.0);
+        let burst: f64 = std::env::var("OASIS_RATE_LIMIT_BURST").ok().and_then(|s| s.parse().ok()).unwrap_or(200.0);
+        let max_peers: usize = std::env::var("OASIS_RATE_LIMIT_MAX_PEERS").ok().and_then(|s| s.parse().ok()).unwrap_or(10_000);
         // Global default = 10x per-IP. Operators with many legitimate peers
         // should raise; operators exposed to hostile internet should lower.
-        let global_rps: f64 = std::env::var("OASIS_RATE_LIMIT_GLOBAL_RPS")
-            .ok().and_then(|s| s.parse().ok()).unwrap_or(rps * 10.0);
-        let global_burst: f64 = std::env::var("OASIS_RATE_LIMIT_GLOBAL_BURST")
-            .ok().and_then(|s| s.parse().ok()).unwrap_or(burst * 10.0);
+        let global_rps: f64 = std::env::var("OASIS_RATE_LIMIT_GLOBAL_RPS").ok().and_then(|s| s.parse().ok()).unwrap_or(rps * 10.0);
+        let global_burst: f64 = std::env::var("OASIS_RATE_LIMIT_GLOBAL_BURST").ok().and_then(|s| s.parse().ok()).unwrap_or(burst * 10.0);
         Self::new_with_global(rps, burst, max_peers, global_rps, global_burst)
     }
 }
@@ -438,13 +405,17 @@ pub fn wrap_envelope(payload: &[u8]) -> Vec<u8> {
 
 /// Parse a SPORE\x01 envelope and return the payload slice.
 pub fn parse_envelope(buf: &[u8]) -> Result<&[u8], &'static str> {
-    if buf.len() < SPORE_MAGIC.len() + 4 { return Err("too short"); }
-    if &buf[..SPORE_MAGIC.len()] != SPORE_MAGIC { return Err("bad magic"); }
-    let plen = u32::from_le_bytes(
-        buf[SPORE_MAGIC.len()..SPORE_MAGIC.len() + 4].try_into().unwrap()
-    ) as usize;
+    if buf.len() < SPORE_MAGIC.len() + 4 {
+        return Err("too short");
+    }
+    if &buf[..SPORE_MAGIC.len()] != SPORE_MAGIC {
+        return Err("bad magic");
+    }
+    let plen = u32::from_le_bytes(buf[SPORE_MAGIC.len()..SPORE_MAGIC.len() + 4].try_into().unwrap()) as usize;
     let start = SPORE_MAGIC.len() + 4;
-    if start + plen > buf.len() { return Err("truncated"); }
+    if start + plen > buf.len() {
+        return Err("truncated");
+    }
     Ok(&buf[start..start + plen])
 }
 
@@ -653,8 +624,12 @@ pub fn fragment_v2(data: &[u8], msg_id: u32, with_parity: bool) -> Vec<Vec<u8>> 
 
 /// Parse a v2 chunk header. Returns (msg_id, total_data, chunk_idx, flags, payload).
 pub fn parse_chunk_v2(buf: &[u8]) -> Result<(u32, u16, u16, u8, &[u8]), &'static str> {
-    if buf.len() < V2_HEADER_LEN { return Err("too short"); }
-    if &buf[..6] != SPORE_V2_MAGIC { return Err("bad magic"); }
+    if buf.len() < V2_HEADER_LEN {
+        return Err("too short");
+    }
+    if &buf[..6] != SPORE_V2_MAGIC {
+        return Err("bad magic");
+    }
     let msg_id = u32::from_le_bytes(buf[6..10].try_into().unwrap());
     let total = u16::from_le_bytes(buf[10..12].try_into().unwrap());
     let idx = u16::from_le_bytes(buf[12..14].try_into().unwrap());
@@ -688,9 +663,7 @@ impl Reassembler {
     }
 
     fn try_complete(&self) -> Option<Vec<u8>> {
-        let missing: Vec<usize> = self.data.iter().enumerate()
-            .filter_map(|(i, v)| if v.is_none() { Some(i) } else { None })
-            .collect();
+        let missing: Vec<usize> = self.data.iter().enumerate().filter_map(|(i, v)| if v.is_none() { Some(i) } else { None }).collect();
         match missing.len() {
             0 => Some(self.assemble()),
             1 if self.parity.is_some() => self.recover_one_via_xor(missing[0]),
@@ -715,13 +688,19 @@ impl Reassembler {
         };
         let mut recovered = vec![0u8; assumed_len];
         for (i, b) in parity.iter().enumerate() {
-            if i < recovered.len() { recovered[i] = *b; }
+            if i < recovered.len() {
+                recovered[i] = *b;
+            }
         }
         for (i, chunk_opt) in self.data.iter().enumerate() {
-            if i == missing_idx { continue; }
+            if i == missing_idx {
+                continue;
+            }
             if let Some(chunk) = chunk_opt {
                 for (j, b) in chunk.iter().enumerate() {
-                    if j < recovered.len() { recovered[j] ^= b; }
+                    if j < recovered.len() {
+                        recovered[j] ^= b;
+                    }
                 }
             }
         }
@@ -738,26 +717,16 @@ impl Reassembler {
 /// Convenience: send a mesh as v2 fragments via UDP unicast.
 /// `repeat` = how many times to send each chunk (1 = no repeat, 2-3 for lossy links).
 /// Returns total bytes sent. Caller picks `target` ("239.0.42.1:4200" for multicast).
-pub fn broadcast_v2(
-    mesh: &FederatedMesh,
-    target: &str,
-    with_parity: bool,
-    repeat: u8,
-) -> Result<usize, &'static str> {
+pub fn broadcast_v2(mesh: &FederatedMesh, target: &str, with_parity: bool, repeat: u8) -> Result<usize, &'static str> {
     let data = mesh.serialize_to_vec();
     // Encrypt BEFORE fragmenting: receivers reassemble the encrypted envelope,
     // then decrypt. This avoids per-chunk nonces/tags and keeps FEC effective.
     let inner = maybe_encrypt(&data);
     // msg_id mixes nanos + process pid + payload-derived entropy. Single-process
     // collision resistance: ~1 in 2^32 for typical sub-second send rates.
-    let nanos = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_nanos()).unwrap_or(0);
+    let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0);
     let pid = std::process::id();
-    let msg_id: u32 = (nanos as u32)
-        ^ ((nanos >> 32) as u32)
-        ^ pid.wrapping_mul(0x9E3779B1)
-        ^ (inner.len() as u32).wrapping_mul(0xDEADBEEF);
+    let msg_id: u32 = (nanos as u32) ^ ((nanos >> 32) as u32) ^ pid.wrapping_mul(0x9E3779B1) ^ (inner.len() as u32).wrapping_mul(0xDEADBEEF);
     let packets = fragment_v2(&inner, msg_id, with_parity);
     let sock = UdpSocket::bind("0.0.0.0:0").map_err(|_| "bind failed")?;
     sock.set_multicast_ttl_v4(2).ok();
@@ -899,15 +868,16 @@ mod tests {
     #[test]
     fn fec_recovers_one_lost_chunk_via_xor_parity() {
         // 4 chunks + 1 parity. Drop chunk 1, verify recovery.
-        let data: Vec<u8> = (0..4 * MAX_CHUNK_PAYLOAD as u32)
-            .map(|i| (i % 256) as u8).collect();
+        let data: Vec<u8> = (0..4 * MAX_CHUNK_PAYLOAD as u32).map(|i| (i % 256) as u8).collect();
         let chunks = fragment_v2(&data, 7, true);
         assert_eq!(chunks.len(), 5, "4 data + 1 parity");
 
         let mut reass = Reassembler::new(7, 4, 0b1);
         // Drop index 1, deliver 0, 2, 3, parity
         for (i, pkt) in chunks.iter().enumerate() {
-            if i == 1 { continue; }
+            if i == 1 {
+                continue;
+            }
             let (_, _, idx, _, payload) = parse_chunk_v2(pkt).unwrap();
             if let Some(rec) = reass.feed(idx, payload) {
                 assert_eq!(rec, data, "FEC must recover lost chunk byte-perfect");
@@ -920,15 +890,15 @@ mod tests {
     #[test]
     fn fec_cannot_recover_two_lost_chunks() {
         // 4 chunks + 1 parity. Drop chunks 0 AND 2 → cannot recover.
-        let data: Vec<u8> = (0..4 * MAX_CHUNK_PAYLOAD as u32)
-            .map(|i| (i % 256) as u8).collect();
+        let data: Vec<u8> = (0..4 * MAX_CHUNK_PAYLOAD as u32).map(|i| (i % 256) as u8).collect();
         let chunks = fragment_v2(&data, 13, true);
         let mut reass = Reassembler::new(13, 4, 0b1);
         for (i, pkt) in chunks.iter().enumerate() {
-            if i == 0 || i == 2 { continue; }
+            if i == 0 || i == 2 {
+                continue;
+            }
             let (_, _, idx, _, payload) = parse_chunk_v2(pkt).unwrap();
-            assert!(reass.feed(idx, payload).is_none(),
-                    "single-parity XOR must NOT recover 2 losses");
+            assert!(reass.feed(idx, payload).is_none(), "single-parity XOR must NOT recover 2 losses");
         }
     }
 
@@ -950,14 +920,14 @@ mod tests {
     fn encrypted_qr_roundtrip() {
         std::env::set_var("OASIS_SPORE_KEY_HEX", TEST_KEY_HEX);
         let mut mesh = FederatedMesh::new();
-        let mut a = vz(); a[10] = 0.5;
+        let mut a = vz();
+        a[10] = 0.5;
         mesh.pool_push_test(a, 0.3, 1.0, 0.4);
 
         let qr = encode_qr(&mesh, 10).unwrap();
         // The base64 decoded bytes must start with the encrypted magic
         let raw = base64_decode(&qr).unwrap();
-        assert!(raw.starts_with(spore_crypto::SPORE_V3_MAGIC),
-            "encrypted QR must use SPORE\\x03 magic");
+        assert!(raw.starts_with(spore_crypto::SPORE_V3_MAGIC), "encrypted QR must use SPORE\\x03 magic");
 
         let mut mesh2 = FederatedMesh::new();
         let loaded = decode_qr(&mut mesh2, &qr, 0.7).unwrap();
@@ -970,16 +940,15 @@ mod tests {
     fn encrypted_qr_rejects_wrong_key() {
         std::env::set_var("OASIS_SPORE_KEY_HEX", TEST_KEY_HEX);
         let mut mesh = FederatedMesh::new();
-        let mut a = vz(); a[10] = 0.5;
+        let mut a = vz();
+        a[10] = 0.5;
         mesh.pool_push_test(a, 0.3, 1.0, 0.4);
         let qr = encode_qr(&mesh, 10).unwrap();
 
         // Receiver has a different key — MUST fail
-        std::env::set_var("OASIS_SPORE_KEY_HEX",
-            "00000000000000000000000000000000000000000000000000000000deadbeef");
+        std::env::set_var("OASIS_SPORE_KEY_HEX", "00000000000000000000000000000000000000000000000000000000deadbeef");
         let mut mesh2 = FederatedMesh::new();
-        assert!(decode_qr(&mut mesh2, &qr, 0.7).is_err(),
-            "wrong key MUST fail decryption");
+        assert!(decode_qr(&mut mesh2, &qr, 0.7).is_err(), "wrong key MUST fail decryption");
         std::env::remove_var("OASIS_SPORE_KEY_HEX");
     }
 
@@ -996,8 +965,7 @@ mod tests {
 
         std::env::set_var("OASIS_SPORE_KEY_HEX", TEST_KEY_HEX);
         let err = maybe_decrypt(inner).unwrap_err();
-        assert!(err.contains("downgrade"),
-            "key-set receiver must reject plaintext, got: {}", err);
+        assert!(err.contains("downgrade"), "key-set receiver must reject plaintext, got: {}", err);
         std::env::remove_var("OASIS_SPORE_KEY_HEX");
     }
 
@@ -1018,7 +986,9 @@ mod tests {
     #[test]
     fn rate_limiter_rejects_over_burst() {
         let rl = super::RateLimiter::new(1.0, 5.0, 100);
-        for _ in 0..5 { assert!(rl.check(local_ip(6))); }
+        for _ in 0..5 {
+            assert!(rl.check(local_ip(6)));
+        }
         // 6th hits without refill (elapsed time is sub-microsecond)
         assert!(!rl.check(local_ip(6)), "over-burst packets must be rejected");
     }
@@ -1057,11 +1027,12 @@ mod tests {
             let a = ((i >> 8) as u8).wrapping_add(10);
             let b = i as u8;
             let ip = std::net::IpAddr::V4(std::net::Ipv4Addr::new(10, a, b, 1));
-            if rl.check(ip) { allowed += 1; }
+            if rl.check(ip) {
+                allowed += 1;
+            }
         }
         // Global bucket caps at ~5 + minimal refill during tight loop
-        assert!(allowed < 20,
-            "global bucket must bound spoof flood: got {} allowed (expected ~5)", allowed);
+        assert!(allowed < 20, "global bucket must bound spoof flood: got {} allowed (expected ~5)", allowed);
     }
 
     #[test]
@@ -1080,7 +1051,9 @@ mod tests {
     #[test]
     fn rate_limiter_evicts_oldest_when_full() {
         let rl = super::RateLimiter::new(1.0, 1.0, 4);
-        for i in 1..=4u8 { rl.check(local_ip(i)); }
+        for i in 1..=4u8 {
+            rl.check(local_ip(i));
+        }
         assert_eq!(rl.peer_count(), 4);
         // Sleep so last_update timestamps diverge
         std::thread::sleep(std::time::Duration::from_millis(2));
@@ -1099,8 +1072,7 @@ mod tests {
         // Set up an operator keypair
         let op_seed_hex = "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20";
         let op_seed = spore_crypto::parse_key_hex(op_seed_hex).unwrap();
-        let kp = ed25519_compact::KeyPair::from_seed(
-            ed25519_compact::Seed::from_slice(&op_seed).unwrap());
+        let kp = ed25519_compact::KeyPair::from_seed(ed25519_compact::Seed::from_slice(&op_seed).unwrap());
         let op_pub_slice: &[u8] = kp.pk.as_ref();
         let op_pub_hex = op_pub_slice.iter().map(|b| format!("{:02x}", b)).collect::<String>();
         std::env::set_var("OASIS_OP_ED25519_PUB_HEX", &op_pub_hex);
@@ -1114,8 +1086,7 @@ mod tests {
 
         let added = ingest_revocation_envelope(&envelope).expect("ingest must succeed");
         assert_eq!(added, 1, "one new entry added");
-        assert!(is_sender_revoked(&compromised_fp),
-            "global revocation list must contain the ingested fingerprint");
+        assert!(is_sender_revoked(&compromised_fp), "global revocation list must contain the ingested fingerprint");
 
         // Idempotent re-ingest
         let added2 = ingest_revocation_envelope(&envelope).unwrap();
@@ -1138,15 +1109,13 @@ mod tests {
         // Configure a DIFFERENT operator pubkey
         let wrong_seed_hex = "bb00000000000000000000000000000000000000000000000000000000000000";
         let wrong_seed = spore_crypto::parse_key_hex(wrong_seed_hex).unwrap();
-        let wrong_kp = ed25519_compact::KeyPair::from_seed(
-            ed25519_compact::Seed::from_slice(&wrong_seed).unwrap());
+        let wrong_kp = ed25519_compact::KeyPair::from_seed(ed25519_compact::Seed::from_slice(&wrong_seed).unwrap());
         let wrong_slice: &[u8] = wrong_kp.pk.as_ref();
         let wrong_hex = wrong_slice.iter().map(|b| format!("{:02x}", b)).collect::<String>();
         std::env::set_var("OASIS_OP_ED25519_PUB_HEX", &wrong_hex);
         reset_revocation_for_tests();
 
-        assert!(ingest_revocation_envelope(&envelope).is_err(),
-            "revocation signed by wrong operator must be rejected");
+        assert!(ingest_revocation_envelope(&envelope).is_err(), "revocation signed by wrong operator must be rejected");
 
         std::env::remove_var("OASIS_OP_ED25519_PUB_HEX");
         reset_revocation_for_tests();
@@ -1157,16 +1126,13 @@ mod tests {
     fn listener_no_op_pubkey_rejects_revocation() {
         std::env::remove_var("OASIS_OP_ED25519_PUB_HEX");
         reset_revocation_for_tests();
-        let seed = spore_crypto::parse_key_hex(
-            "0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c").unwrap();
+        let seed = spore_crypto::parse_key_hex("0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c").unwrap();
         let mut rl = spore_crypto::RevocationList::new();
         rl.revoke([0x66; spore_crypto::SENDER_FP_LEN], 1700000000);
-        let envelope = spore_crypto::wrap_revocation_envelope(
-            &rl.serialize_signed(&seed).unwrap());
+        let envelope = spore_crypto::wrap_revocation_envelope(&rl.serialize_signed(&seed).unwrap());
 
         let err = ingest_revocation_envelope(&envelope).unwrap_err();
-        assert!(err.contains("no OASIS_OP"),
-            "missing op pubkey must produce explicit error, got: {}", err);
+        assert!(err.contains("no OASIS_OP"), "missing op pubkey must produce explicit error, got: {}", err);
     }
 
     #[test]
@@ -1190,20 +1156,16 @@ mod tests {
         std::env::set_var(format!("OASIS_SPORE_SENDER_PUB_HEX__{}", fp_hex), &s_pub_hex);
 
         // Pre-shared key
-        std::env::set_var("OASIS_SPORE_KEY_HEX",
-            "f0f1f2f3f4f5f6f7f8f9fafbfcfdfeff000102030405060708090a0b0c0d0e0f");
+        std::env::set_var("OASIS_SPORE_KEY_HEX", "f0f1f2f3f4f5f6f7f8f9fafbfcfdfeff000102030405060708090a0b0c0d0e0f");
         let psk = spore_crypto::parse_key_hex(&std::env::var("OASIS_SPORE_KEY_HEX").unwrap()).unwrap();
 
-        let env = spore_crypto::encrypt_envelope_v7(
-            &s_priv, &s_pub, &r_pub, &psk, 42, b"counter-tracked digest payload", b""
-        ).unwrap();
+        let env = spore_crypto::encrypt_envelope_v7(&s_priv, &s_pub, &r_pub, &psk, 42, b"counter-tracked digest payload", b"").unwrap();
 
         let pt = ingest_v7_envelope(&env).expect("listener must decrypt v7");
         assert_eq!(pt, b"counter-tracked digest payload");
 
         // Replay MUST fail via process-global tracker
-        assert!(ingest_v7_envelope(&env).is_err(),
-            "second ingest of same envelope must be counter-rejected");
+        assert!(ingest_v7_envelope(&env).is_err(), "second ingest of same envelope must be counter-rejected");
 
         std::env::remove_var("OASIS_SPORE_ID_PRIV_HEX");
         std::env::remove_var("OASIS_SPORE_KEY_HEX");
@@ -1219,16 +1181,12 @@ mod tests {
         let (r_priv, r_pub) = spore_crypto::x25519_generate_keypair();
         let r_priv_hex: String = r_priv.iter().map(|b| format!("{:02x}", b)).collect();
         std::env::set_var("OASIS_SPORE_ID_PRIV_HEX", &r_priv_hex);
-        std::env::set_var("OASIS_SPORE_KEY_HEX",
-            "aa".repeat(32));
+        std::env::set_var("OASIS_SPORE_KEY_HEX", "aa".repeat(32));
         let (s_priv, s_pub) = spore_crypto::x25519_generate_keypair();
         let psk = spore_crypto::parse_key_hex(&std::env::var("OASIS_SPORE_KEY_HEX").unwrap()).unwrap();
-        let env = spore_crypto::encrypt_envelope_v7(
-            &s_priv, &s_pub, &r_pub, &psk, 1, b"x", b""
-        ).unwrap();
+        let env = spore_crypto::encrypt_envelope_v7(&s_priv, &s_pub, &r_pub, &psk, 1, b"x", b"").unwrap();
         let err = ingest_v7_envelope(&env).unwrap_err();
-        assert!(err.contains("sender pub not configured"),
-            "unknown fingerprint must fail cleanly, got: {}", err);
+        assert!(err.contains("sender pub not configured"), "unknown fingerprint must fail cleanly, got: {}", err);
         std::env::remove_var("OASIS_SPORE_ID_PRIV_HEX");
         std::env::remove_var("OASIS_SPORE_KEY_HEX");
     }
@@ -1243,8 +1201,7 @@ mod tests {
         let mesh_pkt = origin_router.origin_wrap(&inner);
         match mesh_process_incoming(&mesh_pkt) {
             crate::mesh::MeshDecision::Arrived { envelope, hops_seen, forward: true, .. } => {
-                assert_eq!(crate::mesh::inner_slice(&envelope), &inner[..],
-                    "inner slice must be byte-identical to the wrapped inner");
+                assert_eq!(crate::mesh::inner_slice(&envelope), &inner[..], "inner slice must be byte-identical to the wrapped inner");
                 assert_eq!(hops_seen, 0);
             }
             other => panic!("expected Arrived{{forward=true}}, got {:?}", other),
@@ -1290,7 +1247,7 @@ mod tests {
         // First arrival — accepted
         let ok = maybe_decrypt(&encrypted).expect("first arrival must succeed");
         assert!(!ok.is_empty() || ok.is_empty()); // just check it returned Ok
-        // Second arrival of the SAME bytes — replay detected
+                                                  // Second arrival of the SAME bytes — replay detected
         let err = maybe_decrypt(&encrypted).unwrap_err();
         assert!(err.contains("replay"), "second arrival must be replay-rejected, got: {}", err);
         std::env::remove_var("OASIS_SPORE_KEY_HEX");

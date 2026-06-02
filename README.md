@@ -153,18 +153,18 @@ Active mechanisms in `drone_bridge.rs`:
 |---|------|--------|
 | R2 | Agents communicate ONLY via tension field | enforced |
 | R5 | Validation on all mutations | enforced |
-| R10 | Files < 400 lines | target (rustfmt expansion pushed 5 modules over — see note) |
+| R10 | Files < 400 lines | fmt-clean; >400 L limited to sanctioned crypto/protocol + daemon modules (see note) |
 | R13 | Inter-agent communication via vector tension | enforced |
 | R14 | No physical action if entropy > critical threshold | enforced (`is_action_safe`) |
 | R18 | Jitter < 5%, out-of-budget operations truncated | enforced |
 | R20 | Unsigned node = atomization in < 1ms | enforced |
 
-**R10 note**: pre-fmt the kernel modules were all < 400 lines. Applying `cargo
-fmt` with `max_width=200` still expands 5 files (federation, nerve, spinal,
-main, drone_bridge) past the limit due to struct literal and match-arm rules.
-The codebase is now fmt-clean at the cost of this R10 breach; we are working
-on compact idioms to restore it. R1 (strict typing) is satisfied by Rust,
-which is strictly typed by default.
+**R10 note**: the codebase is fmt-clean — `cargo fmt --check` passes under
+`oasis-rt/rustfmt.toml`. The files over 400 L are the cohesive crypto/protocol
+modules (`spore_crypto`, `mavlink_min`, `spore`, `federation`, `mesh`) and the
+Termux daemon (`main`), tracked as sanctioned R10 exceptions in CLAUDE.md;
+`mesh.rs` had its tests + Kani proofs split into `src/mesh/` to shrink its core.
+R1 (strict typing) is satisfied by Rust, which is strictly typed by default.
 
 ## Honest Positioning
 

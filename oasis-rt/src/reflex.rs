@@ -120,9 +120,7 @@ mod kani_proofs {
         kani::assume(value.is_finite());
         let r = AdaptiveReflex::new(sigma);
         assert!(!r.calibrated);
-        assert!(!r.check(value),
-            "non-calibrated reflex fired on value={}, sigma={}",
-            value, sigma);
+        assert!(!r.check(value), "non-calibrated reflex fired on value={}, sigma={}", value, sigma);
     }
 
     // The threshold-monotonicity and bidirectional-check proofs were
@@ -141,7 +139,7 @@ mod kani_proofs {
         kani::assume(value.abs() < 1e6);
         let mut r = AdaptiveReflex::new(3.0);
         r.mean = value;
-        r.std_dev = 0.0;    // concrete: eliminates the multiplication branch
+        r.std_dev = 0.0; // concrete: eliminates the multiplication branch
         r.calibrated = true;
         // With std_dev == 0, threshold must equal mean exactly.
         assert_eq!(r.threshold(), value);

@@ -221,7 +221,9 @@ impl FederatedMesh {
         use std::collections::hash_map::DefaultHasher;
         use std::hash::{Hash, Hasher};
         let key = std::env::var("OASIS_SIGNING_KEY").ok()?;
-        if key.is_empty() { return None; }
+        if key.is_empty() {
+            return None;
+        }
         let mut h = DefaultHasher::new();
         key.as_bytes().hash(&mut h);
         msg.hash(&mut h);
@@ -308,9 +310,7 @@ impl FederatedMesh {
         buf.push(count);
         for d in &active[..count as usize] {
             buf.extend_from_slice(&(d.source as u16).to_le_bytes());
-            let nz: Vec<(u8, f64)> = d.axis.iter().enumerate()
-                .filter(|(_, &v)| v.abs() > 1e-6)
-                .map(|(i, &v)| (i as u8, v)).collect();
+            let nz: Vec<(u8, f64)> = d.axis.iter().enumerate().filter(|(_, &v)| v.abs() > 1e-6).map(|(i, &v)| (i as u8, v)).collect();
             buf.push(nz.len().min(255) as u8);
             for &(idx, val) in &nz {
                 buf.push(idx);
@@ -354,8 +354,7 @@ impl FederatedMesh {
         if data.len() >= Self::SIG_MAGIC.len() + 8 {
             let sig_start = data.len() - Self::SIG_MAGIC.len() - 8;
             if &data[sig_start..sig_start + Self::SIG_MAGIC.len()] == Self::SIG_MAGIC {
-                let mac_bytes: [u8; 8] = data[sig_start + Self::SIG_MAGIC.len()..]
-                    .try_into().map_err(|_| "sig truncated")?;
+                let mac_bytes: [u8; 8] = data[sig_start + Self::SIG_MAGIC.len()..].try_into().map_err(|_| "sig truncated")?;
                 let received_mac = u64::from_le_bytes(mac_bytes);
                 let msg = &data[..sig_start];
                 if let Some(expected_mac) = Self::compute_mac(msg) {
@@ -366,8 +365,12 @@ impl FederatedMesh {
                 data = &data[..sig_start];
             }
         }
-        if data.len() < Self::MAGIC.len() + 1 { return Err("too short"); }
-        if &data[..Self::MAGIC.len()] != Self::MAGIC { return Err("bad magic"); }
+        if data.len() < Self::MAGIC.len() + 1 {
+            return Err("too short");
+        }
+        if &data[..Self::MAGIC.len()] != Self::MAGIC {
+            return Err("bad magic");
+        }
 
         // Inline parse body — identical to load() but operating on slice.
         // No /tmp roundtrip: zero alloc on the hot path.
@@ -376,21 +379,29 @@ impl FederatedMesh {
         pos += 1;
         let mut loaded = 0u32;
         for _ in 0..count {
-            if pos + 3 > data.len() { break; }
+            if pos + 3 > data.len() {
+                break;
+            }
             let source = u16::from_le_bytes([data[pos], data[pos + 1]]) as usize;
             pos += 2;
             let ndims = data[pos] as usize;
             pos += 1;
             let mut axis = vz();
             for _ in 0..ndims {
-                if pos + 9 > data.len() { return Err("truncated axis"); }
+                if pos + 9 > data.len() {
+                    return Err("truncated axis");
+                }
                 let idx = data[pos] as usize;
                 pos += 1;
                 let val = f64::from_le_bytes(data[pos..pos + 8].try_into().unwrap());
                 pos += 8;
-                if idx < DIM { axis[idx] = val; }
+                if idx < DIM {
+                    axis[idx] = val;
+                }
             }
-            if pos + 26 > data.len() { return Err("truncated digest"); }
+            if pos + 26 > data.len() {
+                return Err("truncated digest");
+            }
             let magnitude = f64::from_le_bytes(data[pos..pos + 8].try_into().unwrap());
             pos += 8;
             let valence = f64::from_le_bytes(data[pos..pos + 8].try_into().unwrap());
@@ -401,9 +412,12 @@ impl FederatedMesh {
             pos += 2;
             // Dedup
             let dup = self.pool.iter().any(|d| d.active && vcos(&d.axis, &axis) > 0.95);
-            if dup { continue; }
+            if dup {
+                continue;
+            }
             if self.pool.len() < MAX_DIGESTS {
-                self.pool.push(ExperienceDigest { source, axis, magnitude, valence, entropy, tick: self.tick, reinforcements, active: true });
+                self.pool
+                    .push(ExperienceDigest { source, axis, magnitude, valence, entropy, tick: self.tick, reinforcements, active: true });
             } else if let Some(slot) = self.pool.iter_mut().find(|d| !d.active) {
                 *slot = ExperienceDigest { source, axis, magnitude, valence, entropy, tick: self.tick, reinforcements, active: true };
             }
@@ -414,7 +428,9 @@ impl FederatedMesh {
             let trust_count = data[pos] as usize;
             pos += 1;
             for _ in 0..trust_count {
-                if pos + 12 > data.len() { break; }
+                if pos + 12 > data.len() {
+                    break;
+                }
                 let from = u16::from_le_bytes([data[pos], data[pos + 1]]) as usize;
                 pos += 2;
                 let to = u16::from_le_bytes([data[pos], data[pos + 1]]) as usize;
@@ -450,8 +466,7 @@ impl FederatedMesh {
         if data.len() >= Self::SIG_MAGIC.len() + 8 {
             let sig_start = data.len() - Self::SIG_MAGIC.len() - 8;
             if &data[sig_start..sig_start + Self::SIG_MAGIC.len()] == Self::SIG_MAGIC {
-                let mac_bytes: [u8; 8] = data[sig_start + Self::SIG_MAGIC.len()..]
-                    .try_into().map_err(|_| "sig truncated")?;
+                let mac_bytes: [u8; 8] = data[sig_start + Self::SIG_MAGIC.len()..].try_into().map_err(|_| "sig truncated")?;
                 let received_mac = u64::from_le_bytes(mac_bytes);
                 let msg = &data[..sig_start];
                 if let Some(expected_mac) = Self::compute_mac(msg) {
@@ -566,11 +581,13 @@ impl FederatedMesh {
 
 /// Parse a hex string of exactly 64 chars into 32 bytes.
 fn parse_hex_32(s: &str) -> Option<[u8; 32]> {
-    if s.len() != 64 { return None; }
+    if s.len() != 64 {
+        return None;
+    }
     let mut out = [0u8; 32];
     for i in 0..32 {
-        let hi = s.as_bytes().get(i*2)?;
-        let lo = s.as_bytes().get(i*2+1)?;
+        let hi = s.as_bytes().get(i * 2)?;
+        let lo = s.as_bytes().get(i * 2 + 1)?;
         let h = hex_digit(*hi)?;
         let l = hex_digit(*lo)?;
         out[i] = (h << 4) | l;
@@ -838,7 +855,8 @@ mod tests {
         std::env::set_var("OASIS_ED25519_SEED", seed_hex);
 
         let mut mesh = FederatedMesh::new();
-        let mut axis = vz(); axis[0] = 1.0;
+        let mut axis = vz();
+        axis[0] = 1.0;
         mesh.pool_push_test(axis, 0.5, 1.0, 0.3);
 
         let path = std::env::temp_dir().join("oasis_ed25519_roundtrip.bin");
@@ -852,9 +870,7 @@ mod tests {
         let full_sig = FederatedMesh::compute_signature_full(msg).expect("full sig");
         // Independently verify via ed25519-compact
         let seed_bytes = parse_hex_32(seed_hex).unwrap();
-        let kp = ed25519_compact::KeyPair::from_seed(
-            ed25519_compact::Seed::from_slice(&seed_bytes).unwrap()
-        );
+        let kp = ed25519_compact::KeyPair::from_seed(ed25519_compact::Seed::from_slice(&seed_bytes).unwrap());
         let sig = ed25519_compact::Signature::from_slice(&full_sig).unwrap();
         kp.pk.verify(msg, &sig).expect("independent Ed25519 verification");
 
@@ -874,7 +890,8 @@ mod tests {
         std::env::set_var("OASIS_ED25519_SEED", seed_hex);
 
         let mut mesh = FederatedMesh::new();
-        let mut axis = vz(); axis[1] = 1.0;
+        let mut axis = vz();
+        axis[1] = 1.0;
         mesh.pool_push_test(axis, 0.5, 1.0, 0.3);
 
         let path = std::env::temp_dir().join("oasis_ed25519_tamper.bin");
@@ -901,7 +918,8 @@ mod tests {
         let transport = InMemoryTransport::new();
 
         let mut mesh_a = FederatedMesh::new();
-        let mut axis = vz(); axis[0] = 1.0;
+        let mut axis = vz();
+        axis[0] = 1.0;
         mesh_a.pool_push_test(axis, 0.5, 1.0, 0.3);
         mesh_a.save_via(&transport, "peer_a").expect("save_via");
 

@@ -16,7 +16,7 @@
 //! statistical bands so callers can distinguish "real difference"
 //! from "measurement noise."
 
-use oasis_rt::{topics, mesh};
+use oasis_rt::{mesh, topics};
 use std::time::Instant;
 
 const K_REPEATS: usize = 10;
@@ -52,18 +52,22 @@ fn run_new(payload_size: usize, n: u32) -> f64 {
 
     for _ in 0..(n / 10).max(1) {
         let inner_len = topics::TOPIC_HEADER_LEN + payload.len();
-        let mesh_env = mesh_router.origin_wrap_with(inner_len, |buf| {
-            topics::write_topic_envelope_into(buf, topic_hash, &payload);
-        }).unwrap();
+        let mesh_env = mesh_router
+            .origin_wrap_with(inner_len, |buf| {
+                topics::write_topic_envelope_into(buf, topic_hash, &payload);
+            })
+            .unwrap();
         let inner = mesh::inner_slice(&mesh_env);
         router.dispatch(inner).unwrap();
     }
     let start = Instant::now();
     for _ in 0..n {
         let inner_len = topics::TOPIC_HEADER_LEN + payload.len();
-        let mesh_env = mesh_router.origin_wrap_with(inner_len, |buf| {
-            topics::write_topic_envelope_into(buf, topic_hash, &payload);
-        }).unwrap();
+        let mesh_env = mesh_router
+            .origin_wrap_with(inner_len, |buf| {
+                topics::write_topic_envelope_into(buf, topic_hash, &payload);
+            })
+            .unwrap();
         let inner = mesh::inner_slice(&mesh_env);
         router.dispatch(inner).unwrap();
     }
@@ -100,38 +104,25 @@ fn measure<F: FnMut(usize, u32) -> f64>(name: &str, payload: usize, n: u32, mut 
 fn main() {
     println!("OASIS payload sweep, K={} repeats per measurement", K_REPEATS);
     println!("(median ns/op ± half-spread; smaller spread = more reliable)\n");
-    println!("  {:>10}  {:>20}  {:>20}  {:>10}",
-             "payload", "OLD median (min-max)", "NEW median (min-max)", "speedup");
+    println!("  {:>10}  {:>20}  {:>20}  {:>10}", "payload", "OLD median (min-max)", "NEW median (min-max)", "speedup");
 
-    for &(name, size, n) in &[
-        ("16 B",     16,         100_000u32),
-        ("1 KB",     1024,        50_000u32),
-        ("64 KB",    64 * 1024,    5_000u32),
-        ("1 MB",     1024 * 1024,    500u32),
-    ] {
+    for &(name, size, n) in &[("16 B", 16, 100_000u32), ("1 KB", 1024, 50_000u32), ("64 KB", 64 * 1024, 5_000u32), ("1 MB", 1024 * 1024, 500u32)] {
         let old = measure("OLD", size, n, run_old);
         let new = measure("NEW", size, n, run_new);
         let speedup = old.median / new.median;
         // Worst-case (min OLD / max NEW) and best-case (max OLD / min NEW).
         let worst_speedup = old.min / new.max;
-        let best_speedup  = old.max / new.min;
-        println!("  {:>10}  {:>9.0} ({:>4.0}-{:>4.0})  {:>9.0} ({:>4.0}-{:>4.0})  {:>5.2}x [{:>4.2}-{:>4.2}]",
-                 name,
-                 old.median, old.min, old.max,
-                 new.median, new.min, new.max,
-                 speedup, worst_speedup, best_speedup);
+        let best_speedup = old.max / new.min;
+        println!(
+            "  {:>10}  {:>9.0} ({:>4.0}-{:>4.0})  {:>9.0} ({:>4.0}-{:>4.0})  {:>5.2}x [{:>4.2}-{:>4.2}]",
+            name, old.median, old.min, old.max, new.median, new.min, new.max, speedup, worst_speedup, best_speedup
+        );
     }
 
     // Spread report — how noisy is the bench itself?
     println!("\nNoise check (NEW path half-spread % of median):");
-    for &(name, size, n) in &[
-        ("16 B",     16,         100_000u32),
-        ("1 KB",     1024,        50_000u32),
-        ("64 KB",    64 * 1024,    5_000u32),
-        ("1 MB",     1024 * 1024,    500u32),
-    ] {
+    for &(name, size, n) in &[("16 B", 16, 100_000u32), ("1 KB", 1024, 50_000u32), ("64 KB", 64 * 1024, 5_000u32), ("1 MB", 1024 * 1024, 500u32)] {
         let new = measure("NEW", size, n, run_new);
-        println!("  {:>10}  median={:>9.0} ns  half-spread=±{:>5.1}%",
-                 name, new.median, new.half_spread_pct);
+        println!("  {:>10}  median={:>9.0} ns  half-spread=±{:>5.1}%", name, new.median, new.half_spread_pct);
     }
 }

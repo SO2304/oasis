@@ -5,11 +5,11 @@
 //!
 //! Severity: NOMINAL < RESISTANCE < ANOMALY < DYSMORPHIA (R16)
 
-use crate::vec::*;
-#[cfg(not(feature = "std"))]
-use alloc::{vec::Vec, string::String, vec, format};
 #[cfg(not(feature = "std"))]
 use crate::fmath::F64Ext;
+use crate::vec::*;
+#[cfg(not(feature = "std"))]
+use alloc::{format, string::String, vec, vec::Vec};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Severity {
@@ -327,8 +327,7 @@ mod tests {
             wild[0] = 100.0 + i as f64;
             eng.reflect(0, &wild, &effort);
             let p = eng.get_pain(0);
-            assert!((0.0..=5.0).contains(&p),
-                "pain escaped bounds at tick {}: {}", i, p);
+            assert!((0.0..=5.0).contains(&p), "pain escaped bounds at tick {}: {}", i, p);
         }
     }
 
@@ -354,8 +353,7 @@ mod tests {
         }
         let p = eng.get_pain(0);
         let expected = 2.84;
-        assert!((p - expected).abs() < 0.05,
-            "pain fixed-point: expected ~{} for mag 0.284 α=0.1, got {}", expected, p);
+        assert!((p - expected).abs() < 0.05, "pain fixed-point: expected ~{} for mag 0.284 α=0.1, got {}", expected, p);
     }
 
     /// Invariant 3 — severity monotonicity: larger deviation ⇒ ≥ severity.
@@ -366,21 +364,22 @@ mod tests {
             let pos = vz();
             let effort = vz();
             eng.predict(0, &pos, &effort, 0.5, 1.0);
-            let mut a = vz(); a[0] = mag;
+            let mut a = vz();
+            a[0] = mag;
             eng.reflect(0, &a, &effort).unwrap().severity
         }
         // Sweep magnitudes and check ordering
         let pairs = [(0.05, 0.1), (0.1, 0.2), (0.2, 0.5), (0.5, 1.0)];
         for &(low, high) in &pairs {
-            let s_low  = classify(low);
+            let s_low = classify(low);
             let s_high = classify(high);
             let ord = |s: Severity| match s {
-                Severity::Nominal => 0u32, Severity::Resistance => 1,
-                Severity::Anomaly => 2, Severity::Dysmorphia => 3,
+                Severity::Nominal => 0u32,
+                Severity::Resistance => 1,
+                Severity::Anomaly => 2,
+                Severity::Dysmorphia => 3,
             };
-            assert!(ord(s_high) >= ord(s_low),
-                "severity not monotonic: {:.2}→{:?} vs {:.2}→{:?}",
-                low, s_low, high, s_high);
+            assert!(ord(s_high) >= ord(s_low), "severity not monotonic: {:.2}→{:?} vs {:.2}→{:?}", low, s_low, high, s_high);
         }
     }
 
@@ -411,9 +410,7 @@ mod tests {
         assert!(learned.is_finite(), "responsivity became non-finite: {}", learned);
         // BUG FIX proof: learning actually happens (value changed from default).
         let default = 1.0 / (1.0 / true_resp);
-        assert!((learned - default).abs() > 1e-6,
-            "responsivity did not update — learning still broken (learned={}, default={})",
-            learned, default);
+        assert!((learned - default).abs() > 1e-6, "responsivity did not update — learning still broken (learned={}, default={})", learned, default);
     }
 
     /// Invariant 5 — pain decays toward the steady-state driven by the
@@ -429,7 +426,8 @@ mod tests {
         let effort = vz();
         // Inject initial pain
         eng.predict(0, &pos, &effort, 1.0, 1.0);
-        let mut bad = vz(); bad[0] = 0.5;
+        let mut bad = vz();
+        bad[0] = 0.5;
         eng.reflect(0, &bad, &effort);
         let p0 = eng.get_pain(0);
         assert!(p0 > 0.0);
@@ -442,9 +440,7 @@ mod tests {
         }
         let pn = eng.get_pain(0);
         let upper = p0 * 0.9f64.powi(n as i32) * 1.5 + 0.01;
-        assert!(pn <= upper,
-            "pain did not decay exponentially with mag=0: p0={} pn={} upper={}",
-            p0, pn, upper);
+        assert!(pn <= upper, "pain did not decay exponentially with mag=0: p0={} pn={} upper={}", p0, pn, upper);
     }
 }
 

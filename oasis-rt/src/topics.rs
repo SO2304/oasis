@@ -27,11 +27,15 @@
 //! to all subscribers anywhere in the mesh. Wrap inside SPORE\x07 → crypto.
 //! No ROS 2 equivalent ships this compositionally.
 
-use sha2::{Sha256, Digest};
+#[cfg(not(feature = "std"))]
+use alloc::{
+    collections::BTreeMap as HashMap,
+    string::{String, ToString},
+    vec::Vec,
+};
+use sha2::{Digest, Sha256};
 #[cfg(feature = "std")]
 use std::collections::HashMap;
-#[cfg(not(feature = "std"))]
-use alloc::{collections::BTreeMap as HashMap, string::{String, ToString}, vec::Vec};
 
 pub const SPORE_V9_MAGIC: &[u8] = b"SPORE\x09";
 pub const TOPIC_HEADER_LEN: usize = 6 + 8 + 4; // magic + hash + len
@@ -80,11 +84,17 @@ pub fn write_topic_envelope_into(buf: &mut Vec<u8>, hash: u64, payload: &[u8]) {
 
 /// Parse a topic envelope. Zero-copy payload slice.
 pub fn parse_topic(envelope: &[u8]) -> Result<(u64, &[u8]), &'static str> {
-    if envelope.len() < TOPIC_HEADER_LEN { return Err("topic envelope too short"); }
-    if &envelope[..6] != SPORE_V9_MAGIC { return Err("bad topic magic"); }
+    if envelope.len() < TOPIC_HEADER_LEN {
+        return Err("topic envelope too short");
+    }
+    if &envelope[..6] != SPORE_V9_MAGIC {
+        return Err("bad topic magic");
+    }
     let hash = u64::from_le_bytes(envelope[6..14].try_into().unwrap());
     let plen = u32::from_le_bytes(envelope[14..18].try_into().unwrap()) as usize;
-    if envelope.len() < TOPIC_HEADER_LEN + plen { return Err("topic payload truncated"); }
+    if envelope.len() < TOPIC_HEADER_LEN + plen {
+        return Err("topic payload truncated");
+    }
     Ok((hash, &envelope[TOPIC_HEADER_LEN..TOPIC_HEADER_LEN + plen]))
 }
 
@@ -99,7 +109,9 @@ pub struct TopicRouter {
 }
 
 impl Default for TopicRouter {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl TopicRouter {
@@ -119,7 +131,9 @@ impl TopicRouter {
         let (hash, payload) = parse_topic(envelope)?;
         let count = match self.subscribers.get(&hash) {
             Some(handlers) => {
-                for h in handlers { h(hash, payload); }
+                for h in handlers {
+                    h(hash, payload);
+                }
                 handlers.len() as u32
             }
             None => 0,
@@ -284,7 +298,9 @@ mod tests {
         let env = wrap_topic("/fast", b"x");
         let start = std::time::Instant::now();
         const N: u32 = 100_000;
-        for _ in 0..N { router.dispatch(&env).unwrap(); }
+        for _ in 0..N {
+            router.dispatch(&env).unwrap();
+        }
         let per_us = start.elapsed().as_nanos() as f64 / N as f64 / 1000.0;
         assert!(per_us < 2.0, "dispatch too slow: {} µs/op", per_us);
         eprintln!("topic dispatch latency: {:.2} µs/op", per_us);

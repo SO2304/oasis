@@ -53,10 +53,11 @@ fn main() {
         let blocked = signal > threshold;
         let latency = t0.elapsed().as_nanos();
 
-        println!("{},{},{:.4},{:.4},{}",
-            fault_id, latency, signal, threshold, blocked);
+        println!("{},{},{:.4},{:.4},{}", fault_id, latency, signal, threshold, blocked);
         all_latencies.push(latency);
-        if blocked { blocked_count += 1; }
+        if blocked {
+            blocked_count += 1;
+        }
     }
 
     // Summary stats over all N_FAULTS samples. Emitted as comments so CSV
@@ -78,6 +79,5 @@ fn main() {
     eprintln!("#   p95  = {} ns", p95);
     eprintln!("#   p99  = {} ns", p99);
     eprintln!("#   max  = {} ns", max);
-    eprintln!("#   blocked (signal > threshold): {} / {} ({:.1}%)",
-              blocked_count, n, 100.0 * blocked_count as f64 / n as f64);
+    eprintln!("#   blocked (signal > threshold): {} / {} ({:.1}%)", blocked_count, n, 100.0 * blocked_count as f64 / n as f64);
 }

@@ -95,10 +95,10 @@ impl HardwareNoiseModel {
     /// estimates, NOT measured on real hardware.
     pub fn realistic_drone() -> Self {
         Self {
-            emi_per_envelope_prob:             0.005,         // 1 in 200 envelopes corrupted
-            tamp0_false_alarm_per_tick_prob:   1.0 / 200_000.0, // ~once per 56 virtual hours
-            i2c_clock_stretch_per_access_prob: 0.002,         // 1 in 500 SE accesses fails
-            brownout_per_tick_prob:            1.0 / 500_000.0, // ~once per 139 virtual hours
+            emi_per_envelope_prob: 0.005, // 1 in 200 envelopes corrupted
+            tamp0_false_alarm_per_tick_prob: 1.0 / 200_000.0, // ~once per 56 virtual hours
+            i2c_clock_stretch_per_access_prob: 0.002, // 1 in 500 SE accesses fails
+            brownout_per_tick_prob: 1.0 / 500_000.0, // ~once per 139 virtual hours
             emi_events_total: 0,
             tamp0_false_alarms_total: 0,
             i2c_clock_stretch_total: 0,
@@ -110,10 +110,10 @@ impl HardwareNoiseModel {
     /// poor power filtering. Stress test for the OASIS stack.
     pub fn harsh_environment() -> Self {
         Self {
-            emi_per_envelope_prob:             0.05,           // 1 in 20 envelopes
-            tamp0_false_alarm_per_tick_prob:   1.0 / 20_000.0, // ~once per 5.5 virtual hours
-            i2c_clock_stretch_per_access_prob: 0.02,           // 1 in 50 SE accesses fail
-            brownout_per_tick_prob:            1.0 / 50_000.0, // ~once per 13.9 virtual hours
+            emi_per_envelope_prob: 0.05,                     // 1 in 20 envelopes
+            tamp0_false_alarm_per_tick_prob: 1.0 / 20_000.0, // ~once per 5.5 virtual hours
+            i2c_clock_stretch_per_access_prob: 0.02,         // 1 in 50 SE accesses fail
+            brownout_per_tick_prob: 1.0 / 50_000.0,          // ~once per 13.9 virtual hours
             emi_events_total: 0,
             tamp0_false_alarms_total: 0,
             i2c_clock_stretch_total: 0,
@@ -158,7 +158,9 @@ impl HardwareNoiseModel {
         if rng.next_f64() < self.emi_per_envelope_prob {
             self.emi_events_total += 1;
             true
-        } else { false }
+        } else {
+            false
+        }
     }
 
     /// Roll for I2C clock-stretch on one SE access. If true, the caller
@@ -168,20 +170,26 @@ impl HardwareNoiseModel {
         if rng.next_f64() < self.i2c_clock_stretch_per_access_prob {
             self.i2c_clock_stretch_total += 1;
             true
-        } else { false }
+        } else {
+            false
+        }
     }
 
     /// Total events of any class.
     pub fn total_events(&self) -> u64 {
-        self.emi_events_total + self.tamp0_false_alarms_total
-            + self.i2c_clock_stretch_total + self.brownout_events_total
+        self.emi_events_total
+            + self.tamp0_false_alarms_total
+            + self.i2c_clock_stretch_total
+            + self.brownout_events_total
     }
 }
 
 /// Helper: corrupt one random byte of an envelope (simulates EMI
 /// bit-flip; mesh MAC/sig verify will reject).
 pub fn corrupt_envelope(envelope: &mut [u8], rng: &mut Rng) {
-    if envelope.is_empty() { return; }
+    if envelope.is_empty() {
+        return;
+    }
     let byte_idx = (rng.next_u64() as usize) % envelope.len();
     let bit_idx = (rng.next_u64() as u8) & 7;
     envelope[byte_idx] ^= 1 << bit_idx;
@@ -223,15 +231,23 @@ mod tests {
         }
         let mut emi_events = 0u64;
         for _ in 0..N {
-            if m.roll_emi(&mut rng) { emi_events += 1; }
+            if m.roll_emi(&mut rng) {
+                emi_events += 1;
+            }
         }
         // EMI expected: 100_000 × 0.005 = 500 ± 100 (3σ)
-        assert!(emi_events > 350 && emi_events < 650,
-            "EMI rate out of band: {} (expected ~500)", emi_events);
+        assert!(
+            emi_events > 350 && emi_events < 650,
+            "EMI rate out of band: {} (expected ~500)",
+            emi_events
+        );
         // Tick events (tamp0 + brownout): 100_000 × (1/200_000 + 1/500_000)
         // = 0.5 + 0.2 = 0.7 → expect 0-3 over 100k ticks
-        assert!(tick_events < 10,
-            "tick events too frequent: {}", tick_events);
+        assert!(
+            tick_events < 10,
+            "tick events too frequent: {}",
+            tick_events
+        );
     }
 
     #[test]
@@ -240,7 +256,9 @@ mod tests {
         let harsh = HardwareNoiseModel::harsh_environment();
         assert!(harsh.emi_per_envelope_prob > realistic.emi_per_envelope_prob);
         assert!(harsh.tamp0_false_alarm_per_tick_prob > realistic.tamp0_false_alarm_per_tick_prob);
-        assert!(harsh.i2c_clock_stretch_per_access_prob > realistic.i2c_clock_stretch_per_access_prob);
+        assert!(
+            harsh.i2c_clock_stretch_per_access_prob > realistic.i2c_clock_stretch_per_access_prob
+        );
         assert!(harsh.brownout_per_tick_prob > realistic.brownout_per_tick_prob);
     }
 
@@ -257,13 +275,13 @@ mod tests {
     fn corrupt_envelope_empty_is_safe() {
         let mut env: Vec<u8> = vec![];
         let mut rng = Rng::new(13);
-        corrupt_envelope(&mut env, &mut rng);   // must not panic
+        corrupt_envelope(&mut env, &mut rng); // must not panic
     }
 
     #[test]
     fn counters_increment_on_events() {
         let mut m = HardwareNoiseModel {
-            emi_per_envelope_prob: 1.0,            // always
+            emi_per_envelope_prob: 1.0, // always
             tamp0_false_alarm_per_tick_prob: 1.0,
             i2c_clock_stretch_per_access_prob: 1.0,
             brownout_per_tick_prob: 1.0,

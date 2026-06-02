@@ -32,9 +32,18 @@ fn jf(s: &str, k: &str) -> f64 {
 }
 fn jb(s: &str, k: &str, default: bool) -> bool {
     let p = format!("\"{}\":", k);
-    let i = match s.find(&p) { Some(i) => i, None => return default };
+    let i = match s.find(&p) {
+        Some(i) => i,
+        None => return default,
+    };
     let r = s[i + p.len()..].trim_start();
-    if r.starts_with("true") { true } else if r.starts_with("false") { false } else { default }
+    if r.starts_with("true") {
+        true
+    } else if r.starts_with("false") {
+        false
+    } else {
+        default
+    }
 }
 
 struct Drone {
@@ -95,13 +104,17 @@ fn build_world_for_alt(alt: f64) -> WorldModel {
         let mut c = vz();
         c[0] = *cx;
         c[1] = *cy;
-        if let Err(e) = w.try_add_zone(ZoneType::Repulsive, c, *intensity, *falloff) { eprintln!("[drone_bridge] zone cap hit: {:?}", e); }
+        if let Err(e) = w.try_add_zone(ZoneType::Repulsive, c, *intensity, *falloff) {
+            eprintln!("[drone_bridge] zone cap hit: {:?}", e);
+        }
     }
     for &(cx, cy) in &[(-2.5, 2.0_f64), (2.5, 2.0), (-2.5, -2.0), (2.5, -2.0)] {
         let mut c = vz();
         c[0] = cx;
         c[1] = cy;
-        if let Err(e) = w.try_add_zone(ZoneType::Entropy, c, 0.3, 1.0) { eprintln!("[drone_bridge] zone cap hit: {:?}", e); }
+        if let Err(e) = w.try_add_zone(ZoneType::Entropy, c, 0.3, 1.0) {
+            eprintln!("[drone_bridge] zone cap hit: {:?}", e);
+        }
     }
     w
 }
@@ -170,11 +183,8 @@ fn main() {
         .unwrap_or_else(|| if name == "supervisor" { 1.70 } else { 1.30 });
 
     // Canonical target catalog keyed by name — positions match OBSTACLES array.
-    let catalog: &[(&str, f64, f64)] = &[
-        ("cnc", -1.5, 1.0), ("press", 0.5, 0.0), ("welder", 1.8, -1.0),
-        ("assembly", 1.5, 1.5), ("rack1", -2.0, -0.5), ("rack2", 2.2, 0.8),
-        ("conv_w", -1.0, -1.5), ("conv_e", 1.0, -1.5),
-    ];
+    let catalog: &[(&str, f64, f64)] =
+        &[("cnc", -1.5, 1.0), ("press", 0.5, 0.0), ("welder", 1.8, -1.0), ("assembly", 1.5, 1.5), ("rack1", -2.0, -0.5), ("rack2", 2.2, 0.8), ("conv_w", -1.0, -1.5), ("conv_e", 1.0, -1.5)];
 
     // Extra CLI args = comma-separated target names to filter catalog (per-drone subset).
     // e.g. `drone_bridge d00 0 cnc,rack1,conv_w` — this drone only hunts those 3.
@@ -281,15 +291,19 @@ fn run_tick(d: &mut Drone, line: &str, out: &mut impl Write) {
     let imu_alive = jb(line, "imu_alive", true);
     let gps_alive = jb(line, "gps_alive", true);
     let sonar_alive = jb(line, "sonar_alive", true);
-    d.vitality.update(&[
-        (imu_alive, Vitality::Vital),
-        (gps_alive, Vitality::Vital),
-        (sonar_alive, Vitality::Important),
-    ]);
+    d.vitality.update(&[(imu_alive, Vitality::Vital), (gps_alive, Vitality::Vital), (sonar_alive, Vitality::Important)]);
     if d.vitality.level != d.prev_level {
-        eprintln!("[{}] ~~~ VITALITY {:?} → {:?} (imu={} gps={} sonar={} thr={:.2} ent+={:.2})",
-            d.name, d.prev_level, d.vitality.level, imu_alive, gps_alive, sonar_alive,
-            d.vitality.r14_threshold(), d.vitality.entropy_contribution);
+        eprintln!(
+            "[{}] ~~~ VITALITY {:?} → {:?} (imu={} gps={} sonar={} thr={:.2} ent+={:.2})",
+            d.name,
+            d.prev_level,
+            d.vitality.level,
+            imu_alive,
+            gps_alive,
+            sonar_alive,
+            d.vitality.r14_threshold(),
+            d.vitality.entropy_contribution
+        );
         d.prev_level = d.vitality.level;
     }
 
@@ -350,17 +364,19 @@ fn run_tick(d: &mut Drone, line: &str, out: &mut impl Write) {
     if d.stuck_count > 600 {
         if let Some((label, _, _)) = d.cur.clone() {
             // Merge with existing bad spot if within 0.30m, else add new.
-            let merged = d.bad_spots.iter_mut().find(|(bx, by, _, _)|
-                ((x - *bx).powi(2) + (y - *by).powi(2)).sqrt() < 0.30);
+            let merged = d.bad_spots.iter_mut().find(|(bx, by, _, _)| ((x - *bx).powi(2) + (y - *by).powi(2)).sqrt() < 0.30);
             if let Some(spot) = merged {
-                spot.2 = d.tick; spot.3 += 1;  // refresh timestamp, increment hit count
+                spot.2 = d.tick;
+                spot.3 += 1; // refresh timestamp, increment hit count
             } else {
                 d.bad_spots.push((x, y, d.tick, 1));
             }
-            eprintln!("[{}] !!! STUCK at ({:+.2},{:+.2}) tgt={} → bad_spot learned (total={})",
-                d.name, x, y, label, d.bad_spots.len());
+            eprintln!("[{}] !!! STUCK at ({:+.2},{:+.2}) tgt={} → bad_spot learned (total={})", d.name, x, y, label, d.bad_spots.len());
             // Share with peers via federation (digest)
-            let mut axis = vz(); axis[0] = x; axis[1] = y; axis[2] = alt;
+            let mut axis = vz();
+            axis[0] = x;
+            axis[1] = y;
+            axis[2] = alt;
             d.fed.pool_push_test(axis, 0.6, -1.0, d.agent.entropy);
             d.digests_emitted += 1;
             d.skip_target = Some(label);
@@ -398,9 +414,13 @@ fn run_tick(d: &mut Drone, line: &str, out: &mut impl Write) {
     // avoid places they previously got stuck. Intensity scales with hit count.
     d.world = build_world_for_alt(alt);
     for (bx, by, _t, hits) in &d.bad_spots {
-        let mut c = vz(); c[0] = *bx; c[1] = *by;
+        let mut c = vz();
+        c[0] = *bx;
+        c[1] = *by;
         let intensity = (0.8 + 0.3 * (*hits as f64).min(5.0)).min(2.0);
-        if let Err(e) = d.world.try_add_zone(ZoneType::Repulsive, c, intensity, 1.2) { eprintln!("[drone_bridge] cap hit at sensor reading: {:?}", e); }
+        if let Err(e) = d.world.try_add_zone(ZoneType::Repulsive, c, intensity, 1.2) {
+            eprintln!("[drone_bridge] cap hit at sensor reading: {:?}", e);
+        }
     }
     let (grad, _rep, _att, _wm_ent) = d.world.sample(&pos_v);
 
@@ -542,7 +562,9 @@ fn run_tick(d: &mut Drone, line: &str, out: &mut impl Write) {
     }
 
     // Mechanism 2 R14 — OASIS nervous layer gate. Skipped entirely in simple_nav stack.
-    if stack_is_full() && obs < 0.05 { inject_sensory(&mut d.agent, 0.8); }
+    if stack_is_full() && obs < 0.05 {
+        inject_sensory(&mut d.agent, 0.8);
+    }
     let mode = std::env::var("OASIS_GATE_MODE").unwrap_or_else(|_| "full".into());
     let signal = match mode.as_str() {
         "adaptive_nocouple" => d.agent.entropy,
@@ -551,8 +573,7 @@ fn run_tick(d: &mut Drone, line: &str, out: &mut impl Write) {
     // Adaptive R14: grow bump when sustained high entropy, decay when low.
     // Opt-in via OASIS_ADAPTIVE_R14=1. When enabled, threshold rises if the kernel has
     // been running hot for a long time — biological analogue of habituation at the gate.
-    let adaptive_r14: bool = std::env::var("OASIS_ADAPTIVE_R14")
-        .ok().map(|s| s == "1").unwrap_or(false);
+    let adaptive_r14: bool = std::env::var("OASIS_ADAPTIVE_R14").ok().map(|s| s == "1").unwrap_or(false);
     let base_threshold = match mode.as_str() {
         "none" => 2.0,
         "static" => 0.95,
@@ -576,16 +597,14 @@ fn run_tick(d: &mut Drone, line: &str, out: &mut impl Write) {
         if d.r14_blocks == 1 || d.r14_blocks % 50 == 0 {
             // OASIS_LOG_JSON=1 emits structured audit-friendly JSON line instead of prose.
             // Same stderr stream; downstream parsing / certification ingestion trivial.
-            let json_mode: bool = std::env::var("OASIS_LOG_JSON")
-                .ok().map(|s| s == "1").unwrap_or(false);
+            let json_mode: bool = std::env::var("OASIS_LOG_JSON").ok().map(|s| s == "1").unwrap_or(false);
             if json_mode {
                 eprintln!(
                     "{{\"evt\":\"r14_block\",\"drone\":\"{}\",\"tick\":{},\"mode\":\"{}\",\"signal\":{:.4},\"threshold\":{:.4},\"vitality\":\"{:?}\",\"blocks\":{}}}",
                     d.name, d.tick, mode, signal, threshold, d.vitality.level, d.r14_blocks
                 );
             } else {
-                eprintln!("[{}] ~~~ R14 BLOCK mode={} signal={:.3} thr={:.2} level={:?} (blocks={})",
-                    d.name, mode, signal, threshold, d.vitality.level, d.r14_blocks);
+                eprintln!("[{}] ~~~ R14 BLOCK mode={} signal={:.3} thr={:.2} level={:?} (blocks={})", d.name, mode, signal, threshold, d.vitality.level, d.r14_blocks);
             }
         }
     }
@@ -616,7 +635,9 @@ fn run_tick(d: &mut Drone, line: &str, out: &mut impl Write) {
         AgentMomentum { momentum: obs_m, entropy: e },
         AgentMomentum { momentum: fear_m, entropy: e },
     ];
-    if stack_is_full() { d.syn.update(&am); }
+    if stack_is_full() {
+        d.syn.update(&am);
+    }
 
     // Federation (Mechanism 11) — Transport-abstracted.
     // Uses FileTransport by default; can be swapped to LoRa / in-memory without changing this code.
@@ -646,7 +667,9 @@ fn run_tick(d: &mut Drone, line: &str, out: &mut impl Write) {
         if let Ok(peers) = std::env::var("OASIS_MESH_PEERS") {
             for peer in peers.split(',').map(str::trim).filter(|s| !s.is_empty()) {
                 if let Ok(n) = d.fed.merge_foreign_via(&transport, peer, 0.5) {
-                    if n > 0 { eprintln!("[{}] <<< MESH merged {} digests from {} (explicit)", d.name, n, peer); }
+                    if n > 0 {
+                        eprintln!("[{}] <<< MESH merged {} digests from {} (explicit)", d.name, n, peer);
+                    }
                 }
             }
         }
@@ -663,9 +686,13 @@ fn run_tick(d: &mut Drone, line: &str, out: &mut impl Write) {
             for entry in entries.flatten() {
                 let fname = entry.file_name();
                 let fname_str = fname.to_string_lossy();
-                if !fname_str.ends_with("_state.json") { continue; }
+                if !fname_str.ends_with("_state.json") {
+                    continue;
+                }
                 let peer = fname_str.trim_end_matches("_state.json");
-                if peer == d.name { continue; }
+                if peer == d.name {
+                    continue;
+                }
                 let p = format!("{}{}_state.json", shared(), peer);
                 if let Ok(c) = std::fs::read_to_string(&p) {
                     for lbl in parse_peer_inspected(&c) {
@@ -686,12 +713,11 @@ fn run_tick(d: &mut Drone, line: &str, out: &mut impl Write) {
     // the motor output. Negative weight (LTD via post-before-pre STDP) attenuates
     // motor commands when fear pattern is predictive. Positive weight amplifies.
     // Weight is clamped [-1.0, +1.0] by SynapticNetwork; we map to [0.3, 1.0] for safety.
-    let stdp_mode: bool = std::env::var("OASIS_STDP_DAMPENING")
-        .ok().map(|s| s == "1").unwrap_or(false);
+    let stdp_mode: bool = std::env::var("OASIS_STDP_DAMPENING").ok().map(|s| s == "1").unwrap_or(false);
     let dampen = if stdp_mode {
         match d.syn.weight_between(3, 0) {
-            Some(w) => ((1.0 + w) * 0.5).clamp(0.3, 1.0),  // w ∈ [-1,1] → factor ∈ [0.3, 1.0]
-            None => 1.0,  // no synapse formed yet → no dampening
+            Some(w) => ((1.0 + w) * 0.5).clamp(0.3, 1.0), // w ∈ [-1,1] → factor ∈ [0.3, 1.0]
+            None => 1.0,                                  // no synapse formed yet → no dampening
         }
     } else {
         d.emo.motor_dampening()

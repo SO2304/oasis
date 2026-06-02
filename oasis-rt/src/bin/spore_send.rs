@@ -44,9 +44,7 @@ fn main() -> ExitCode {
     let mut fed = build_demo_mesh();
     eprintln!("[spore_send] {} digests built", fed.digest_count());
 
-    let target = cfg.target.clone()
-        .or_else(|| std::env::var("OASIS_SPORE_TARGET").ok())
-        .unwrap_or_else(|| DEFAULT_MULTICAST.to_string());
+    let target = cfg.target.clone().or_else(|| std::env::var("OASIS_SPORE_TARGET").ok()).unwrap_or_else(|| DEFAULT_MULTICAST.to_string());
 
     if cfg.qr {
         match spore::encode_qr(&fed, 10) {
@@ -55,19 +53,19 @@ fn main() -> ExitCode {
                 eprintln!("[spore_send] QR: {} chars ({} digests)", qr.len(), fed.digest_count());
                 return ExitCode::SUCCESS;
             }
-            Err(e) => { eprintln!("[spore_send] QR encode failed: {}", e); return ExitCode::FAILURE; }
+            Err(e) => {
+                eprintln!("[spore_send] QR encode failed: {}", e);
+                return ExitCode::FAILURE;
+            }
         }
     }
 
     let result = if cfg.fragmented {
-        spore::broadcast_v2(&fed, &target, cfg.fec, cfg.repeat)
-            .map(|n| format!("v2 fragmented: {} bytes (fec={}, repeat={}) → {}", n, cfg.fec, cfg.repeat, target))
+        spore::broadcast_v2(&fed, &target, cfg.fec, cfg.repeat).map(|n| format!("v2 fragmented: {} bytes (fec={}, repeat={}) → {}", n, cfg.fec, cfg.repeat, target))
     } else if target == DEFAULT_MULTICAST {
-        spore::broadcast(&fed)
-            .map(|n| format!("v1 multicast: {} bytes → {}", n, DEFAULT_MULTICAST))
+        spore::broadcast(&fed).map(|n| format!("v1 multicast: {} bytes → {}", n, DEFAULT_MULTICAST))
     } else {
-        spore::unicast(&fed, &target)
-            .map(|n| format!("v1 unicast: {} bytes → {}", n, target))
+        spore::unicast(&fed, &target).map(|n| format!("v1 unicast: {} bytes → {}", n, target))
     };
 
     let _ = &mut fed; // suppress unused-mut warning when no QR path taken
@@ -98,14 +96,28 @@ fn parse_args(args: &[String]) -> Result<Cfg, String> {
     let mut i = 1;
     while i < args.len() {
         match args[i].as_str() {
-            "-h" | "--help" => { cfg.help = true; i += 1; }
-            "--qr" => { cfg.qr = true; i += 1; }
-            "--fragmented" => { cfg.fragmented = true; i += 1; }
-            "--fec" => { cfg.fec = true; i += 1; }
+            "-h" | "--help" => {
+                cfg.help = true;
+                i += 1;
+            }
+            "--qr" => {
+                cfg.qr = true;
+                i += 1;
+            }
+            "--fragmented" => {
+                cfg.fragmented = true;
+                i += 1;
+            }
+            "--fec" => {
+                cfg.fec = true;
+                i += 1;
+            }
             "--repeat" => {
                 let v = args.get(i + 1).ok_or("--repeat needs value")?;
                 cfg.repeat = v.parse().map_err(|_| format!("--repeat: bad u8 {}", v))?;
-                if cfg.repeat == 0 { return Err("--repeat must be ≥ 1".into()); }
+                if cfg.repeat == 0 {
+                    return Err("--repeat must be ≥ 1".into());
+                }
                 i += 2;
             }
             "--target" => {
@@ -135,11 +147,19 @@ fn print_usage() {
 
 fn build_demo_mesh() -> FederatedMesh {
     let mut fed = FederatedMesh::new();
-    let mut a1 = vz(); a1[10] = 0.1; a1[12] = 0.01; a1[35] = 0.5;
+    let mut a1 = vz();
+    a1[10] = 0.1;
+    a1[12] = 0.01;
+    a1[35] = 0.5;
     fed.pool_push_test(a1, 0.3, 1.0, 0.3);
-    let mut a2 = vz(); a2[50] = 0.8; a2[52] = 0.6; a2[54] = 0.3;
+    let mut a2 = vz();
+    a2[50] = 0.8;
+    a2[52] = 0.6;
+    a2[54] = 0.3;
     fed.pool_push_test(a2, 0.5, 1.0, 0.2);
-    let mut a3 = vz(); a3[50] = -0.5; a3[51] = 0.7;
+    let mut a3 = vz();
+    a3[50] = -0.5;
+    a3[51] = 0.7;
     fed.pool_push_test(a3, 0.4, -1.0, 0.6);
     fed
 }

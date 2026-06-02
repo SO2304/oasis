@@ -12,12 +12,12 @@
 #[cfg(not(feature = "std"))]
 extern crate alloc;
 
-pub mod fmath;
 pub mod audio;
 pub mod branching;
 pub mod dreams;
 pub mod efference;
 pub mod emotion;
+pub mod fmath;
 // federation: uses Ed25519 signing + state lookup + std collections
 // for federation digest exchange. Host-only at present (would need
 // a no_std refactor to ship on MCU).
@@ -36,17 +36,17 @@ pub mod reflex;
 #[cfg(feature = "std")]
 pub mod spinal;
 // spore: transport-layer (UdpSocket, fs, thread). Host-only.
+pub mod actions;
+pub mod mesh;
+pub mod nav;
+pub mod parameters;
+pub mod services;
 #[cfg(feature = "std_env")]
 pub mod spore;
 pub mod spore_crypto;
-pub mod mesh;
-pub mod topics;
-pub mod nav;
-pub mod services;
-pub mod actions;
-pub mod transforms;
 pub mod timers;
-pub mod parameters;
+pub mod topics;
+pub mod transforms;
 // mavlink_min: MAVLink v2 parser that uses std::io::Read/Write + time.
 // MCU users typically have their own MAVLink stack tied to their UART.
 #[cfg(feature = "std")]

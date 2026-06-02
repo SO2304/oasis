@@ -20,8 +20,8 @@
 //! per sync. With even modest fleet growth (10000 nodes × 100 rev),
 //! Pattern A breaks the R20 budget. Pattern B stays microsecond-class.
 
-use std::time::Instant;
 use std::collections::HashSet;
+use std::time::Instant;
 
 use oasis_rt::spore_crypto::RevocationList;
 
@@ -36,13 +36,13 @@ fn make_fp(i: u32) -> [u8; FP_LEN] {
 /// Pattern A — receiver knows N fleet fps; for each one, checks
 /// is_revoked() against a parsed RevocationList of M entries.
 /// Without entries() this was the only access pattern available.
-fn pattern_a_per_fleet_fp(rev: &RevocationList, fleet_fps: &[[u8; FP_LEN]])
-    -> (usize, u128)
-{
+fn pattern_a_per_fleet_fp(rev: &RevocationList, fleet_fps: &[[u8; FP_LEN]]) -> (usize, u128) {
     let t0 = Instant::now();
     let mut hits = 0;
     for fp in fleet_fps {
-        if rev.is_revoked(fp) { hits += 1; }
+        if rev.is_revoked(fp) {
+            hits += 1;
+        }
     }
     (hits, t0.elapsed().as_nanos())
 }
@@ -53,9 +53,7 @@ fn pattern_a_per_fleet_fp(rev: &RevocationList, fleet_fps: &[[u8; FP_LEN]])
 /// On the steady-state path, the local set lives across syncs and
 /// per-envelope checks are O(1) on host HashSet (or O(log M) on
 /// no_std BTreeSet alias — still independent of fleet size).
-fn pattern_b_iter_merge(rev: &RevocationList, fleet: &[[u8; FP_LEN]])
-    -> (usize, u128)
-{
+fn pattern_b_iter_merge(rev: &RevocationList, fleet: &[[u8; FP_LEN]]) -> (usize, u128) {
     let t0 = Instant::now();
     let mut local = HashSet::new();
     for fp in rev.fingerprints() {
@@ -63,7 +61,9 @@ fn pattern_b_iter_merge(rev: &RevocationList, fleet: &[[u8; FP_LEN]])
     }
     let mut hits = 0;
     for fp in fleet {
-        if local.contains(fp) { hits += 1; }
+        if local.contains(fp) {
+            hits += 1;
+        }
     }
     (hits, t0.elapsed().as_nanos())
 }
@@ -80,10 +80,16 @@ fn run_scenario(fleet_size: u32, rev_count: u32) {
 
     let (a_hits, a_ns) = pattern_a_per_fleet_fp(&rev, &fleet);
     let (b_hits, b_ns) = pattern_b_iter_merge(&rev, &fleet);
-    assert_eq!(a_hits, b_hits,
-        "patterns must agree on intersection size (revoked ∩ fleet)");
+    assert_eq!(
+        a_hits, b_hits,
+        "patterns must agree on intersection size (revoked ∩ fleet)"
+    );
 
-    let speedup = if b_ns > 0 { a_ns as f64 / b_ns as f64 } else { 0.0 };
+    let speedup = if b_ns > 0 {
+        a_ns as f64 / b_ns as f64
+    } else {
+        0.0
+    };
     println!(
         "  fleet={:>6}  rev={:>5}   intersection={:>4}   A: {:>11} ns   \
          B: {:>11} ns   speedup: {:>6.2}×",

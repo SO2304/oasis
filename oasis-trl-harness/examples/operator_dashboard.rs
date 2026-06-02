@@ -19,18 +19,24 @@
 use std::time::Instant;
 
 use oasis_rt::mesh::{
-    MeshDecision, MeshEdSeed, MeshPubRegistry, MeshRouter,
-    mesh_v10_pubkey_from_seed, BloomHealthSnapshot,
+    mesh_v10_pubkey_from_seed, BloomHealthSnapshot, MeshDecision, MeshEdSeed, MeshPubRegistry,
+    MeshRouter,
 };
-use oasis_rt::vec::{V, vz};
+use oasis_rt::vec::{vz, V};
 use oasis_rt::world_model::{WorldModel, ZoneType};
 use oasis_trl_harness::*;
 
-fn fp(b: u8) -> [u8; 8] { let mut f = [0u8; 8]; f[0] = b; f }
-fn seed(b: u8) -> MeshEdSeed { MeshEdSeed([b; 32]) }
+fn fp(b: u8) -> [u8; 8] {
+    let mut f = [0u8; 8];
+    f[0] = b;
+    f
+}
+fn seed(b: u8) -> MeshEdSeed {
+    MeshEdSeed([b; 32])
+}
 
 const TICKS_PER_VIRTUAL_HOUR: u64 = 3600;
-const VIRTUAL_HOURS_TO_SOAK: u64 = 72;        // 3 days
+const VIRTUAL_HOURS_TO_SOAK: u64 = 72; // 3 days
 const ADVERSARY_INTERVAL_TICKS: u64 = 30;
 
 /// Dashboard's decision after polling a router's snapshot.
@@ -46,9 +52,13 @@ enum DashboardAction {
 
 fn dashboard_assess(snap: &BloomHealthSnapshot) -> DashboardAction {
     let consumed = snap.capacity_consumed_milli();
-    if consumed >= 1000 { DashboardAction::Critical }
-    else if consumed >= 800 { DashboardAction::AlertResetNow }
-    else { DashboardAction::Ok }
+    if consumed >= 1000 {
+        DashboardAction::Critical
+    } else if consumed >= 800 {
+        DashboardAction::AlertResetNow
+    } else {
+        DashboardAction::Ok
+    }
 }
 
 fn main() {
@@ -72,9 +82,15 @@ fn main() {
 
     let mut world_a = WorldModel::new();
     let mut world_b = WorldModel::new();
-    let mut goal: V = vz(); goal[0] = 10.0; goal[1] = 10.0;
-    world_a.try_add_zone(ZoneType::Attractive, goal, 5.0, 8.0).expect("setup");
-    world_b.try_add_zone(ZoneType::Attractive, goal, 5.0, 8.0).expect("setup");
+    let mut goal: V = vz();
+    goal[0] = 10.0;
+    goal[1] = 10.0;
+    world_a
+        .try_add_zone(ZoneType::Attractive, goal, 5.0, 8.0)
+        .expect("setup");
+    world_b
+        .try_add_zone(ZoneType::Attractive, goal, 5.0, 8.0)
+        .expect("setup");
 
     let mut sensor_a = SensorNoiseModel::new(10.0);
     let mut sensor_b = SensorNoiseModel::new(10.0);
@@ -90,15 +106,18 @@ fn main() {
     let mut current_virtual_hour: u64 = 1;
     let mut dashboard_resets: u64 = 0;
 
-    println!("  {:>4}  {:>7}  {:>10}  {:>5}  {:>14}", "hour", "env/h", "cons_milli", "alert", "dash_action");
+    println!(
+        "  {:>4}  {:>7}  {:>10}  {:>5}  {:>14}",
+        "hour", "env/h", "cons_milli", "alert", "dash_action"
+    );
 
     let _t0 = Instant::now();
     for tick in 0..total_ticks {
-        for (s, w) in [(&mut sensor_a, &mut world_a),
-                       (&mut sensor_b, &mut world_b)].iter_mut() {
+        for (s, w) in [(&mut sensor_a, &mut world_a), (&mut sensor_b, &mut world_b)].iter_mut() {
             let v = s.sample(&mut rng);
             if (v - 10.0).abs() > 0.5 {
-                let mut c: V = vz(); c[0] = v;
+                let mut c: V = vz();
+                c[0] = v;
                 let _ = w.try_add_zone(ZoneType::Repulsive, c, 1.0, 0.5);
             }
         }
@@ -140,13 +159,20 @@ fn main() {
                 }
                 DashboardAction::Critical => "CRITICAL",
             };
-            println!("  {:>4}  {:>7}  {:>10}  {:>5}  {:>14}",
-                current_virtual_hour, current_hour_arrived,
+            println!(
+                "  {:>4}  {:>7}  {:>10}  {:>5}  {:>14}",
+                current_virtual_hour,
+                current_hour_arrived,
                 snap.capacity_consumed_milli(),
-                alert_str, action_str);
+                alert_str,
+                action_str
+            );
 
             // Operator acts on the alert: issue manual reset
-            if matches!(action, DashboardAction::AlertResetNow | DashboardAction::Critical) {
+            if matches!(
+                action,
+                DashboardAction::AlertResetNow | DashboardAction::Critical
+            ) {
                 router_b.bloom_reset();
                 dashboard_resets += 1;
             }
@@ -171,16 +197,25 @@ fn main() {
             let throughput_healthy = alert_throughput >= 3000;
             if early && throughput_healthy {
                 println!("  [PASS-1] alert fired EARLY (hour {} ≤ 20)", h);
-                println!("  [PASS-2] throughput at alert was HEALTHY ({} env/h ≥ 3000)", alert_throughput);
+                println!(
+                    "  [PASS-2] throughput at alert was HEALTHY ({} env/h ≥ 3000)",
+                    alert_throughput
+                );
                 println!("  [PASS-3] dashboard detected drift BEFORE throughput impact");
                 println!();
                 println!("  AE1 prediction CONFIRMED: snapshot-based dashboard");
                 println!("  detects FPR drift well before it impacts throughput.");
                 std::process::exit(0);
             } else {
-                eprintln!("  [PARTIAL] alert={} hour, throughput={} env/h", h, alert_throughput);
+                eprintln!(
+                    "  [PARTIAL] alert={} hour, throughput={} env/h",
+                    h, alert_throughput
+                );
                 eprintln!("    early?           {}", if early { "✓" } else { "✗" });
-                eprintln!("    healthy at alert? {}", if throughput_healthy { "✓" } else { "✗" });
+                eprintln!(
+                    "    healthy at alert? {}",
+                    if throughput_healthy { "✓" } else { "✗" }
+                );
                 std::process::exit(1);
             }
         }

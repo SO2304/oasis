@@ -25,7 +25,7 @@ const MAVLINK_IFLAG_SIGNED: u8 = 0x01;
 /// Compute 6-byte MAVLink v2 signature over the given frame (header+payload+CRC) + 7-byte suffix
 /// (link_id + 6-byte timestamp). Returns `None` if secret key missing.
 pub fn compute_mav_signature(secret_key_32: &[u8; 32], frame_without_sig: &[u8], link_id: u8, timestamp: u64) -> [u8; 6] {
-    use sha2::{Sha256, Digest};
+    use sha2::{Digest, Sha256};
     let mut hasher = Sha256::new();
     hasher.update(secret_key_32);
     hasher.update(frame_without_sig);
@@ -55,7 +55,9 @@ pub fn sign_frame(frame: Vec<u8>, secret_key_32: &[u8; 32], link_id: u8, timesta
 /// Verify a signed MAVLink v2 frame. Expects 13-byte signature tail after standard frame.
 /// Returns true if signature matches.
 pub fn verify_signature(frame_full: &[u8], secret_key_32: &[u8; 32]) -> bool {
-    if frame_full.len() < 12 + 13 { return false; }
+    if frame_full.len() < 12 + 13 {
+        return false;
+    }
     let sig_start = frame_full.len() - 13;
     let msg = &frame_full[..sig_start];
     let link_id = frame_full[sig_start];
@@ -69,7 +71,9 @@ pub fn verify_signature(frame_full: &[u8], secret_key_32: &[u8; 32]) -> bool {
 
 /// Extract (link_id, timestamp) from a signed frame without verifying signature.
 pub fn extract_link_and_timestamp(frame_full: &[u8]) -> Option<(u8, u64)> {
-    if frame_full.len() < 12 + 13 { return None; }
+    if frame_full.len() < 12 + 13 {
+        return None;
+    }
     let sig_start = frame_full.len() - 13;
     let link_id = frame_full[sig_start];
     let mut ts_arr = [0u8; 8];
@@ -132,7 +136,9 @@ impl ReplayState {
     /// strictly > stored highwater), `false` if it's a replay or disallowed link.
     /// On accept, updates internal highwater.
     pub fn check_and_update(&mut self, link_id: u8, timestamp: u64) -> bool {
-        if !self.is_link_allowed(link_id) { return false; }
+        if !self.is_link_allowed(link_id) {
+            return false;
+        }
         let idx = link_id as usize;
         if timestamp > self.highwater[idx] {
             self.highwater[idx] = timestamp;
@@ -162,8 +168,12 @@ impl ReplayState {
             None => (0u8, [0u64; 4]),
         };
         buf.push(flag);
-        for w in &mask { buf.extend_from_slice(&w.to_le_bytes()); }
-        for w in &self.highwater { buf.extend_from_slice(&w.to_le_bytes()); }
+        for w in &mask {
+            buf.extend_from_slice(&w.to_le_bytes());
+        }
+        for w in &self.highwater {
+            buf.extend_from_slice(&w.to_le_bytes());
+        }
         // Atomic write: write to .tmp, then rename. Prevents torn writes from
         // mid-write crash (Windows doesn't guarantee atomic fs::write).
         let tmp = format!("{}.tmp", path);
@@ -174,10 +184,15 @@ impl ReplayState {
     pub fn load(path: &str) -> Result<Self, &'static str> {
         let data = std::fs::read(path).map_err(|_| "read failed")?;
         let expected_len = Self::RS_MAGIC.len() + 1 + 32 + 2048;
-        if data.len() != expected_len { return Err("bad length"); }
-        if &data[..Self::RS_MAGIC.len()] != Self::RS_MAGIC { return Err("bad magic"); }
+        if data.len() != expected_len {
+            return Err("bad length");
+        }
+        if &data[..Self::RS_MAGIC.len()] != Self::RS_MAGIC {
+            return Err("bad magic");
+        }
         let mut pos = Self::RS_MAGIC.len();
-        let flag = data[pos]; pos += 1;
+        let flag = data[pos];
+        pos += 1;
         let mut mask = [0u64; 4];
         for w in mask.iter_mut() {
             *w = u64::from_le_bytes(data[pos..pos + 8].try_into().unwrap());
@@ -188,15 +203,14 @@ impl ReplayState {
             *w = u64::from_le_bytes(data[pos..pos + 8].try_into().unwrap());
             pos += 8;
         }
-        Ok(Self {
-            highwater,
-            allowed_mask: if flag == 1 { Some(mask) } else { None },
-        })
+        Ok(Self { highwater, allowed_mask: if flag == 1 { Some(mask) } else { None } })
     }
 }
 
 impl Default for ReplayState {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 /// CRC-16/MCRF4XX (MAVLink "X.25" CRC): poly 0x1021, init 0xFFFF, refin=true, refout=true.
@@ -212,7 +226,9 @@ fn crc_accumulate(data: u8, crc: u16) -> u16 {
 
 fn crc_over(bytes: &[u8], extra: u8) -> u16 {
     let mut crc = 0xFFFFu16;
-    for &b in bytes { crc = crc_accumulate(b, crc); }
+    for &b in bytes {
+        crc = crc_accumulate(b, crc);
+    }
     crc = crc_accumulate(extra, crc);
     crc
 }
@@ -222,21 +238,21 @@ fn crc_over(bytes: &[u8], extra: u8) -> u16 {
 /// Only the 6 messages we parse/encode are populated; others → None → CRC unchecked.
 fn crc_extra_for(msgid: u32) -> Option<u8> {
     match msgid {
-        0   => Some(50),   // HEARTBEAT
-        1   => Some(124),  // SYS_STATUS
-        11  => Some(89),   // SET_MODE
-        22  => Some(220),  // PARAM_VALUE
-        23  => Some(168),  // PARAM_SET
-        30  => Some(39),   // ATTITUDE                    (pymavlink default)
-        31  => Some(246),  // ATTITUDE_QUATERNION         (PX4 native)
-        32  => Some(185),  // LOCAL_POSITION_NED          (PX4 native)
-        33  => Some(104),  // GLOBAL_POSITION_INT         (pymavlink default)
-        74  => Some(20),   // VFR_HUD                     (PX4 native)
-        76  => Some(152),  // COMMAND_LONG
-        77  => Some(143),  // COMMAND_ACK
-        84  => Some(143),  // SET_POSITION_TARGET_LOCAL_NED
-        132 => Some(85),   // DISTANCE_SENSOR
-        _   => None,
+        0 => Some(50),   // HEARTBEAT
+        1 => Some(124),  // SYS_STATUS
+        11 => Some(89),  // SET_MODE
+        22 => Some(220), // PARAM_VALUE
+        23 => Some(168), // PARAM_SET
+        30 => Some(39),  // ATTITUDE                    (pymavlink default)
+        31 => Some(246), // ATTITUDE_QUATERNION         (PX4 native)
+        32 => Some(185), // LOCAL_POSITION_NED          (PX4 native)
+        33 => Some(104), // GLOBAL_POSITION_INT         (pymavlink default)
+        74 => Some(20),  // VFR_HUD                     (PX4 native)
+        76 => Some(152), // COMMAND_LONG
+        77 => Some(143), // COMMAND_ACK
+        84 => Some(143), // SET_POSITION_TARGET_LOCAL_NED
+        132 => Some(85), // DISTANCE_SENSOR
+        _ => None,
     }
 }
 
@@ -254,24 +270,107 @@ pub struct MavHeader {
 
 #[derive(Debug, Clone)]
 pub enum MavMsg {
-    Heartbeat { type_: u8, autopilot: u8, base_mode: u8, custom_mode: u32, system_status: u8 },
-    Attitude { time_boot_ms: u32, roll: f32, pitch: f32, yaw: f32, rollspeed: f32, pitchspeed: f32, yawspeed: f32 },
+    Heartbeat {
+        type_: u8,
+        autopilot: u8,
+        base_mode: u8,
+        custom_mode: u32,
+        system_status: u8,
+    },
+    Attitude {
+        time_boot_ms: u32,
+        roll: f32,
+        pitch: f32,
+        yaw: f32,
+        rollspeed: f32,
+        pitchspeed: f32,
+        yawspeed: f32,
+    },
     /// PX4 native attitude: quaternion q1..q4 (w,x,y,z) + body-rates.
-    AttitudeQuaternion { time_boot_ms: u32, q1: f32, q2: f32, q3: f32, q4: f32, rollspeed: f32, pitchspeed: f32, yawspeed: f32 },
-    GlobalPositionInt { time_boot_ms: u32, lat: i32, lon: i32, alt: i32, relative_alt: i32, vx: i16, vy: i16, vz: i16, hdg: u16 },
+    AttitudeQuaternion {
+        time_boot_ms: u32,
+        q1: f32,
+        q2: f32,
+        q3: f32,
+        q4: f32,
+        rollspeed: f32,
+        pitchspeed: f32,
+        yawspeed: f32,
+    },
+    GlobalPositionInt {
+        time_boot_ms: u32,
+        lat: i32,
+        lon: i32,
+        alt: i32,
+        relative_alt: i32,
+        vx: i16,
+        vy: i16,
+        vz: i16,
+        hdg: u16,
+    },
     /// PX4 native position in local NED frame (meters).
-    LocalPositionNed { time_boot_ms: u32, x: f32, y: f32, z: f32, vx: f32, vy: f32, vz: f32 },
+    LocalPositionNed {
+        time_boot_ms: u32,
+        x: f32,
+        y: f32,
+        z: f32,
+        vx: f32,
+        vy: f32,
+        vz: f32,
+    },
     /// Consolidated attitude + speed (common PX4 stream).
-    VfrHud { airspeed: f32, groundspeed: f32, heading: i16, throttle: u16, alt: f32, climb: f32 },
-    DistanceSensor { time_boot_ms: u32, min_distance: u16, max_distance: u16, current_distance: u16, type_: u8, id: u8, orientation: u8, covariance: u8 },
+    VfrHud {
+        airspeed: f32,
+        groundspeed: f32,
+        heading: i16,
+        throttle: u16,
+        alt: f32,
+        climb: f32,
+    },
+    DistanceSensor {
+        time_boot_ms: u32,
+        min_distance: u16,
+        max_distance: u16,
+        current_distance: u16,
+        type_: u8,
+        id: u8,
+        orientation: u8,
+        covariance: u8,
+    },
     /// Response to a COMMAND_LONG. Result codes: 0=ACCEPTED, 1=TEMPORARILY_REJECTED,
     /// 2=DENIED, 3=UNSUPPORTED, 4=FAILED, 5=IN_PROGRESS, 6=CANCELLED.
-    CommandAck { command: u16, result: u8 },
+    CommandAck {
+        command: u16,
+        result: u8,
+    },
     /// PARAM_VALUE response (after PARAM_SET or PARAM_REQUEST). Contains the param
     /// identifier (up to 16 ASCII chars) and its new value.
-    ParamValue { param_id: [u8; 16], param_value: f32, param_type: u8, param_index: u16, param_count: u16 },
-    SysStatus { sensors_present: u32, sensors_enabled: u32, sensors_health: u32, load: u16, voltage_battery: u16, current_battery: i16, battery_remaining: i8, drop_rate_comm: u16, errors_comm: u16, errors_count1: u16, errors_count2: u16, errors_count3: u16, errors_count4: u16 },
-    Unknown { msgid: u32, payload: Vec<u8> },
+    ParamValue {
+        param_id: [u8; 16],
+        param_value: f32,
+        param_type: u8,
+        param_index: u16,
+        param_count: u16,
+    },
+    SysStatus {
+        sensors_present: u32,
+        sensors_enabled: u32,
+        sensors_health: u32,
+        load: u16,
+        voltage_battery: u16,
+        current_battery: i16,
+        battery_remaining: i8,
+        drop_rate_comm: u16,
+        errors_comm: u16,
+        errors_count1: u16,
+        errors_count2: u16,
+        errors_count3: u16,
+        errors_count4: u16,
+    },
+    Unknown {
+        msgid: u32,
+        payload: Vec<u8>,
+    },
 }
 
 /// Parse a signed MAVLink v2 frame WITH replay protection.
@@ -280,14 +379,17 @@ pub enum MavMsg {
 /// Unsigned frames pass through (no replay check possible) UNLESS
 /// OASIS_MAVLINK_REQUIRE_SIGNED=1 is set — then unsigned frames are rejected.
 pub fn parse_frame_checked(bytes: &[u8], replay: &mut ReplayState) -> Option<(MavHeader, MavMsg)> {
-    if bytes.is_empty() { return None; }
+    if bytes.is_empty() {
+        return None;
+    }
     let is_signed = bytes.len() > 2 && (bytes[2] & MAVLINK_IFLAG_SIGNED) != 0;
 
     // Require-signed mode: reject any unsigned frame before even parsing.
     if !is_signed {
-        let require: bool = std::env::var("OASIS_MAVLINK_REQUIRE_SIGNED")
-            .ok().map(|s| s == "1").unwrap_or(false);
-        if require { return None; }
+        let require: bool = std::env::var("OASIS_MAVLINK_REQUIRE_SIGNED").ok().map(|s| s == "1").unwrap_or(false);
+        if require {
+            return None;
+        }
     }
 
     let (h, m) = parse_frame(bytes)?;
@@ -298,7 +400,7 @@ pub fn parse_frame_checked(bytes: &[u8], replay: &mut ReplayState) -> Option<(Ma
         if bytes.len() >= frame_end {
             if let Some((link_id, ts)) = extract_link_and_timestamp(&bytes[..frame_end]) {
                 if !replay.check_and_update(link_id, ts) {
-                    return None;  // replay or disallowed link rejected
+                    return None; // replay or disallowed link rejected
                 }
             }
         }
@@ -313,13 +415,19 @@ pub fn parse_frame_checked(bytes: &[u8], replay: &mut ReplayState) -> Option<(Ma
 /// with a ReplayState for defense-grade use.
 /// Unknown msgids bypass CRC check but still return Unknown variant.
 pub fn parse_frame(bytes: &[u8]) -> Option<(MavHeader, MavMsg)> {
-    if bytes.len() < 12 { return None; }
-    if bytes[0] != MAV_V2_MAGIC { return None; }
+    if bytes.len() < 12 {
+        return None;
+    }
+    if bytes[0] != MAV_V2_MAGIC {
+        return None;
+    }
     let len = bytes[1] as usize;
     let incompat_flags = bytes[2];
     let signed = (incompat_flags & MAVLINK_IFLAG_SIGNED) != 0;
     let total_needed = 10 + len + 2 + if signed { 13 } else { 0 };
-    if bytes.len() < total_needed { return None; }
+    if bytes.len() < total_needed {
+        return None;
+    }
 
     // If signed and we have a key, verify signature
     if signed {
@@ -346,7 +454,9 @@ pub fn parse_frame(bytes: &[u8]) -> Option<(MavHeader, MavMsg)> {
         let crc_region = &bytes[1..10 + len];
         let computed = crc_over(crc_region, extra);
         let frame_crc = u16::from_le_bytes([bytes[10 + len], bytes[10 + len + 1]]);
-        if computed != frame_crc { return None; }
+        if computed != frame_crc {
+            return None;
+        }
     }
 
     let payload = &bytes[10..10 + len];
@@ -358,7 +468,9 @@ pub fn parse_frame(bytes: &[u8]) -> Option<(MavHeader, MavMsg)> {
 /// Returns None if unset or malformed.
 fn load_signing_key() -> Option<[u8; 32]> {
     let hex = std::env::var("OASIS_MAVLINK_SECRET").ok()?;
-    if hex.len() != 64 { return None; }
+    if hex.len() != 64 {
+        return None;
+    }
     let mut key = [0u8; 32];
     for i in 0..32 {
         let hi = hex_digit(hex.as_bytes()[i * 2])?;
@@ -382,11 +494,20 @@ fn hex_digit(b: u8) -> Option<u8> {
 /// `command` = MAV_CMD constant (400 = COMPONENT_ARM_DISARM).
 /// `param1` = typically 1.0 to arm, 0.0 to disarm.
 pub fn encode_command_long(
-    seq: u8, sysid: u8, compid: u8,
-    target_sys: u8, target_comp: u8,
-    command: u16, confirmation: u8,
-    param1: f32, param2: f32, param3: f32,
-    param4: f32, param5: f32, param6: f32, param7: f32,
+    seq: u8,
+    sysid: u8,
+    compid: u8,
+    target_sys: u8,
+    target_comp: u8,
+    command: u16,
+    confirmation: u8,
+    param1: f32,
+    param2: f32,
+    param3: f32,
+    param4: f32,
+    param5: f32,
+    param6: f32,
+    param7: f32,
 ) -> Vec<u8> {
     let mut payload = vec![0u8; 33];
     payload[0..4].copy_from_slice(&param1.to_le_bytes());
@@ -405,8 +526,11 @@ pub fn encode_command_long(
     let mut frame = Vec::with_capacity(12 + 33);
     frame.push(MAV_V2_MAGIC);
     frame.push(33);
-    frame.push(0); frame.push(0);
-    frame.push(seq); frame.push(sysid); frame.push(compid);
+    frame.push(0);
+    frame.push(0);
+    frame.push(seq);
+    frame.push(sysid);
+    frame.push(compid);
     frame.push((msgid & 0xFF) as u8);
     frame.push(((msgid >> 8) & 0xFF) as u8);
     frame.push(((msgid >> 16) & 0xFF) as u8);
@@ -431,8 +555,11 @@ pub fn encode_set_mode(seq: u8, sysid: u8, compid: u8, target_sys: u8, base_mode
     let mut frame = Vec::with_capacity(12 + 6);
     frame.push(MAV_V2_MAGIC);
     frame.push(6);
-    frame.push(0); frame.push(0);
-    frame.push(seq); frame.push(sysid); frame.push(compid);
+    frame.push(0);
+    frame.push(0);
+    frame.push(seq);
+    frame.push(sysid);
+    frame.push(compid);
     frame.push((msgid & 0xFF) as u8);
     frame.push(((msgid >> 8) & 0xFF) as u8);
     frame.push(((msgid >> 16) & 0xFF) as u8);
@@ -456,14 +583,17 @@ pub fn encode_param_set(seq: u8, sysid: u8, compid: u8, target_sys: u8, target_c
     let id_bytes = param_id.as_bytes();
     let n = id_bytes.len().min(16);
     payload[6..6 + n].copy_from_slice(&id_bytes[..n]);
-    payload[22] = 9;  // MAV_PARAM_TYPE_REAL32
+    payload[22] = 9; // MAV_PARAM_TYPE_REAL32
 
     let msgid: u32 = 23;
     let mut frame = Vec::with_capacity(12 + 23);
     frame.push(MAV_V2_MAGIC);
     frame.push(23);
-    frame.push(0); frame.push(0);
-    frame.push(seq); frame.push(sysid); frame.push(compid);
+    frame.push(0);
+    frame.push(0);
+    frame.push(seq);
+    frame.push(sysid);
+    frame.push(compid);
     frame.push((msgid & 0xFF) as u8);
     frame.push(((msgid >> 8) & 0xFF) as u8);
     frame.push(((msgid >> 16) & 0xFF) as u8);
@@ -480,18 +610,21 @@ pub fn encode_param_set(seq: u8, sysid: u8, compid: u8, target_sys: u8, target_c
 pub fn encode_heartbeat(seq: u8, sysid: u8, compid: u8) -> Vec<u8> {
     let mut payload = vec![0u8; 9];
     // custom_mode (u32) = 0
-    payload[4] = 2;   // type = MAV_TYPE_QUADROTOR
-    payload[5] = 12;  // autopilot = MAV_AUTOPILOT_PX4
-    payload[6] = 0;   // base_mode
-    payload[7] = 4;   // system_status = MAV_STATE_ACTIVE
-    payload[8] = 3;   // mavlink_version
+    payload[4] = 2; // type = MAV_TYPE_QUADROTOR
+    payload[5] = 12; // autopilot = MAV_AUTOPILOT_PX4
+    payload[6] = 0; // base_mode
+    payload[7] = 4; // system_status = MAV_STATE_ACTIVE
+    payload[8] = 3; // mavlink_version
 
     let msgid: u32 = 0;
     let mut frame = Vec::with_capacity(12 + 9);
     frame.push(MAV_V2_MAGIC);
     frame.push(9);
-    frame.push(0); frame.push(0); // incompat, compat
-    frame.push(seq); frame.push(sysid); frame.push(compid);
+    frame.push(0);
+    frame.push(0); // incompat, compat
+    frame.push(seq);
+    frame.push(sysid);
+    frame.push(compid);
     frame.push((msgid & 0xFF) as u8);
     frame.push(((msgid >> 8) & 0xFF) as u8);
     frame.push(((msgid >> 16) & 0xFF) as u8);
@@ -517,16 +650,14 @@ fn pad_payload(p: &[u8], target_len: usize) -> std::borrow::Cow<'_, [u8]> {
 
 fn decode_payload(msgid: u32, p: &[u8]) -> MavMsg {
     match msgid {
-        0 => { // HEARTBEAT (9 bytes)
+        0 => {
+            // HEARTBEAT (9 bytes)
             let p = pad_payload(p, 9);
             let custom_mode = u32::from_le_bytes([p[0], p[1], p[2], p[3]]);
-            MavMsg::Heartbeat {
-                custom_mode,
-                type_: p[4], autopilot: p[5], base_mode: p[6],
-                system_status: p[7],
-            }
+            MavMsg::Heartbeat { custom_mode, type_: p[4], autopilot: p[5], base_mode: p[6], system_status: p[7] }
         }
-        30 => { // ATTITUDE (28 bytes)
+        30 => {
+            // ATTITUDE (28 bytes)
             let p = pad_payload(p, 28);
             MavMsg::Attitude {
                 time_boot_ms: u32::from_le_bytes(p[0..4].try_into().unwrap()),
@@ -538,7 +669,8 @@ fn decode_payload(msgid: u32, p: &[u8]) -> MavMsg {
                 yawspeed: f32::from_le_bytes(p[24..28].try_into().unwrap()),
             }
         }
-        33 => { // GLOBAL_POSITION_INT (28 bytes)
+        33 => {
+            // GLOBAL_POSITION_INT (28 bytes)
             let p = pad_payload(p, 28);
             MavMsg::GlobalPositionInt {
                 time_boot_ms: u32::from_le_bytes(p[0..4].try_into().unwrap()),
@@ -552,7 +684,8 @@ fn decode_payload(msgid: u32, p: &[u8]) -> MavMsg {
                 hdg: u16::from_le_bytes(p[26..28].try_into().unwrap()),
             }
         }
-        31 => { // ATTITUDE_QUATERNION (48 bytes; last 16 B are optional repr_offset_q, truncated often)
+        31 => {
+            // ATTITUDE_QUATERNION (48 bytes; last 16 B are optional repr_offset_q, truncated often)
             let p = pad_payload(p, 32); // need only first 32 B for core fields
             MavMsg::AttitudeQuaternion {
                 time_boot_ms: u32::from_le_bytes(p[0..4].try_into().unwrap()),
@@ -565,7 +698,8 @@ fn decode_payload(msgid: u32, p: &[u8]) -> MavMsg {
                 yawspeed: f32::from_le_bytes(p[28..32].try_into().unwrap()),
             }
         }
-        32 => { // LOCAL_POSITION_NED (28 bytes)
+        32 => {
+            // LOCAL_POSITION_NED (28 bytes)
             let p = pad_payload(p, 28);
             MavMsg::LocalPositionNed {
                 time_boot_ms: u32::from_le_bytes(p[0..4].try_into().unwrap()),
@@ -577,7 +711,8 @@ fn decode_payload(msgid: u32, p: &[u8]) -> MavMsg {
                 vz: f32::from_le_bytes(p[24..28].try_into().unwrap()),
             }
         }
-        74 => { // VFR_HUD (20 bytes)
+        74 => {
+            // VFR_HUD (20 bytes)
             let p = pad_payload(p, 20);
             MavMsg::VfrHud {
                 airspeed: f32::from_le_bytes(p[0..4].try_into().unwrap()),
@@ -588,14 +723,13 @@ fn decode_payload(msgid: u32, p: &[u8]) -> MavMsg {
                 throttle: u16::from_le_bytes(p[18..20].try_into().unwrap()),
             }
         }
-        77 => { // COMMAND_ACK (3 bytes minimal — extensions in v2 can add more)
+        77 => {
+            // COMMAND_ACK (3 bytes minimal — extensions in v2 can add more)
             let p = pad_payload(p, 3);
-            MavMsg::CommandAck {
-                command: u16::from_le_bytes(p[0..2].try_into().unwrap()),
-                result: p[2],
-            }
+            MavMsg::CommandAck { command: u16::from_le_bytes(p[0..2].try_into().unwrap()), result: p[2] }
         }
-        22 => { // PARAM_VALUE (25 bytes)
+        22 => {
+            // PARAM_VALUE (25 bytes)
             let p = pad_payload(p, 25);
             let mut param_id = [0u8; 16];
             param_id.copy_from_slice(&p[8..24]);
@@ -607,25 +741,37 @@ fn decode_payload(msgid: u32, p: &[u8]) -> MavMsg {
                 param_type: p[24],
             }
         }
-        132 => { // DISTANCE_SENSOR (14 bytes)
+        132 => {
+            // DISTANCE_SENSOR (14 bytes)
             let p = pad_payload(p, 14);
             MavMsg::DistanceSensor {
                 time_boot_ms: u32::from_le_bytes(p[0..4].try_into().unwrap()),
                 min_distance: u16::from_le_bytes(p[4..6].try_into().unwrap()),
                 max_distance: u16::from_le_bytes(p[6..8].try_into().unwrap()),
                 current_distance: u16::from_le_bytes(p[8..10].try_into().unwrap()),
-                type_: p[10], id: p[11], orientation: p[12], covariance: p[13],
+                type_: p[10],
+                id: p[11],
+                orientation: p[12],
+                covariance: p[13],
             }
         }
-        1 => { // SYS_STATUS (full 31 bytes; we read first 12 for health)
+        1 => {
+            // SYS_STATUS (full 31 bytes; we read first 12 for health)
             let p = pad_payload(p, 12);
             MavMsg::SysStatus {
                 sensors_present: u32::from_le_bytes(p[0..4].try_into().unwrap()),
                 sensors_enabled: u32::from_le_bytes(p[4..8].try_into().unwrap()),
                 sensors_health: u32::from_le_bytes(p[8..12].try_into().unwrap()),
-                load: 0, voltage_battery: 0, current_battery: 0,
-                battery_remaining: 0, drop_rate_comm: 0, errors_comm: 0,
-                errors_count1: 0, errors_count2: 0, errors_count3: 0, errors_count4: 0,
+                load: 0,
+                voltage_battery: 0,
+                current_battery: 0,
+                battery_remaining: 0,
+                drop_rate_comm: 0,
+                errors_comm: 0,
+                errors_count1: 0,
+                errors_count2: 0,
+                errors_count3: 0,
+                errors_count4: 0,
             }
         }
         _ => MavMsg::Unknown { msgid, payload: p.to_vec() },
@@ -650,8 +796,11 @@ pub fn encode_set_position_target(seq: u8, sysid: u8, compid: u8, target_sys: u8
     let mut frame = Vec::with_capacity(12 + 53);
     frame.push(MAV_V2_MAGIC);
     frame.push(53u8);
-    frame.push(0); frame.push(0); // incompat, compat
-    frame.push(seq); frame.push(sysid); frame.push(compid);
+    frame.push(0);
+    frame.push(0); // incompat, compat
+    frame.push(seq);
+    frame.push(sysid);
+    frame.push(compid);
     frame.push((msgid & 0xFF) as u8);
     frame.push(((msgid >> 8) & 0xFF) as u8);
     frame.push(((msgid >> 16) & 0xFF) as u8);
@@ -692,14 +841,17 @@ pub fn encode_position_setpoint(seq: u8, sysid: u8, compid: u8, target_sys: u8, 
     payload[48..50].copy_from_slice(&0x0DF8u16.to_le_bytes());
     payload[50] = target_sys;
     payload[51] = target_comp;
-    payload[52] = 1;  // MAV_FRAME_LOCAL_NED
+    payload[52] = 1; // MAV_FRAME_LOCAL_NED
 
     let msgid: u32 = 84;
     let mut frame = Vec::with_capacity(12 + 53);
     frame.push(MAV_V2_MAGIC);
     frame.push(53);
-    frame.push(0); frame.push(0);
-    frame.push(seq); frame.push(sysid); frame.push(compid);
+    frame.push(0);
+    frame.push(0);
+    frame.push(seq);
+    frame.push(sysid);
+    frame.push(compid);
     frame.push((msgid & 0xFF) as u8);
     frame.push(((msgid >> 8) & 0xFF) as u8);
     frame.push(((msgid >> 16) & 0xFF) as u8);
@@ -715,12 +867,23 @@ pub fn encode_position_setpoint(seq: u8, sysid: u8, compid: u8, target_sys: u8, 
 /// Accumulates partial state and emits a full line when position/attitude are both fresh.
 pub struct MavToOasisAccumulator {
     pub tick: u32,
-    pub x: f64, pub y: f64, pub alt: f64,
-    pub roll: f64, pub pitch: f64, pub gz: f64,
-    pub rf: f64, pub rl: f64, pub rr: f64, pub rb: f64,
-    pub vx: f64, pub vy: f64,
-    pub imu_alive: bool, pub gps_alive: bool, pub sonar_alive: bool,
-    has_attitude: bool, has_position: bool,
+    pub x: f64,
+    pub y: f64,
+    pub alt: f64,
+    pub roll: f64,
+    pub pitch: f64,
+    pub gz: f64,
+    pub rf: f64,
+    pub rl: f64,
+    pub rr: f64,
+    pub rb: f64,
+    pub vx: f64,
+    pub vy: f64,
+    pub imu_alive: bool,
+    pub gps_alive: bool,
+    pub sonar_alive: bool,
+    has_attitude: bool,
+    has_position: bool,
     /// Once LOCAL_POSITION_NED arrives, we lock position source to local frame.
     /// GLOBAL_POSITION_INT (lat/lon in 1e7 degrees) would otherwise overwrite with
     /// values in the wrong scale. PX4 streams both; local takes priority.
@@ -730,10 +893,24 @@ pub struct MavToOasisAccumulator {
 impl Default for MavToOasisAccumulator {
     fn default() -> Self {
         Self {
-            tick: 0, x: 0.0, y: 0.0, alt: 1.3, roll: 0.0, pitch: 0.0, gz: 0.0,
-            rf: 2.0, rl: 2.0, rr: 2.0, rb: 2.0, vx: 0.0, vy: 0.0,
-            imu_alive: true, gps_alive: true, sonar_alive: true,
-            has_attitude: false, has_position: false,
+            tick: 0,
+            x: 0.0,
+            y: 0.0,
+            alt: 1.3,
+            roll: 0.0,
+            pitch: 0.0,
+            gz: 0.0,
+            rf: 2.0,
+            rl: 2.0,
+            rr: 2.0,
+            rb: 2.0,
+            vx: 0.0,
+            vy: 0.0,
+            imu_alive: true,
+            gps_alive: true,
+            sonar_alive: true,
+            has_attitude: false,
+            has_position: false,
             local_position_seen: false,
         }
     }
@@ -758,9 +935,7 @@ impl MavToOasisAccumulator {
                 self.roll = sinr.atan2(cosr);
                 // pitch = asin(2(wy-zx))  (clamp for numerical safety)
                 let sinp = 2.0 * (w * y - z * x);
-                self.pitch = if sinp.abs() >= 1.0 {
-                    std::f64::consts::FRAC_PI_2.copysign(sinp)
-                } else { sinp.asin() };
+                self.pitch = if sinp.abs() >= 1.0 { std::f64::consts::FRAC_PI_2.copysign(sinp) } else { sinp.asin() };
                 self.gz = *yawspeed as f64;
                 self.has_attitude = true;
             }
@@ -795,11 +970,11 @@ impl MavToOasisAccumulator {
             MavMsg::LocalPositionNed { x, y, z, vx, vy, .. } => {
                 self.x = *x as f64;
                 self.y = *y as f64;
-                self.alt = -(*z as f64);  // NED z-down → OASIS altitude (z-up)
+                self.alt = -(*z as f64); // NED z-down → OASIS altitude (z-up)
                 self.vx = *vx as f64;
                 self.vy = *vy as f64;
                 self.has_position = true;
-                self.local_position_seen = true;  // lock position source to local
+                self.local_position_seen = true; // lock position source to local
             }
             MavMsg::DistanceSensor { current_distance, orientation, .. } => {
                 let m = *current_distance as f64 / 100.0;
@@ -823,7 +998,9 @@ impl MavToOasisAccumulator {
         }
     }
 
-    pub fn ready_to_emit(&self) -> bool { self.has_attitude && self.has_position }
+    pub fn ready_to_emit(&self) -> bool {
+        self.has_attitude && self.has_position
+    }
 
     pub fn to_oasis_json(&mut self) -> String {
         self.tick += 1;
@@ -850,8 +1027,11 @@ mod tests {
         let mut frame = Vec::new();
         frame.push(0xFD);
         frame.push(payload.len() as u8);
-        frame.push(0); frame.push(0);
-        frame.push(seq); frame.push(1); frame.push(1);
+        frame.push(0);
+        frame.push(0);
+        frame.push(seq);
+        frame.push(1);
+        frame.push(1);
         frame.push((msgid & 0xFF) as u8);
         frame.push(((msgid >> 8) & 0xFF) as u8);
         frame.push(((msgid >> 16) & 0xFF) as u8);
@@ -900,7 +1080,9 @@ mod tests {
         // CRC-16/MCRF4XX check vector for "123456789" (ASCII) with no extra = 0x6F91.
         // With extra=0: accumulate 9 bytes of "123456789", then 1 zero byte.
         let mut crc = 0xFFFFu16;
-        for b in b"123456789" { crc = crc_accumulate(*b, crc); }
+        for b in b"123456789" {
+            crc = crc_accumulate(*b, crc);
+        }
         // NOTE: standard MCRF4XX check is over "123456789" only (no extra); add extra=0 gives different value.
         // Here we just verify the 9-byte intermediate is stable/documented.
         // Standard library check vector is 0x6F91 for the 9 input bytes alone.
@@ -943,7 +1125,9 @@ mod tests {
         assert_eq!(h.seq, 42);
         match m {
             MavMsg::Heartbeat { type_, autopilot, system_status, .. } => {
-                assert_eq!(type_, 2); assert_eq!(autopilot, 12); assert_eq!(system_status, 4);
+                assert_eq!(type_, 2);
+                assert_eq!(autopilot, 12);
+                assert_eq!(system_status, 4);
             }
             _ => panic!("expected Heartbeat"),
         }
@@ -976,9 +1160,16 @@ mod tests {
         let mut payload = [0u8; 28];
         payload[4..8].copy_from_slice(&0.1f32.to_le_bytes());
         let mut frame = Vec::new();
-        frame.push(0xFD); frame.push(28); frame.push(MAVLINK_IFLAG_SIGNED); frame.push(0);
-        frame.push(seq); frame.push(sysid); frame.push(1);
-        frame.push(30); frame.push(0); frame.push(0);
+        frame.push(0xFD);
+        frame.push(28);
+        frame.push(MAVLINK_IFLAG_SIGNED);
+        frame.push(0);
+        frame.push(seq);
+        frame.push(sysid);
+        frame.push(1);
+        frame.push(30);
+        frame.push(0);
+        frame.push(0);
         frame.extend_from_slice(&payload);
         let crc = crc_over(&frame[1..], crc_extra_for(30).unwrap());
         frame.push((crc & 0xFF) as u8);
@@ -1030,8 +1221,7 @@ mod tests {
         assert!(parse_frame_checked(&a, &mut state).is_some());
         // Link 2 sends an earlier timestamp — that's fine, it's a different link.
         let b = build_signed_frame(2, 500, 1, 1, &key);
-        assert!(parse_frame_checked(&b, &mut state).is_some(),
-                "different link_id must not be affected by link 1 highwater");
+        assert!(parse_frame_checked(&b, &mut state).is_some(), "different link_id must not be affected by link 1 highwater");
         std::env::remove_var("OASIS_MAVLINK_SECRET");
     }
 
@@ -1097,20 +1287,25 @@ mod tests {
         let mut payload = [0u8; 28];
         payload[4..8].copy_from_slice(&0.1f32.to_le_bytes());
         let mut frame = Vec::new();
-        frame.push(0xFD); frame.push(28); frame.push(0); frame.push(0);
-        frame.push(1); frame.push(1); frame.push(1);
-        frame.push(30); frame.push(0); frame.push(0);
+        frame.push(0xFD);
+        frame.push(28);
+        frame.push(0);
+        frame.push(0);
+        frame.push(1);
+        frame.push(1);
+        frame.push(1);
+        frame.push(30);
+        frame.push(0);
+        frame.push(0);
         frame.extend_from_slice(&payload);
         let crc = crc_over(&frame[1..], crc_extra_for(30).unwrap());
         frame.push((crc & 0xFF) as u8);
         frame.push((crc >> 8) as u8);
         // With REQUIRE_SIGNED, parse_frame_checked must reject it.
-        assert!(parse_frame_checked(&frame, &mut state).is_none(),
-                "unsigned frame must be rejected when REQUIRE_SIGNED=1");
+        assert!(parse_frame_checked(&frame, &mut state).is_none(), "unsigned frame must be rejected when REQUIRE_SIGNED=1");
         // Without REQUIRE_SIGNED, the same frame must parse.
         std::env::remove_var("OASIS_MAVLINK_REQUIRE_SIGNED");
-        assert!(parse_frame_checked(&frame, &mut state).is_some(),
-                "unsigned frame accepted when REQUIRE_SIGNED unset");
+        assert!(parse_frame_checked(&frame, &mut state).is_some(), "unsigned frame accepted when REQUIRE_SIGNED unset");
     }
 
     #[test]
@@ -1131,7 +1326,7 @@ mod tests {
     fn replay_state_persistence_no_allowlist() {
         let tmp = std::env::temp_dir().join("oasis_replay_rt2.bin");
         let tmp_s = tmp.to_str().unwrap();
-        let mut state = ReplayState::new();  // no allowlist
+        let mut state = ReplayState::new(); // no allowlist
         state.check_and_update(99, 42);
         state.save(tmp_s).unwrap();
         let loaded = ReplayState::load(tmp_s).unwrap();
@@ -1153,9 +1348,16 @@ mod tests {
         let mut payload = [0u8; 28];
         payload[4..8].copy_from_slice(&0.1f32.to_le_bytes());
         let mut frame = Vec::new();
-        frame.push(0xFD); frame.push(28); frame.push(MAVLINK_IFLAG_SIGNED); frame.push(0);
-        frame.push(1); frame.push(1); frame.push(1);
-        frame.push(30); frame.push(0); frame.push(0);
+        frame.push(0xFD);
+        frame.push(28);
+        frame.push(MAVLINK_IFLAG_SIGNED);
+        frame.push(0);
+        frame.push(1);
+        frame.push(1);
+        frame.push(1);
+        frame.push(30);
+        frame.push(0);
+        frame.push(0);
         frame.extend_from_slice(&payload);
         let crc = crc_over(&frame[1..], crc_extra_for(30).unwrap());
         frame.push((crc & 0xFF) as u8);
@@ -1165,7 +1367,7 @@ mod tests {
 
         // Tamper in body
         let mut bad = signed.clone();
-        bad[5] ^= 0xFF;  // change sysid → invalidates signature
+        bad[5] ^= 0xFF; // change sysid → invalidates signature
         assert!(parse_frame(&bad).is_none(), "tampered signed frame must be rejected");
 
         std::env::remove_var("OASIS_MAVLINK_SECRET");
@@ -1177,7 +1379,7 @@ mod tests {
         assert_eq!(frame[0], 0xFD);
         assert_eq!(frame[1], 53);
         assert_eq!(frame[4], 42); // seq
-        // msgid 84 at offset 7
+                                  // msgid 84 at offset 7
         assert_eq!(frame[7], 84);
         assert_eq!(frame[8], 0);
         assert_eq!(frame[9], 0);
@@ -1261,8 +1463,8 @@ mod tests {
     #[test]
     fn parse_command_ack() {
         let mut payload = [0u8; 3];
-        payload[0..2].copy_from_slice(&400u16.to_le_bytes());  // COMPONENT_ARM_DISARM
-        payload[2] = 2;  // MAV_RESULT_DENIED (pre-arm check failed)
+        payload[0..2].copy_from_slice(&400u16.to_le_bytes()); // COMPONENT_ARM_DISARM
+        payload[2] = 2; // MAV_RESULT_DENIED (pre-arm check failed)
         let frame = build_frame(77, 1, &payload);
         let (_, m) = parse_frame(&frame).expect("COMMAND_ACK must parse");
         match m {
@@ -1280,7 +1482,7 @@ mod tests {
         payload[0..4].copy_from_slice(&1000u32.to_le_bytes());
         payload[4..8].copy_from_slice(&1.5f32.to_le_bytes());
         payload[8..12].copy_from_slice(&(-2.0f32).to_le_bytes());
-        payload[12..16].copy_from_slice(&(-1.3f32).to_le_bytes());  // NED z-down
+        payload[12..16].copy_from_slice(&(-1.3f32).to_le_bytes()); // NED z-down
         payload[16..20].copy_from_slice(&0.3f32.to_le_bytes());
         let frame = build_frame(32, 1, &payload);
         let (_, m) = parse_frame(&frame).expect("LOCAL_POSITION_NED");
@@ -1300,7 +1502,7 @@ mod tests {
         // Identity quaternion (w=1, x=y=z=0) → roll=pitch=yaw=0
         let mut payload = [0u8; 32];
         payload[0..4].copy_from_slice(&500u32.to_le_bytes());
-        payload[4..8].copy_from_slice(&1.0f32.to_le_bytes());   // w
+        payload[4..8].copy_from_slice(&1.0f32.to_le_bytes()); // w
         payload[8..12].copy_from_slice(&0.0f32.to_le_bytes());
         payload[12..16].copy_from_slice(&0.0f32.to_le_bytes());
         payload[16..20].copy_from_slice(&0.0f32.to_le_bytes());
@@ -1319,29 +1521,22 @@ mod tests {
         // the LOCAL_POSITION_NED-derived altitude. Adapter then logged junk z values.
         let mut acc = MavToOasisAccumulator::default();
         // Local position arrives first (drone at 2 m up): z = -2 → alt = 2
-        acc.apply(&MavMsg::LocalPositionNed {
-            time_boot_ms: 100, x: 0.0, y: 0.0, z: -2.0,
-            vx: 0.0, vy: 0.0, vz: 0.0,
-        });
+        acc.apply(&MavMsg::LocalPositionNed { time_boot_ms: 100, x: 0.0, y: 0.0, z: -2.0, vx: 0.0, vy: 0.0, vz: 0.0 });
         assert!((acc.alt - 2.0).abs() < 1e-5, "after LOCAL_POSITION_NED, alt must be 2.0");
         // Then PX4 spams VFR_HUD with MSL altitude (Zurich-ish)
-        acc.apply(&MavMsg::VfrHud {
-            airspeed: 0.0, groundspeed: 0.0,
-            alt: 491.0, climb: 0.0, heading: 0, throttle: 0,
-        });
-        assert!((acc.alt - 2.0).abs() < 1e-5,
-                "VFR_HUD must NOT overwrite alt once local position is locked, got {}", acc.alt);
+        acc.apply(&MavMsg::VfrHud { airspeed: 0.0, groundspeed: 0.0, alt: 491.0, climb: 0.0, heading: 0, throttle: 0 });
+        assert!((acc.alt - 2.0).abs() < 1e-5, "VFR_HUD must NOT overwrite alt once local position is locked, got {}", acc.alt);
     }
 
     #[test]
     fn parse_vfr_hud() {
         let mut payload = [0u8; 20];
-        payload[0..4].copy_from_slice(&10.0f32.to_le_bytes());  // airspeed
-        payload[4..8].copy_from_slice(&12.5f32.to_le_bytes());  // groundspeed
+        payload[0..4].copy_from_slice(&10.0f32.to_le_bytes()); // airspeed
+        payload[4..8].copy_from_slice(&12.5f32.to_le_bytes()); // groundspeed
         payload[8..12].copy_from_slice(&100.0f32.to_le_bytes()); // alt
         payload[12..16].copy_from_slice(&0.5f32.to_le_bytes()); // climb
-        payload[16..18].copy_from_slice(&45i16.to_le_bytes());  // heading
-        payload[18..20].copy_from_slice(&50u16.to_le_bytes());  // throttle
+        payload[16..18].copy_from_slice(&45i16.to_le_bytes()); // heading
+        payload[18..20].copy_from_slice(&50u16.to_le_bytes()); // throttle
         let frame = build_frame(74, 1, &payload);
         let (_, m) = parse_frame(&frame).expect("VFR_HUD");
         match m {
@@ -1361,20 +1556,13 @@ mod tests {
         // PX4 sends ATTITUDE_QUATERNION + LOCAL_POSITION_NED (not ATTITUDE + GLOBAL_POSITION_INT).
         // Accumulator must produce a valid OASIS JSON from PX4's native stream.
         let mut acc = MavToOasisAccumulator::default();
-        acc.apply(&MavMsg::AttitudeQuaternion {
-            time_boot_ms: 100, q1: 1.0, q2: 0.0, q3: 0.0, q4: 0.0,
-            rollspeed: 0.0, pitchspeed: 0.0, yawspeed: 0.2,
-        });
-        acc.apply(&MavMsg::LocalPositionNed {
-            time_boot_ms: 100, x: 1.0, y: 2.0, z: -1.3,
-            vx: 0.5, vy: -0.2, vz: 0.0,
-        });
+        acc.apply(&MavMsg::AttitudeQuaternion { time_boot_ms: 100, q1: 1.0, q2: 0.0, q3: 0.0, q4: 0.0, rollspeed: 0.0, pitchspeed: 0.0, yawspeed: 0.2 });
+        acc.apply(&MavMsg::LocalPositionNed { time_boot_ms: 100, x: 1.0, y: 2.0, z: -1.3, vx: 0.5, vy: -0.2, vz: 0.0 });
         assert!(acc.ready_to_emit(), "PX4 stream must trigger emit");
         let json = acc.to_oasis_json();
         assert!(json.contains("\"x\":1.0000"));
         assert!(json.contains("\"y\":2.0000"));
-        assert!(json.contains("\"alt\":1.3000"),
-                "NED z=-1.3 → altitude +1.3, got {}", json);
+        assert!(json.contains("\"alt\":1.3000"), "NED z=-1.3 → altitude +1.3, got {}", json);
         assert!(json.contains("\"gz\":0.2000"));
         // Verify JSON is parseable
         let _: serde_json::Value = serde_json::from_str(&json).expect("valid JSON");
@@ -1383,14 +1571,8 @@ mod tests {
     #[test]
     fn accumulator_produces_valid_oasis_json() {
         let mut acc = MavToOasisAccumulator::default();
-        acc.apply(&MavMsg::Attitude {
-            time_boot_ms: 0, roll: 0.1, pitch: 0.2, yaw: 0.3,
-            rollspeed: 0.0, pitchspeed: 0.0, yawspeed: 0.5,
-        });
-        acc.apply(&MavMsg::GlobalPositionInt {
-            time_boot_ms: 0, lat: 12345678, lon: 87654321, alt: 1300, relative_alt: 1300,
-            vx: 50, vy: -30, vz: 0, hdg: 0,
-        });
+        acc.apply(&MavMsg::Attitude { time_boot_ms: 0, roll: 0.1, pitch: 0.2, yaw: 0.3, rollspeed: 0.0, pitchspeed: 0.0, yawspeed: 0.5 });
+        acc.apply(&MavMsg::GlobalPositionInt { time_boot_ms: 0, lat: 12345678, lon: 87654321, alt: 1300, relative_alt: 1300, vx: 50, vy: -30, vz: 0, hdg: 0 });
         assert!(acc.ready_to_emit());
         let json = acc.to_oasis_json();
         assert!(json.contains("\"tick\":1"));

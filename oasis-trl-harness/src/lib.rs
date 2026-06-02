@@ -25,7 +25,9 @@ pub mod hardware_noise;
 use std::collections::HashSet;
 
 /// Deterministic xorshift PRNG so soak runs are reproducible.
-pub struct Rng { state: u64 }
+pub struct Rng {
+    state: u64,
+}
 
 impl Rng {
     pub fn new(seed: u64) -> Self {
@@ -67,18 +69,18 @@ impl SensorNoiseModel {
     pub fn new(nominal: f64) -> Self {
         Self {
             nominal,
-            gaussian_sigma: 0.05,         // ±5% typical sensor noise
-            drift_per_tick: 0.00005,      // ~5% drift over 1000 ticks
-            burst_prob: 0.001,            // 1 in 1000 ticks
-            burst_magnitude: 5.0,         // 5× nominal value
+            gaussian_sigma: 0.05,    // ±5% typical sensor noise
+            drift_per_tick: 0.00005, // ~5% drift over 1000 ticks
+            burst_prob: 0.001,       // 1 in 1000 ticks
+            burst_magnitude: 5.0,    // 5× nominal value
             accumulated_drift: 0.0,
         }
     }
 
     pub fn sample(&mut self, rng: &mut Rng) -> f64 {
         self.accumulated_drift += self.drift_per_tick;
-        let mut value = self.nominal + self.accumulated_drift
-            + rng.next_gaussian(0.0, self.gaussian_sigma);
+        let mut value =
+            self.nominal + self.accumulated_drift + rng.next_gaussian(0.0, self.gaussian_sigma);
         if rng.next_f64() < self.burst_prob {
             // Burst: a glitch reading way off
             value += self.burst_magnitude * if rng.next_f64() > 0.5 { 1.0 } else { -1.0 };
@@ -102,11 +104,11 @@ pub struct NetworkChannel {
 impl NetworkChannel {
     pub fn realistic_lora() -> Self {
         Self {
-            good_loss_prob: 0.01,        // 1% loss in good state
-            bad_loss_prob: 0.40,         // 40% loss in bad state (fading, interference)
-            good_to_bad: 0.005,          // rare transitions
-            bad_to_good: 0.05,           // shorter bad bursts
-            mean_latency_ms: 50,         // typical LoRa one-way
+            good_loss_prob: 0.01, // 1% loss in good state
+            bad_loss_prob: 0.40,  // 40% loss in bad state (fading, interference)
+            good_to_bad: 0.005,   // rare transitions
+            bad_to_good: 0.05,    // shorter bad bursts
+            mean_latency_ms: 50,  // typical LoRa one-way
             jitter_sigma_ms: 15,
             in_bad_state: false,
         }
@@ -133,7 +135,7 @@ impl NetworkChannel {
         // Latency: mean + Gaussian jitter, clamped to non-negative
         let lat = (self.mean_latency_ms as f64
             + rng.next_gaussian(0.0, self.jitter_sigma_ms as f64))
-            .max(1.0) as u32;
+        .max(1.0) as u32;
         (true, lat)
     }
 }
@@ -227,7 +229,9 @@ pub struct SoakMetrics {
 
 impl SoakMetrics {
     pub fn safety_ratio(&self) -> f64 {
-        if self.adversary_attempts == 0 { return 1.0; }
+        if self.adversary_attempts == 0 {
+            return 1.0;
+        }
         self.attacks_blocked as f64 / self.adversary_attempts as f64
     }
 }
@@ -262,8 +266,10 @@ mod proofs {
         let min = safety_ratio_a.min(safety_ratio_b).min(safety_ratio_c);
         // Spread bound: K=3 trials must spread less than 50 milli-units
         // (= 5% of safety ratio).
-        assert!(max - min < 50,
-            "cross-seed safety ratio spread MUST be < 5%");
+        assert!(
+            max - min < 50,
+            "cross-seed safety ratio spread MUST be < 5%"
+        );
     }
 
     /// PROVE: 24h endurance — system completes 86 400 ticks without
@@ -277,8 +283,10 @@ mod proofs {
         kani::assume(actual <= intended);
         // The harness MUST report actual == intended on successful soak.
         if actual == intended {
-            assert_eq!(actual, intended,
-                "soak must complete all intended ticks if it survives");
+            assert_eq!(
+                actual, intended,
+                "soak must complete all intended ticks if it survives"
+            );
         }
     }
 
@@ -293,8 +301,10 @@ mod proofs {
         let cap_hit_at_hour_24: u32 = kani::any();
         kani::assume(cap_hit_at_hour_1 <= cap_hit_at_hour_24);
         kani::assume(cap_hit_at_hour_24 < 1_000_000);
-        assert!(cap_hit_at_hour_24 >= cap_hit_at_hour_1,
-            "cap_hit_count must be monotonic over a 24h soak");
+        assert!(
+            cap_hit_at_hour_24 >= cap_hit_at_hour_1,
+            "cap_hit_count must be monotonic over a 24h soak"
+        );
     }
 
     // ── AB round (regression fix) ─────────────────────────────────
@@ -327,11 +337,13 @@ mod proofs {
         kani::assume(soak_inserts <= 100_000);
         // 1 % FPR threshold ≈ bloom_bits * ln(2) / hashes
         // For BLOOM_BITS = 524 288 and HASHES = 5: ≈ 72 700.
-        let one_pct_threshold = bloom_bits / 7;       // crude lower bound: m/k > m*ln(2)/k for k=5
-        // 24h soak should fit under 2× the 1% threshold.
+        let one_pct_threshold = bloom_bits / 7; // crude lower bound: m/k > m*ln(2)/k for k=5
+                                                // 24h soak should fit under 2× the 1% threshold.
         if soak_inserts <= 86_400 {
-            assert!(soak_inserts < one_pct_threshold * 2,
-                "default Bloom must fit a 24h × 1Hz soak with bounded FPR");
+            assert!(
+                soak_inserts < one_pct_threshold * 2,
+                "default Bloom must fit a 24h × 1Hz soak with bounded FPR"
+            );
         }
     }
 
@@ -353,8 +365,10 @@ mod proofs {
         // Then: bloom_words observed on the host = 8 192 unless host
         // explicitly opts in.
         if !host_consumer_enables_mcu_feature {
-            assert!(bloom_words_observed == 8192 || bloom_words_observed == 256,
-                "without explicit host opt-in, host gets 64 KiB Bloom");
+            assert!(
+                bloom_words_observed == 8192 || bloom_words_observed == 256,
+                "without explicit host opt-in, host gets 64 KiB Bloom"
+            );
             // The strong post-fix invariant: it MUST be 8192.
             // (Cannot prove from Kani directly — it's a build-system
             // property — but the assertion shape documents intent.)
@@ -375,8 +389,10 @@ mod proofs {
         kani::assume(inserts_t1 <= inserts_t2);
         kani::assume(bloom_total_bits == 524_288 || bloom_total_bits == 16_384);
         // Counter is monotonic by construction (saturating_add).
-        assert!(inserts_t2 >= inserts_t1,
-            "bloom_inserts must be monotonically non-decreasing");
+        assert!(
+            inserts_t2 >= inserts_t1,
+            "bloom_inserts must be monotonically non-decreasing"
+        );
         // If frozen at saturation level, that's a defect signal.
         if inserts_t1 == inserts_t2 && inserts_t1 > 1000 {
             // Caller should treat this as "bloom saturated, call
@@ -397,18 +413,22 @@ mod proofs {
         let last_hour: u32 = kani::any();
         kani::assume(first_hour > 100 && first_hour < 10_000);
         kani::assume(last_hour < 10_000);
-        let abs_diff = if last_hour >= first_hour { last_hour - first_hour }
-                       else { first_hour - last_hour };
+        let abs_diff = if last_hour >= first_hour {
+            last_hour - first_hour
+        } else {
+            first_hour - last_hour
+        };
         let pct = (abs_diff as u64 * 100) / first_hour as u64;
         let acceptable = pct < 20;
         if last_hour == 0 {
-            assert!(!acceptable,
-                "drift gate must reject 0-throughput last hour");
+            assert!(!acceptable, "drift gate must reject 0-throughput last hour");
         }
         if last_hour >= (first_hour * 80 / 100) && last_hour <= (first_hour * 120 / 100) {
             // ±20% of first hour — should pass
-            assert!(acceptable,
-                "throughput within ±20% of first hour must pass drift gate");
+            assert!(
+                acceptable,
+                "throughput within ±20% of first hour must pass drift gate"
+            );
         }
     }
 
@@ -436,8 +456,7 @@ mod proofs {
         // computation. If hour_24 = 0 (Z4's observed case), drift_pct
         // = 100%, which exceeds threshold, FAIL is correct.
         if hour_24_throughput == 0 {
-            assert!(!acceptable,
-                "drift to 0 throughput must trigger FAIL flag");
+            assert!(!acceptable, "drift to 0 throughput must trigger FAIL flag");
         }
     }
 
@@ -451,17 +470,19 @@ mod proofs {
         let drift_per_tick_milli: u32 = kani::any();
         let n_ticks: u32 = kani::any();
         kani::assume(nominal <= 1000);
-        kani::assume(drift_per_tick_milli <= 100);   // 0.1 max
+        kani::assume(drift_per_tick_milli <= 100); // 0.1 max
         kani::assume(n_ticks <= 10_000);
         let max_drift = drift_per_tick_milli * n_ticks / 1000;
         let burst = 5;
-        let three_sigma = 1;        // σ=0.05, 3σ=0.15 → ~1 unit
+        let three_sigma = 1; // σ=0.05, 3σ=0.15 → ~1 unit
         let max_value = nominal + max_drift + burst + three_sigma;
         // Bound: caller can compute max ahead.
         let bound: u32 = kani::any();
         kani::assume(bound >= max_value);
-        assert!(bound >= max_value,
-            "sensor noise output bounded by nominal + drift + burst + 3σ");
+        assert!(
+            bound >= max_value,
+            "sensor noise output bounded by nominal + drift + burst + 3σ"
+        );
     }
 
     /// PROVE: AdversaryAgent attempts are rate-limited to one per
@@ -477,8 +498,10 @@ mod proofs {
         kani::assume(attempt_b_tick - attempt_a_tick >= interval);
         // The maybe_inject function only returns Some when
         // tick - last_attempt >= interval. Asserted here.
-        assert!(attempt_b_tick - attempt_a_tick >= interval,
-            "adversary attempts rate-limited by interval");
+        assert!(
+            attempt_b_tick - attempt_a_tick >= interval,
+            "adversary attempts rate-limited by interval"
+        );
     }
 
     /// PROVE: OperatorSimulator response time is bounded by
@@ -494,12 +517,13 @@ mod proofs {
         let delta = current_cap_hit - last_seen;
         let alarm_raised = delta >= threshold;
         if delta < threshold {
-            assert!(!alarm_raised,
-                "no alarm below threshold");
+            assert!(!alarm_raised, "no alarm below threshold");
         }
         if alarm_raised {
-            assert!(delta >= threshold,
-                "alarm only raised at or above threshold");
+            assert!(
+                delta >= threshold,
+                "alarm only raised at or above threshold"
+            );
         }
     }
 
@@ -515,8 +539,10 @@ mod proofs {
         // Two trials of the same (seed, n_ticks): metrics are equal.
         let trial_a_ticks_simulated: u64 = n_ticks;
         let trial_b_ticks_simulated: u64 = n_ticks;
-        assert_eq!(trial_a_ticks_simulated, trial_b_ticks_simulated,
-            "deterministic harness: same seed → same tick count");
+        assert_eq!(
+            trial_a_ticks_simulated, trial_b_ticks_simulated,
+            "deterministic harness: same seed → same tick count"
+        );
         let _ = seed;
     }
 }
@@ -530,8 +556,11 @@ mod tests {
         let mut a = Rng::new(42);
         let mut b = Rng::new(42);
         for _ in 0..100 {
-            assert_eq!(a.next_u64(), b.next_u64(),
-                "PRNG with same seed produces same sequence");
+            assert_eq!(
+                a.next_u64(),
+                b.next_u64(),
+                "PRNG with same seed produces same sequence"
+            );
         }
     }
 
@@ -539,17 +568,23 @@ mod tests {
     fn sensor_noise_within_3sigma_most_of_the_time() {
         let mut rng = Rng::new(7);
         let mut s = SensorNoiseModel::new(10.0);
-        s.burst_prob = 0.0;        // disable bursts for this test
+        s.burst_prob = 0.0; // disable bursts for this test
         let mut within = 0;
         let n = 1000;
         for _ in 0..n {
             let v = s.sample(&mut rng);
             // Allow for drift across 1000 ticks
-            if (v - 10.0).abs() < 0.5 { within += 1; }
+            if (v - 10.0).abs() < 0.5 {
+                within += 1;
+            }
         }
         // ~99.7% of Gaussian samples within 3σ; allow slack for drift
-        assert!(within > 900,
-            "{} of {} samples within ±0.5 of nominal", within, n);
+        assert!(
+            within > 900,
+            "{} of {} samples within ±0.5 of nominal",
+            within,
+            n
+        );
     }
 
     #[test]
@@ -560,12 +595,17 @@ mod tests {
         let n = 10000;
         for _ in 0..n {
             let (ok, _) = net.transmit(&mut rng);
-            if ok { delivered += 1; }
+            if ok {
+                delivered += 1;
+            }
         }
         // Mostly good state with rare bad bursts → expected delivery ~95%
         let ratio = delivered as f64 / n as f64;
-        assert!(ratio > 0.85 && ratio < 0.99,
-            "delivery ratio {:.3} should be in [0.85, 0.99]", ratio);
+        assert!(
+            ratio > 0.85 && ratio < 0.99,
+            "delivery ratio {:.3} should be in [0.85, 0.99]",
+            ratio
+        );
     }
 
     #[test]
@@ -573,24 +613,29 @@ mod tests {
         let mut adv = AdversaryAgent::new([0xAA; 8], 100);
         let mut injects = 0;
         for tick in 0..1000u64 {
-            if adv.maybe_inject(tick).is_some() { injects += 1; }
+            if adv.maybe_inject(tick).is_some() {
+                injects += 1;
+            }
         }
         // 1000 ticks / 100 interval = ~10 injections
-        assert!(injects >= 9 && injects <= 11,
-            "expected ~10 injections, got {}", injects);
+        assert!(
+            injects >= 9 && injects <= 11,
+            "expected ~10 injections, got {}",
+            injects
+        );
     }
 
     #[test]
     fn operator_alarm_threshold_works() {
         let mut op = OperatorSimulator::new();
         op.cap_hit_alarm_threshold = 5;
-        op.tick(2, None);   // delta=2 < 5, no alarm
+        op.tick(2, None); // delta=2 < 5, no alarm
         assert_eq!(op.alarms_raised, 0);
-        op.tick(7, None);   // delta=5 ≥ 5, alarm
+        op.tick(7, None); // delta=5 ≥ 5, alarm
         assert_eq!(op.alarms_raised, 1);
-        op.tick(8, None);   // delta=1 < 5, no alarm
+        op.tick(8, None); // delta=1 < 5, no alarm
         assert_eq!(op.alarms_raised, 1);
-        op.tick(20, Some([0xAA; 8]));   // delta=12 ≥ 5, alarm + revocation
+        op.tick(20, Some([0xAA; 8])); // delta=12 ≥ 5, alarm + revocation
         assert_eq!(op.alarms_raised, 2);
         assert_eq!(op.revocations_issued, 1);
         assert!(op.is_revoked(&[0xAA; 8]));

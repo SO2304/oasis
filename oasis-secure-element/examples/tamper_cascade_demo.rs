@@ -21,12 +21,11 @@
 //! R20 from CLAUDE.md: "Unsigned node = atomization < 1 ms". This
 //! demo measures the actual atomization deadline end-to-end.
 
-use std::time::Instant;
 use std::collections::HashSet;
+use std::time::Instant;
 
 use oasis_rt::mesh::{
-    MeshDecision, MeshEdSeed, MeshPubRegistry, MeshRouter,
-    mesh_v10_pubkey_from_seed,
+    mesh_v10_pubkey_from_seed, MeshDecision, MeshEdSeed, MeshPubRegistry, MeshRouter,
 };
 use oasis_rt::spore_crypto::RevocationList;
 use oasis_secure_element::sim::SimSecureElement;
@@ -48,7 +47,12 @@ const OPERATOR_SEED: [u8; 32] = [0x55; 32];
 
 fn build_full_registry() -> MeshPubRegistry {
     let mut reg = MeshPubRegistry::new();
-    for (fp, seed) in [(FP_A, SEED_A), (FP_B, SEED_B), (FP_C, SEED_C), (FP_D, SEED_D)] {
+    for (fp, seed) in [
+        (FP_A, SEED_A),
+        (FP_B, SEED_B),
+        (FP_C, SEED_C),
+        (FP_D, SEED_D),
+    ] {
         let pk = mesh_v10_pubkey_from_seed(&MeshEdSeed(seed)).unwrap();
         reg.insert(fp, pk);
     }
@@ -95,13 +99,17 @@ impl Node {
     /// number of new fps merged.
     /// Updated 2026-05-10: uses RevocationList::fingerprints()
     /// added to oasis-rt to fix the O(N²) audit finding.
-    fn merge_operator_revocation(&mut self, signed_blob: &[u8],
-                                 operator_pub: &[u8; 32]) -> Result<usize, &'static str>
-    {
+    fn merge_operator_revocation(
+        &mut self,
+        signed_blob: &[u8],
+        operator_pub: &[u8; 32],
+    ) -> Result<usize, &'static str> {
         let parsed = RevocationList::parse_and_verify(signed_blob, operator_pub)?;
         let mut new = 0;
         for fp in parsed.fingerprints() {
-            if self.revoked.insert(*fp) { new += 1; }
+            if self.revoked.insert(*fp) {
+                new += 1;
+            }
         }
         Ok(new)
         // After this function returns, `parsed` is dropped — the
@@ -142,12 +150,22 @@ fn main() {
     println!("──────────────────────────────────────────────────────────────────");
     println!(" Phase 0 — normal operation");
     println!("──────────────────────────────────────────────────────────────────");
-    let mut sender_a = MeshRouter::new_ed25519_signed(FP_A, MeshEdSeed(SEED_A), MeshPubRegistry::new());
-    let mut sender_c = MeshRouter::new_ed25519_signed(FP_C, MeshEdSeed(SEED_C), MeshPubRegistry::new());
+    let mut sender_a =
+        MeshRouter::new_ed25519_signed(FP_A, MeshEdSeed(SEED_A), MeshPubRegistry::new());
+    let mut sender_c =
+        MeshRouter::new_ed25519_signed(FP_C, MeshEdSeed(SEED_C), MeshPubRegistry::new());
     let env_a = sender_a.origin_wrap(b"A normal telemetry");
     let env_c_legit = sender_c.origin_wrap(b"C normal telemetry");
-    println!("  A → B: {:?}", node_b.process_with_revocation(&env_a).map(|_| "Arrived"));
-    println!("  C → D: {:?}", node_d.process_with_revocation(&env_c_legit).map(|_| "Arrived"));
+    println!(
+        "  A → B: {:?}",
+        node_b.process_with_revocation(&env_a).map(|_| "Arrived")
+    );
+    println!(
+        "  C → D: {:?}",
+        node_d
+            .process_with_revocation(&env_c_legit)
+            .map(|_| "Arrived")
+    );
 
     // ── Phase 1: TAMPER on Node C ──────────────────────────────────
     println!();
@@ -158,7 +176,10 @@ fn main() {
     se_c.wipe(TamperReason::ChassisSwitch).unwrap();
     println!("  SE_C.wipe(ChassisSwitch) at t=0");
     println!("  SE_C.is_wiped() = {}", se_c.is_wiped());
-    println!("  SE_C.sign() now returns: {:?}", se_c.sign(b"any").map(|_| "Ok").map_err(|e| e));
+    println!(
+        "  SE_C.sign() now returns: {:?}",
+        se_c.sign(b"any").map(|_| "Ok").map_err(|e| e)
+    );
 
     // ── Phase 2: operator publishes signed revocation ──────────────
     println!();
@@ -166,11 +187,17 @@ fn main() {
     println!(" Phase 2 — Operator publishes signed RevocationList");
     println!("──────────────────────────────────────────────────────────────────");
     let mut rev = RevocationList::new();
-    let revoked_at_secs: u64 = 1746883200;  // arbitrary fixed timestamp for determinism
+    let revoked_at_secs: u64 = 1746883200; // arbitrary fixed timestamp for determinism
     rev.revoke(FP_C, revoked_at_secs);
     let signed_rev = rev.serialize_signed(&OPERATOR_SEED).unwrap();
-    println!("  RevocationList: 1 entry (fp_C @ unix {})", revoked_at_secs);
-    println!("  serialize_signed() → {} bytes (SPORE\\x06 envelope)", signed_rev.len());
+    println!(
+        "  RevocationList: 1 entry (fp_C @ unix {})",
+        revoked_at_secs
+    );
+    println!(
+        "  serialize_signed() → {} bytes (SPORE\\x06 envelope)",
+        signed_rev.len()
+    );
 
     // ── Phase 3: revocation propagates to remaining nodes ──────────
     println!();
@@ -218,12 +245,17 @@ fn main() {
         total += 1;
         match node.process_with_revocation(&env_c_legit) {
             Err("revoked origin") => {
-                println!("  Node {}: REJECTED (revoked origin) — sig was valid but FP_C atomized", name);
+                println!(
+                    "  Node {}: REJECTED (revoked origin) — sig was valid but FP_C atomized",
+                    name
+                );
                 atomized += 1;
             }
             Err(other) => {
-                println!("  Node {}: rejected with reason '{}' (NOT via revocation path)",
-                         name, other);
+                println!(
+                    "  Node {}: rejected with reason '{}' (NOT via revocation path)",
+                    name, other
+                );
             }
             Ok(_) => {
                 println!("  Node {}: ACCEPTED — REVOCATION FAILED to atomize", name);
@@ -237,11 +269,20 @@ fn main() {
     println!("══════════════════════════════════════════════════════════════════");
     println!(" Cascade summary");
     println!("──────────────────────────────────────────────────────────────────");
-    println!("  Atomization: {} / {} receivers rejected the replay", atomized, total);
+    println!(
+        "  Atomization: {} / {} receivers rejected the replay",
+        atomized, total
+    );
     println!();
     println!("  Latency (host x86 — real MCU will be ~1000× slower):");
-    println!("    tamper → revocation propagated:   {} µs", t_propagated.as_micros());
-    println!("    tamper → fleet-wide atomization:  {} µs", t_atomized.as_micros());
+    println!(
+        "    tamper → revocation propagated:   {} µs",
+        t_propagated.as_micros()
+    );
+    println!(
+        "    tamper → fleet-wide atomization:  {} µs",
+        t_atomized.as_micros()
+    );
     println!();
     println!("  Honest disclaimer: this is host x86 with synchronous propagation.");
     println!("  Real-world: revocation must traverse the mesh (multi-hop), so the");

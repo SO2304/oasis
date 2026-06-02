@@ -15,20 +15,25 @@
 use std::time::Instant;
 
 use oasis_rt::mesh::{
-    MeshDecision, MeshEdSeed, MeshPubRegistry, MeshRouter,
-    mesh_v10_pubkey_from_seed,
+    mesh_v10_pubkey_from_seed, MeshDecision, MeshEdSeed, MeshPubRegistry, MeshRouter,
 };
-use oasis_rt::vec::{V, vz};
+use oasis_rt::vec::{vz, V};
 use oasis_rt::world_model::{WorldModel, ZoneType};
 use oasis_trl_harness::*;
 
-fn fp(b: u8) -> [u8; 8] { let mut f = [0u8; 8]; f[0] = b; f }
-fn seed(b: u8) -> MeshEdSeed { MeshEdSeed([b; 32]) }
+fn fp(b: u8) -> [u8; 8] {
+    let mut f = [0u8; 8];
+    f[0] = b;
+    f
+}
+fn seed(b: u8) -> MeshEdSeed {
+    MeshEdSeed([b; 32])
+}
 
 const TICKS_PER_VIRTUAL_HOUR: u64 = 3600;
-const VIRTUAL_HOURS_TO_SOAK: u64 = 168;          // 7 days
+const VIRTUAL_HOURS_TO_SOAK: u64 = 168; // 7 days
 const ADVERSARY_INTERVAL_TICKS: u64 = 30;
-const BLOOM_AUTO_RESET_THRESHOLD: u64 = 40_000;  // 1 % FPR threshold for 64 KiB Bloom
+const BLOOM_AUTO_RESET_THRESHOLD: u64 = 40_000; // 1 % FPR threshold for 64 KiB Bloom
 
 #[derive(Clone, Default)]
 struct DaySnapshot {
@@ -56,9 +61,15 @@ fn run_one_trial(rng_seed: u64, with_auto_reset: bool) -> Vec<u32> {
 
     let mut world_a = WorldModel::new();
     let mut world_b = WorldModel::new();
-    let mut goal: V = vz(); goal[0] = 10.0; goal[1] = 10.0;
-    world_a.try_add_zone(ZoneType::Attractive, goal, 5.0, 8.0).expect("setup");
-    world_b.try_add_zone(ZoneType::Attractive, goal, 5.0, 8.0).expect("setup");
+    let mut goal: V = vz();
+    goal[0] = 10.0;
+    goal[1] = 10.0;
+    world_a
+        .try_add_zone(ZoneType::Attractive, goal, 5.0, 8.0)
+        .expect("setup");
+    world_b
+        .try_add_zone(ZoneType::Attractive, goal, 5.0, 8.0)
+        .expect("setup");
 
     let mut sensor_a = SensorNoiseModel::new(10.0);
     let mut sensor_b = SensorNoiseModel::new(10.0);
@@ -72,11 +83,11 @@ fn run_one_trial(rng_seed: u64, with_auto_reset: bool) -> Vec<u32> {
     let mut current_hour_arrived: u32 = 0;
 
     for tick in 0..total_ticks {
-        for (s, w) in [(&mut sensor_a, &mut world_a),
-                       (&mut sensor_b, &mut world_b)].iter_mut() {
+        for (s, w) in [(&mut sensor_a, &mut world_a), (&mut sensor_b, &mut world_b)].iter_mut() {
             let v = s.sample(&mut rng);
             if (v - 10.0).abs() > 0.5 {
-                let mut c: V = vz(); c[0] = v;
+                let mut c: V = vz();
+                c[0] = v;
                 let _ = w.try_add_zone(ZoneType::Repulsive, c, 1.0, 0.5);
             }
         }
@@ -110,18 +121,24 @@ fn run_one_trial(rng_seed: u64, with_auto_reset: bool) -> Vec<u32> {
         }
     }
 
-    eprintln!("    router_b: bloom_resets={} bloom_inserts_since_reset={} bloom_inserts_total={}",
+    eprintln!(
+        "    router_b: bloom_resets={} bloom_inserts_since_reset={} bloom_inserts_total={}",
         router_b.bloom_reset_count(),
         router_b.bloom_inserts_since_reset(),
-        router_b.bloom_inserts());
+        router_b.bloom_inserts()
+    );
     hourly_arrived
 }
 
 fn drift_pct(hourly: &[u32]) -> f64 {
-    if hourly.is_empty() { return 0.0; }
+    if hourly.is_empty() {
+        return 0.0;
+    }
     let first = hourly[0] as f64;
     let last = *hourly.last().unwrap() as f64;
-    if first == 0.0 { return 0.0; }
+    if first == 0.0 {
+        return 0.0;
+    }
     ((last - first) / first) * 100.0
 }
 
@@ -139,7 +156,10 @@ fn main() {
     println!("╚══════════════════════════════════════════════════════════════════╝");
     println!();
     println!("  168 virtual hours × 1 trial each                                  ");
-    println!("  threshold (when enabled): {} inserts (1% FPR for 64 KiB Bloom)", BLOOM_AUTO_RESET_THRESHOLD);
+    println!(
+        "  threshold (when enabled): {} inserts (1% FPR for 64 KiB Bloom)",
+        BLOOM_AUTO_RESET_THRESHOLD
+    );
     println!();
 
     println!("──────────────────────────────────────────────────────────────────");
@@ -158,13 +178,18 @@ fn main() {
     let samples = [0, 23, 47, 71, 95, 119, 143, 167];
     print!("    samples (24h apart): ");
     for &i in &samples {
-        if i < baseline.len() { print!("h{}={} ", i + 1, baseline[i]); }
+        if i < baseline.len() {
+            print!("h{}={} ", i + 1, baseline[i]);
+        }
     }
     println!();
     println!();
 
     println!("──────────────────────────────────────────────────────────────────");
-    println!(" Trial B: WITH auto-reset @ {} inserts                       ", BLOOM_AUTO_RESET_THRESHOLD);
+    println!(
+        " Trial B: WITH auto-reset @ {} inserts                       ",
+        BLOOM_AUTO_RESET_THRESHOLD
+    );
     println!("──────────────────────────────────────────────────────────────────");
     let t1 = Instant::now();
     let with_reset = run_one_trial(20260511, true);
@@ -178,7 +203,9 @@ fn main() {
     println!();
     print!("    samples (24h apart): ");
     for &i in &samples {
-        if i < with_reset.len() { print!("h{}={} ", i + 1, with_reset[i]); }
+        if i < with_reset.len() {
+            print!("h{}={} ", i + 1, with_reset[i]);
+        }
     }
     println!();
     println!();
@@ -191,15 +218,16 @@ fn main() {
     println!("  Baseline drift over 7d:  {:.2}%", baseline_drift);
     println!("  With-reset drift over 7d:{:.2}%", with_reset_drift);
     println!();
-    let pass = with_reset_drift < 5.0
-        && baseline_drift > with_reset_drift;
+    let pass = with_reset_drift < 5.0 && baseline_drift > with_reset_drift;
     if pass {
         println!("  [PASS] auto-reset keeps 7-day throughput flat (< 5% drift)");
         println!("    & demonstrably better than baseline");
         std::process::exit(0);
     } else {
-        eprintln!("  [FAIL] with-reset drift {:.2}% should be < 5% AND less than baseline {:.2}%",
-            with_reset_drift, baseline_drift);
+        eprintln!(
+            "  [FAIL] with-reset drift {:.2}% should be < 5% AND less than baseline {:.2}%",
+            with_reset_drift, baseline_drift
+        );
         std::process::exit(1);
     }
 }

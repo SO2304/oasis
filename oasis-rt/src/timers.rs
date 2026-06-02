@@ -27,10 +27,10 @@
 //! 2. After firing, `next_fire_ms - now_ms >= 0` (no immediate re-fire).
 //! 3. `register` with period > 0 never panics for finite inputs.
 
-#[cfg(feature = "std")]
-use std::collections::BTreeMap;
 #[cfg(not(feature = "std"))]
 use alloc::{collections::BTreeMap, vec::Vec};
+#[cfg(feature = "std")]
+use std::collections::BTreeMap;
 
 pub type TimerId = u32;
 pub type TimerCallback = fn();
@@ -71,31 +71,25 @@ pub struct TimerRegistry {
 }
 
 impl Default for TimerRegistry {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl TimerRegistry {
     pub fn new() -> Self {
-        Self {
-            timers: BTreeMap::new(),
-            next_id: 0,
-            last_tick_ms: 0,
-        }
+        Self { timers: BTreeMap::new(), next_id: 0, last_tick_ms: 0 }
     }
 
     /// Register a timer that fires every `period_ms` starting at
     /// `last_tick_ms + period_ms`. Period must be > 0.
     pub fn register(&mut self, period_ms: u64, callback: TimerCallback) -> Option<TimerId> {
-        if period_ms == 0 { return None; }
+        if period_ms == 0 {
+            return None;
+        }
         let id = self.next_id;
         self.next_id = self.next_id.wrapping_add(1);
-        let t = Timer {
-            id,
-            period_ms,
-            next_fire_ms: self.last_tick_ms.saturating_add(period_ms),
-            callback,
-            fire_count: 0,
-        };
+        let t = Timer { id, period_ms, next_fire_ms: self.last_tick_ms.saturating_add(period_ms), callback, fire_count: 0 };
         self.timers.insert(id, t);
         Some(id)
     }
@@ -104,8 +98,12 @@ impl TimerRegistry {
         self.timers.remove(&id).is_some()
     }
 
-    pub fn len(&self) -> usize { self.timers.len() }
-    pub fn is_empty(&self) -> bool { self.timers.is_empty() }
+    pub fn len(&self) -> usize {
+        self.timers.len()
+    }
+    pub fn is_empty(&self) -> bool {
+        self.timers.is_empty()
+    }
 
     /// Advance the clock to `now_ms` and fire every due timer.
     ///
@@ -122,7 +120,9 @@ impl TimerRegistry {
         // BTreeMap iterates in key order → stable FIFO.
         let mut fired = 0u32;
         for t in self.timers.values_mut() {
-            if tick_one(t, now_ms) { fired += 1; }
+            if tick_one(t, now_ms) {
+                fired += 1;
+            }
         }
         fired
     }

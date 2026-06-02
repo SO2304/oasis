@@ -15,9 +15,7 @@
 //! for smoke tests (see tests/mavlink_adapter_smoke.sh if added).
 
 use oasis_rt::mavlink_min::{
-    parse_frame_checked, encode_heartbeat, encode_set_position_target,
-    encode_position_setpoint, encode_command_long, encode_set_mode, encode_param_set,
-    MavToOasisAccumulator, ReplayState, MavMsg,
+    encode_command_long, encode_heartbeat, encode_param_set, encode_position_setpoint, encode_set_mode, encode_set_position_target, parse_frame_checked, MavMsg, MavToOasisAccumulator, ReplayState,
 };
 use std::io::{BufRead, BufReader, Write};
 use std::net::UdpSocket;
@@ -27,8 +25,7 @@ use std::time::{Duration, Instant};
 
 // Path to drone_bridge binary. On Linux use env var OASIS_BRIDGE_PATH to override.
 fn bridge_path() -> String {
-    std::env::var("OASIS_BRIDGE_PATH")
-        .unwrap_or_else(|_| "target/release/drone_bridge.exe".into())
+    std::env::var("OASIS_BRIDGE_PATH").unwrap_or_else(|_| "target/release/drone_bridge.exe".into())
 }
 
 fn main() -> std::io::Result<()> {
@@ -45,12 +42,10 @@ fn main() -> std::io::Result<()> {
 
     let mut bridge_cmd = Command::new(bridge_path());
     bridge_cmd.arg(&name).arg(&did);
-    if !targets.is_empty() { bridge_cmd.arg(&targets); }
-    let mut bridge = bridge_cmd
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::inherit())
-        .spawn()?;
+    if !targets.is_empty() {
+        bridge_cmd.arg(&targets);
+    }
+    let mut bridge = bridge_cmd.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::inherit()).spawn()?;
     let bridge_stdin = Arc::new(Mutex::new(bridge.stdin.take().unwrap()));
     let bridge_stdout = bridge.stdout.take().unwrap();
 
@@ -108,19 +103,25 @@ fn main() -> std::io::Result<()> {
 
     // Target altitude — read from drone_bridge's `s_alt` output (bridge already emits it).
     // Env var OASIS_TARGET_ALT overrides bridge default. Capped by OASIS_ALT_LIMIT.
-    let target_alt: Arc<Mutex<f32>> = Arc::new(Mutex::new(
-        std::env::var("OASIS_TARGET_ALT").ok().and_then(|s| s.parse().ok()).unwrap_or(1.3)
-    ));
+    let target_alt: Arc<Mutex<f32>> = Arc::new(Mutex::new(std::env::var("OASIS_TARGET_ALT").ok().and_then(|s| s.parse().ok()).unwrap_or(1.3)));
 
     // Waypoint mission (optional). Format: "x1,y1,z1;x2,y2,z2;..." (NED local frame, z positive = altitude up).
     // On reaching within OASIS_WP_RADIUS (default 0.5m) of current waypoint, advance to next.
     // On last waypoint: hover there. Empty/unset = no waypoint mission, fall back to hover at target_alt.
     let waypoints: Vec<(f32, f32, f32)> = std::env::var("OASIS_WAYPOINTS")
         .ok()
-        .map(|s| s.split(';').filter_map(|wp| {
-            let parts: Vec<f32> = wp.split(',').filter_map(|v| v.trim().parse().ok()).collect();
-            if parts.len() == 3 { Some((parts[0], parts[1], parts[2])) } else { None }
-        }).collect())
+        .map(|s| {
+            s.split(';')
+                .filter_map(|wp| {
+                    let parts: Vec<f32> = wp.split(',').filter_map(|v| v.trim().parse().ok()).collect();
+                    if parts.len() == 3 {
+                        Some((parts[0], parts[1], parts[2]))
+                    } else {
+                        None
+                    }
+                })
+                .collect()
+        })
         .unwrap_or_default();
     let wp_radius: f32 = std::env::var("OASIS_WP_RADIUS").ok().and_then(|s| s.parse().ok()).unwrap_or(0.5);
     let wp_index: Arc<Mutex<usize>> = Arc::new(Mutex::new(0));
@@ -130,12 +131,10 @@ fn main() -> std::io::Result<()> {
     // Optionally, if OASIS_AUTO_OFFBOARD=1, send SET_MODE(OFFBOARD) + COMPONENT_ARM_DISARM
     // after 5s of heartbeat exchange. Used to validate full bidirectional command path.
     let sock_hb = sock.try_clone()?;
-    let initial_peer = std::env::var("OASIS_MAV_PEER").ok()
-        .and_then(|s| s.parse::<std::net::SocketAddr>().ok());
+    let initial_peer = std::env::var("OASIS_MAV_PEER").ok().and_then(|s| s.parse::<std::net::SocketAddr>().ok());
     let last_peer_hb: Arc<Mutex<Option<std::net::SocketAddr>>> = Arc::new(Mutex::new(initial_peer));
     let last_peer_hb_clone = last_peer_hb.clone();
-    let auto_offboard: bool = std::env::var("OASIS_AUTO_OFFBOARD")
-        .ok().map(|s| s == "1").unwrap_or(false);
+    let auto_offboard: bool = std::env::var("OASIS_AUTO_OFFBOARD").ok().map(|s| s == "1").unwrap_or(false);
     let _hb_handle = std::thread::spawn(move || {
         let mut hb_seq: u8 = 0;
         let mut cmd_sent = false;
@@ -162,13 +161,7 @@ fn main() -> std::io::Result<()> {
                     // Opt-in via OASIS_BOOST_PARAMS=1 so non-autonomous flights don't touch params.
                     if std::env::var("OASIS_BOOST_PARAMS").ok().as_deref() == Some("1") {
                         std::thread::sleep(Duration::from_millis(200));
-                        let params: &[(&str, f32)] = &[
-                            ("MPC_XY_VEL_MAX", 4.0),
-                            ("MPC_XY_CRUISE", 3.0),
-                            ("MPC_ACC_HOR_MAX", 5.0),
-                            ("MPC_Z_VEL_MAX_UP", 2.0),
-                            ("MPC_Z_VEL_MAX_DN", 1.5),
-                        ];
+                        let params: &[(&str, f32)] = &[("MPC_XY_VEL_MAX", 4.0), ("MPC_XY_CRUISE", 3.0), ("MPC_ACC_HOR_MAX", 5.0), ("MPC_Z_VEL_MAX_UP", 2.0), ("MPC_Z_VEL_MAX_DN", 1.5)];
                         for (i, (name, val)) in params.iter().enumerate() {
                             let s = hb_seq.wrapping_add(2 + i as u8);
                             let frame = encode_param_set(s, 255, 190, 1, 1, name, *val);
@@ -188,8 +181,7 @@ fn main() -> std::io::Result<()> {
     // stream drops below ~2 Hz in OFFBOARD mode. This thread retransmits the last known
     // OASIS command every 100 ms so the stream stays dense even when drone_bridge is idle.
     // Opt-in via OASIS_OFFBOARD_STREAM=1 (default off; avoids flooding for non-OFFBOARD tests).
-    let offboard_stream: bool = std::env::var("OASIS_OFFBOARD_STREAM")
-        .ok().map(|s| s == "1").unwrap_or(false);
+    let offboard_stream: bool = std::env::var("OASIS_OFFBOARD_STREAM").ok().map(|s| s == "1").unwrap_or(false);
     if offboard_stream {
         let sock_stream = sock.try_clone()?;
         let last_peer_stream = last_peer_hb.clone();
@@ -233,16 +225,14 @@ fn main() -> std::io::Result<()> {
                     let dist = ((wx - cx).powi(2) + (wy - cy).powi(2)).sqrt();
                     if dist < wp_radius && *idx < last_idx {
                         *idx += 1;
-                        eprintln!("[mavlink_adapter] WAYPOINT_REACHED idx={}/{} pos=({:.2},{:.2},{:.2})",
-                            *idx, last_idx, cx, cy, cz);
+                        eprintln!("[mavlink_adapter] WAYPOINT_REACHED idx={}/{} pos=({:.2},{:.2},{:.2})", *idx, last_idx, cx, cy, cz);
                     }
                     let (tx, ty, tz) = waypoints_stream[*idx];
                     let tz_capped = tz.min(alt_limit);
                     // Position setpoint: NED z = -altitude (drone altitude tz → frame z = -tz)
                     let frame = encode_position_setpoint(seq, 1, 1, 1, 1, tx, ty, -tz_capped);
                     if seq % 10 == 0 {
-                        eprintln!("[mavlink_adapter] WP_POS idx={} target=({:.1},{:.1},{:.1}) current=({:.2},{:.2},{:.2}) dist={:.2}m",
-                            *idx, tx, ty, tz, cx, cy, cz, dist);
+                        eprintln!("[mavlink_adapter] WP_POS idx={} target=({:.1},{:.1},{:.1}) current=({:.2},{:.2},{:.2}) dist={:.2}m", *idx, tx, ty, tz, cx, cy, cz, dist);
                     }
                     seq = seq.wrapping_add(1);
                     if let Some(peer) = *last_peer_stream.lock().unwrap() {
@@ -256,7 +246,9 @@ fn main() -> std::io::Result<()> {
                     let target_z = tgt_alt;
                     let alt_error = target_z - cz;
                     let mut vz_ned = (-alt_kp * alt_error).clamp(-vz_max, vz_max);
-                    if cz > alt_limit { vz_ned = 0.5; }
+                    if cz > alt_limit {
+                        vz_ned = 0.5;
+                    }
                     let frame = encode_set_position_target(seq, 1, 1, 1, 1, vx, vy, vz_ned);
                     seq = seq.wrapping_add(1);
                     if let Some(peer) = *last_peer_stream.lock().unwrap() {
@@ -294,7 +286,9 @@ fn main() -> std::io::Result<()> {
             let frame = encode_set_position_target(seq, 1, 1, 1, 1, vx, vy, 0.0);
             seq = seq.wrapping_add(1);
             if let Ok(env_peer) = std::env::var("OASIS_MAV_PEER") {
-                if let Ok(addr) = env_peer.parse() { last_peer = Some(addr); }
+                if let Ok(addr) = env_peer.parse() {
+                    last_peer = Some(addr);
+                }
             }
             if let Some(peer) = last_peer {
                 let _ = sock_tx.send_to(&frame, peer);
@@ -316,10 +310,11 @@ fn main() -> std::io::Result<()> {
     loop {
         let (n, peer) = match sock.recv_from(&mut buf) {
             Ok(r) => r,
-            Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock
-                       || e.kind() == std::io::ErrorKind::TimedOut => {
+            Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock || e.kind() == std::io::ErrorKind::TimedOut => {
                 // No packets; if bridge exited, break
-                if let Ok(Some(_)) = bridge.try_wait() { break; }
+                if let Ok(Some(_)) = bridge.try_wait() {
+                    break;
+                }
                 continue;
             }
             Err(e) => return Err(e),
@@ -350,9 +345,14 @@ fn main() -> std::io::Result<()> {
                     // Log COMMAND_ACK responses — proves PX4 receives + processes our commands
                     if let MavMsg::CommandAck { command, result } = &msg {
                         let result_name = match result {
-                            0 => "ACCEPTED", 1 => "TEMPORARILY_REJECTED", 2 => "DENIED",
-                            3 => "UNSUPPORTED", 4 => "FAILED", 5 => "IN_PROGRESS",
-                            6 => "CANCELLED", _ => "UNKNOWN"
+                            0 => "ACCEPTED",
+                            1 => "TEMPORARILY_REJECTED",
+                            2 => "DENIED",
+                            3 => "UNSUPPORTED",
+                            4 => "FAILED",
+                            5 => "IN_PROGRESS",
+                            6 => "CANCELLED",
+                            _ => "UNKNOWN",
                         };
                         eprintln!("[mavlink_adapter] COMMAND_ACK cmd={} result={} ({})", command, result, result_name);
                     }

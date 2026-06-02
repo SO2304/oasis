@@ -76,11 +76,11 @@ impl Default for LoRaParams {
         Self {
             frequency_hz: 868_000_000,
             sf: 7,
-            bw_code: 4,        // 125 kHz
-            cr: 5,             // 4/5
-            tx_power_dbm: 14,  // ETSI EU868 max for general ISM use
+            bw_code: 4,       // 125 kHz
+            cr: 5,            // 4/5
+            tx_power_dbm: 14, // ETSI EU868 max for general ISM use
             preamble_len: 8,
-            sync_word: 0x12,   // private network default
+            sync_word: 0x12, // private network default
         }
     }
 }
@@ -101,11 +101,15 @@ pub trait LoRaRadio {
     fn rx_payload(&mut self, buf: &mut [u8], timeout_ms: u32) -> Result<usize, LoRaError>;
 
     /// Put radio to sleep (minimal current draw). Nice-to-have on MCU.
-    fn sleep(&mut self) -> Result<(), LoRaError> { Ok(()) }
+    fn sleep(&mut self) -> Result<(), LoRaError> {
+        Ok(())
+    }
 
     /// Max payload the chip can fit in a single packet. SX126x FIFO
     /// is 256 bytes; useable payload is less due to header / CRC.
-    fn max_payload(&self) -> usize { 255 }
+    fn max_payload(&self) -> usize {
+        255
+    }
 }
 
 /// High-level transport pairing a LoRa radio with OASIS frame packing.
@@ -149,16 +153,22 @@ impl<R: LoRaRadio> LoRaTransport<R> {
     /// Receive one LoRa packet, strip the OASIS frame header, return the
     /// payload (the v0A envelope). `buf` must be at least 255 B for a
     /// full SX126x FIFO.
-    pub fn recv_envelope<'b>(&mut self, buf: &'b mut [u8], timeout_ms: u32)
-        -> Result<&'b [u8], LoRaError>
-    {
+    pub fn recv_envelope<'b>(
+        &mut self,
+        buf: &'b mut [u8],
+        timeout_ms: u32,
+    ) -> Result<&'b [u8], LoRaError> {
         let n = self.radio.rx_payload(buf, timeout_ms)?;
         parse_lora_frame_local(&buf[..n])
             .map(|(hdr_len, payload_len)| &buf[hdr_len..hdr_len + payload_len])
     }
 
-    pub fn params(&self) -> &LoRaParams { &self.params }
-    pub fn radio(&mut self) -> &mut R { &mut self.radio }
+    pub fn params(&self) -> &LoRaParams {
+        &self.params
+    }
+    pub fn radio(&mut self) -> &mut R {
+        &mut self.radio
+    }
 }
 
 // ── OASIS LoRa frame format (mirror of oasis-rt::transport, kept here
@@ -179,14 +189,20 @@ fn crc8(data: &[u8]) -> u8 {
     for &b in data {
         crc ^= b;
         for _ in 0..8 {
-            crc = if crc & 0x80 != 0 { (crc << 1) ^ 0x07 } else { crc << 1 };
+            crc = if crc & 0x80 != 0 {
+                (crc << 1) ^ 0x07
+            } else {
+                crc << 1
+            };
         }
     }
     crc
 }
 
 fn pack_lora_frame_local(payload: &[u8]) -> Result<Vec<u8>, LoRaError> {
-    if payload.len() > 65535 { return Err(LoRaError::PayloadTooLarge(payload.len())); }
+    if payload.len() > 65535 {
+        return Err(LoRaError::PayloadTooLarge(payload.len()));
+    }
     let mut frame = Vec::with_capacity(FRAME_HEADER_LEN + payload.len());
     frame.extend_from_slice(FRAME_MAGIC);
     frame.push(FRAME_VER);
@@ -199,13 +215,23 @@ fn pack_lora_frame_local(payload: &[u8]) -> Result<Vec<u8>, LoRaError> {
 }
 
 fn parse_lora_frame_local(frame: &[u8]) -> Result<(usize, usize), LoRaError> {
-    if frame.len() < FRAME_HEADER_LEN { return Err(LoRaError::Frame("frame too short")); }
-    if &frame[..4] != FRAME_MAGIC { return Err(LoRaError::Frame("bad magic")); }
-    if frame[4] != FRAME_VER { return Err(LoRaError::Frame("unsupported version")); }
+    if frame.len() < FRAME_HEADER_LEN {
+        return Err(LoRaError::Frame("frame too short"));
+    }
+    if &frame[..4] != FRAME_MAGIC {
+        return Err(LoRaError::Frame("bad magic"));
+    }
+    if frame[4] != FRAME_VER {
+        return Err(LoRaError::Frame("unsupported version"));
+    }
     let len = u16::from_le_bytes([frame[5], frame[6]]) as usize;
     let expected_crc = crc8(&frame[..7]);
-    if frame[7] != expected_crc { return Err(LoRaError::Frame("header crc mismatch")); }
-    if frame.len() < FRAME_HEADER_LEN + len { return Err(LoRaError::Frame("payload truncated")); }
+    if frame[7] != expected_crc {
+        return Err(LoRaError::Frame("header crc mismatch"));
+    }
+    if frame.len() < FRAME_HEADER_LEN + len {
+        return Err(LoRaError::Frame("payload truncated"));
+    }
     Ok((FRAME_HEADER_LEN, len))
 }
 
@@ -245,14 +271,19 @@ mod tests {
     fn frame_rejects_tampered_crc() {
         let mut f = pack_lora_frame_local(b"x").unwrap();
         f[7] ^= 0x01;
-        assert!(matches!(parse_lora_frame_local(&f),
-            Err(LoRaError::Frame("header crc mismatch"))));
+        assert!(matches!(
+            parse_lora_frame_local(&f),
+            Err(LoRaError::Frame("header crc mismatch"))
+        ));
     }
 
     #[test]
     fn frame_rejects_bad_magic() {
         let mut f = pack_lora_frame_local(b"x").unwrap();
         f[0] = b'X';
-        assert!(matches!(parse_lora_frame_local(&f), Err(LoRaError::Frame("bad magic"))));
+        assert!(matches!(
+            parse_lora_frame_local(&f),
+            Err(LoRaError::Frame("bad magic"))
+        ));
     }
 }

@@ -14,9 +14,9 @@
 //! obstructions. The simulation covers the **byte-layer** (everything
 //! above the radio's internal FEC), which is what OASIS cares about.
 
-use std::sync::mpsc::{Receiver, Sender, RecvTimeoutError};
-use std::time::Duration;
 use crate::{LoRaError, LoRaParams, LoRaRadio};
+use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender};
+use std::time::Duration;
 
 pub struct SimulatedLoRaRadio {
     /// Bytes we send go out via this channel.
@@ -36,8 +36,20 @@ impl SimulatedLoRaRadio {
     pub fn linked_pair(seed: u64) -> (Self, Self) {
         let (tx_ab, rx_ab) = std::sync::mpsc::channel();
         let (tx_ba, rx_ba) = std::sync::mpsc::channel();
-        let a = Self { tx: tx_ab, rx: rx_ba, loss_rate: 0.0, prng: seed, params: None };
-        let b = Self { tx: tx_ba, rx: rx_ab, loss_rate: 0.0, prng: seed ^ 0xDEAD_BEEF, params: None };
+        let a = Self {
+            tx: tx_ab,
+            rx: rx_ba,
+            loss_rate: 0.0,
+            prng: seed,
+            params: None,
+        };
+        let b = Self {
+            tx: tx_ba,
+            rx: rx_ab,
+            loss_rate: 0.0,
+            prng: seed ^ 0xDEAD_BEEF,
+            params: None,
+        };
         (a, b)
     }
 
@@ -71,7 +83,8 @@ impl LoRaRadio for SimulatedLoRaRadio {
             // sent it but the other side wouldn't lock onto the preamble.
             return Ok(());
         }
-        self.tx.send(payload.to_vec())
+        self.tx
+            .send(payload.to_vec())
             .map_err(|_| LoRaError::Driver("channel closed"))?;
         Ok(())
     }
@@ -91,17 +104,22 @@ impl LoRaRadio for SimulatedLoRaRadio {
         }
     }
 
-    fn max_payload(&self) -> usize { 255 }
+    fn max_payload(&self) -> usize {
+        255
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::LoRaTransport;
-    use oasis_rt::mesh::{MeshDecision, MeshEdSeed, MeshPubRegistry, MeshRouter,
-                          mesh_v10_pubkey_from_seed};
+    use oasis_rt::mesh::{
+        mesh_v10_pubkey_from_seed, MeshDecision, MeshEdSeed, MeshPubRegistry, MeshRouter,
+    };
 
-    fn fp(b: u8) -> [u8; 8] { [b, 0, 0, 0, 0, 0, 0, 0] }
+    fn fp(b: u8) -> [u8; 8] {
+        [b, 0, 0, 0, 0, 0, 0, 0]
+    }
 
     #[test]
     fn two_node_v10_roundtrip_over_simulated_lora() {
@@ -138,7 +156,7 @@ mod tests {
     #[test]
     fn loss_injection_drops_packets() {
         let (mut radio_a, mut radio_b) = SimulatedLoRaRadio::linked_pair(42);
-        radio_a.set_loss_rate(1.0);    // 100% loss one-way
+        radio_a.set_loss_rate(1.0); // 100% loss one-way
         radio_a.init(&LoRaParams::default()).unwrap();
         radio_b.init(&LoRaParams::default()).unwrap();
 
@@ -146,8 +164,10 @@ mod tests {
 
         let mut buf = [0u8; 32];
         let res = radio_b.rx_payload(&mut buf, 100);
-        assert!(matches!(res, Err(LoRaError::Timeout)),
-            "100% loss rate must produce Timeout on RX side");
+        assert!(
+            matches!(res, Err(LoRaError::Timeout)),
+            "100% loss rate must produce Timeout on RX side"
+        );
     }
 
     #[test]
@@ -159,10 +179,9 @@ mod tests {
         let pk_a = mesh_v10_pubkey_from_seed(&seed_a).unwrap();
         let mut reg_b = MeshPubRegistry::new();
         reg_b.insert(fp(0xAA), pk_a);
-        let mut router_a = MeshRouter::new_ed25519_signed(fp(0xAA), seed_a,
-            MeshPubRegistry::new());
-        let mut router_b = MeshRouter::new_ed25519_signed(fp(0xBB),
-            MeshEdSeed([0x0Bu8; 32]), reg_b);
+        let mut router_a = MeshRouter::new_ed25519_signed(fp(0xAA), seed_a, MeshPubRegistry::new());
+        let mut router_b =
+            MeshRouter::new_ed25519_signed(fp(0xBB), MeshEdSeed([0x0Bu8; 32]), reg_b);
 
         let (mut radio_a, radio_b) = SimulatedLoRaRadio::linked_pair(7);
         radio_a.set_loss_rate(0.30);
@@ -185,8 +204,15 @@ mod tests {
         }
         // Expect ~70 % delivery at 30 % loss. Allow wide band (binomial noise
         // at N=50). The point is: delivery is neither 0 nor 100 — real channel.
-        assert!(arrived < sent, "loss injection must drop at least one packet");
-        assert!(arrived > sent / 3, "majority should survive at 30% loss (got {}/{})",
-            arrived, sent);
+        assert!(
+            arrived < sent,
+            "loss injection must drop at least one packet"
+        );
+        assert!(
+            arrived > sent / 3,
+            "majority should survive at 30% loss (got {}/{})",
+            arrived,
+            sent
+        );
     }
 }

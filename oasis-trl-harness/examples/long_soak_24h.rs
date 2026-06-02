@@ -19,15 +19,20 @@
 use std::time::Instant;
 
 use oasis_rt::mesh::{
-    MeshDecision, MeshEdSeed, MeshPubRegistry, MeshRouter,
-    mesh_v10_pubkey_from_seed,
+    mesh_v10_pubkey_from_seed, MeshDecision, MeshEdSeed, MeshPubRegistry, MeshRouter,
 };
-use oasis_rt::vec::{V, vz};
+use oasis_rt::vec::{vz, V};
 use oasis_rt::world_model::{WorldModel, ZoneType};
 use oasis_trl_harness::*;
 
-fn fp(b: u8) -> [u8; 8] { let mut f = [0u8; 8]; f[0] = b; f }
-fn seed(b: u8) -> MeshEdSeed { MeshEdSeed([b; 32]) }
+fn fp(b: u8) -> [u8; 8] {
+    let mut f = [0u8; 8];
+    f[0] = b;
+    f
+}
+fn seed(b: u8) -> MeshEdSeed {
+    MeshEdSeed([b; 32])
+}
 
 const TICKS_PER_VIRTUAL_HOUR: u64 = 3600;
 const VIRTUAL_HOURS_TO_SOAK: u64 = 24;
@@ -70,10 +75,18 @@ fn run_one_trial(rng_seed: u64) -> SoakTrial {
     let mut world_a = WorldModel::new();
     let mut world_b = WorldModel::new();
     let mut world_c = WorldModel::new();
-    let mut goal: V = vz(); goal[0] = 10.0; goal[1] = 10.0;
-    world_a.try_add_zone(ZoneType::Attractive, goal, 5.0, 8.0).expect("setup");
-    world_b.try_add_zone(ZoneType::Attractive, goal, 5.0, 8.0).expect("setup");
-    world_c.try_add_zone(ZoneType::Attractive, goal, 5.0, 8.0).expect("setup");
+    let mut goal: V = vz();
+    goal[0] = 10.0;
+    goal[1] = 10.0;
+    world_a
+        .try_add_zone(ZoneType::Attractive, goal, 5.0, 8.0)
+        .expect("setup");
+    world_b
+        .try_add_zone(ZoneType::Attractive, goal, 5.0, 8.0)
+        .expect("setup");
+    world_c
+        .try_add_zone(ZoneType::Attractive, goal, 5.0, 8.0)
+        .expect("setup");
 
     let mut sensor_v_a = SensorNoiseModel::new(10.0);
     let mut sensor_v_b = SensorNoiseModel::new(10.0);
@@ -94,9 +107,13 @@ fn run_one_trial(rng_seed: u64) -> SoakTrial {
 
     for tick in 0..total_ticks {
         // Sensor reads → potential zone adds
-        for (sensor, world) in [(&mut sensor_v_a, &mut world_a),
-                                 (&mut sensor_v_b, &mut world_b),
-                                 (&mut sensor_v_c, &mut world_c)].iter_mut() {
+        for (sensor, world) in [
+            (&mut sensor_v_a, &mut world_a),
+            (&mut sensor_v_b, &mut world_b),
+            (&mut sensor_v_c, &mut world_c),
+        ]
+        .iter_mut()
+        {
             let v = sensor.sample(&mut rng);
             if (v - 10.0).abs() > 0.5 {
                 let mut center: V = vz();
@@ -138,7 +155,8 @@ fn run_one_trial(rng_seed: u64) -> SoakTrial {
         }
 
         // Operator monitor
-        let combined_cap = world_a.cap_hit_count() + world_b.cap_hit_count() + world_c.cap_hit_count();
+        let combined_cap =
+            world_a.cap_hit_count() + world_b.cap_hit_count() + world_c.cap_hit_count();
         operator.tick(combined_cap, Some(adversary.attacker_fp));
 
         // Hourly checkpoint
@@ -147,13 +165,18 @@ fn run_one_trial(rng_seed: u64) -> SoakTrial {
             let elapsed_this_hour = last_hour_checkpoint.elapsed().as_micros();
             checkpoints.push(HourCheckpoint {
                 virtual_hour: v_hr,
-                envelopes_processed: metrics.envelopes_processed - last_hour_metrics.envelopes_processed,
+                envelopes_processed: metrics.envelopes_processed
+                    - last_hour_metrics.envelopes_processed,
                 envelopes_lost: metrics.envelopes_lost - last_hour_metrics.envelopes_lost,
-                attacks_attempted: metrics.adversary_attempts - last_hour_metrics.adversary_attempts,
+                attacks_attempted: metrics.adversary_attempts
+                    - last_hour_metrics.adversary_attempts,
                 attacks_blocked: metrics.attacks_blocked - last_hour_metrics.attacks_blocked,
                 cap_hits: combined_cap - last_hour_metrics.total_cap_hits,
-                revocations_issued: operator.revocations_issued - last_hour_metrics.operator_revocations,
-                zone_count_total: world_a.zone_count() + world_b.zone_count() + world_c.zone_count(),
+                revocations_issued: operator.revocations_issued
+                    - last_hour_metrics.operator_revocations,
+                zone_count_total: world_a.zone_count()
+                    + world_b.zone_count()
+                    + world_c.zone_count(),
                 wall_clock_micros_this_hour: elapsed_this_hour,
             });
             // Snapshot
@@ -173,7 +196,8 @@ fn run_one_trial(rng_seed: u64) -> SoakTrial {
     metrics.ticks_simulated = total_ticks;
     metrics.operator_alarms = operator.alarms_raised;
     metrics.operator_revocations = operator.revocations_issued;
-    metrics.total_cap_hits = world_a.cap_hit_count() + world_b.cap_hit_count() + world_c.cap_hit_count();
+    metrics.total_cap_hits =
+        world_a.cap_hit_count() + world_b.cap_hit_count() + world_c.cap_hit_count();
     metrics.final_zone_count = world_a.zone_count() + world_b.zone_count() + world_c.zone_count();
 
     SoakTrial {
@@ -210,8 +234,10 @@ fn main() {
             t.final_metrics.adversary_attempts, t.final_metrics.attacks_blocked,
             t.final_metrics.attacks_succeeded, t.final_metrics.total_cap_hits,
             t.final_metrics.operator_revocations);
-        println!("    safety ratio (blocked/attempted): {:.3}",
-            t.final_metrics.safety_ratio());
+        println!(
+            "    safety ratio (blocked/attempted): {:.3}",
+            t.final_metrics.safety_ratio()
+        );
         // Show first + middle + last hourly checkpoint
         if !t.hourly_checkpoints.is_empty() {
             let n = t.hourly_checkpoints.len();
@@ -232,16 +258,20 @@ fn main() {
     println!("══════════════════════════════════════════════════════════════════");
     println!(" Cross-seed stability analysis (K={} trials)", trials.len());
     println!("──────────────────────────────────────────────────────────────────");
-    let safety_ratios: Vec<f64> = trials.iter()
+    let safety_ratios: Vec<f64> = trials
+        .iter()
         .map(|t| t.final_metrics.safety_ratio())
         .collect();
-    let env_processeds: Vec<u64> = trials.iter()
+    let env_processeds: Vec<u64> = trials
+        .iter()
         .map(|t| t.final_metrics.envelopes_processed)
         .collect();
-    let revocations: Vec<u32> = trials.iter()
+    let revocations: Vec<u32> = trials
+        .iter()
         .map(|t| t.final_metrics.operator_revocations)
         .collect();
-    let zone_counts: Vec<usize> = trials.iter()
+    let zone_counts: Vec<usize> = trials
+        .iter()
         .map(|t| t.final_metrics.final_zone_count)
         .collect();
 
@@ -249,27 +279,48 @@ fn main() {
     let safety_max = safety_ratios.iter().cloned().fold(f64::MIN, f64::max);
     let safety_mean: f64 = safety_ratios.iter().sum::<f64>() / safety_ratios.len() as f64;
 
-    println!("  Safety ratio:    min={:.3} max={:.3} mean={:.3} spread=±{:.3}",
-        safety_min, safety_max, safety_mean, (safety_max - safety_min) / 2.0);
-    println!("  Envelopes proc:  {} {} {}",
-        env_processeds[0], env_processeds[1], env_processeds[2]);
-    println!("  Revocations:     {} {} {}",
-        revocations[0], revocations[1], revocations[2]);
-    println!("  Final zones:     {} {} {}",
-        zone_counts[0], zone_counts[1], zone_counts[2]);
+    println!(
+        "  Safety ratio:    min={:.3} max={:.3} mean={:.3} spread=±{:.3}",
+        safety_min,
+        safety_max,
+        safety_mean,
+        (safety_max - safety_min) / 2.0
+    );
+    println!(
+        "  Envelopes proc:  {} {} {}",
+        env_processeds[0], env_processeds[1], env_processeds[2]
+    );
+    println!(
+        "  Revocations:     {} {} {}",
+        revocations[0], revocations[1], revocations[2]
+    );
+    println!(
+        "  Final zones:     {} {} {}",
+        zone_counts[0], zone_counts[1], zone_counts[2]
+    );
 
     // Drift analysis: compare per-hour throughput in first vs last hours
     println!();
     println!("  Drift analysis (per-hour throughput):");
     for t in &trials {
-        if t.hourly_checkpoints.len() < 4 { continue; }
+        if t.hourly_checkpoints.len() < 4 {
+            continue;
+        }
         let first_hour = t.hourly_checkpoints[0].envelopes_processed;
         let last_hour = t.hourly_checkpoints.last().unwrap().envelopes_processed;
         let drift_pct = if first_hour > 0 {
             ((last_hour as i64 - first_hour as i64) as f64 / first_hour as f64) * 100.0
-        } else { 0.0 };
-        println!("    seed {}: hour 1 = {}, hour {} = {}, drift = {:+.2}%",
-            t.rng_seed, first_hour, t.hourly_checkpoints.len(), last_hour, drift_pct);
+        } else {
+            0.0
+        };
+        println!(
+            "    seed {}: hour 1 = {}, hour {} = {}, drift = {:+.2}%",
+            t.rng_seed,
+            first_hour,
+            t.hourly_checkpoints.len(),
+            last_hour,
+            drift_pct
+        );
     }
 
     println!();
@@ -278,23 +329,33 @@ fn main() {
     println!("──────────────────────────────────────────────────────────────────");
     let safety_spread = safety_max - safety_min;
     let drift_acceptable = trials.iter().all(|t| {
-        if t.hourly_checkpoints.len() < 4 { return true; }
+        if t.hourly_checkpoints.len() < 4 {
+            return true;
+        }
         let first = t.hourly_checkpoints[0].envelopes_processed;
         let last = t.hourly_checkpoints.last().unwrap().envelopes_processed;
         // Allow ±20% per-hour drift
-        if first == 0 { return true; }
+        if first == 0 {
+            return true;
+        }
         let pct = ((last as i64 - first as i64).abs() as f64 / first as f64) * 100.0;
         pct < 20.0
     });
     if safety_spread < 0.15 && drift_acceptable {
         println!("  [PASS] System is scale-stable across 24h × 3 seeds.");
-        println!("    - safety ratio spread {:.3} < 0.15 acceptable", safety_spread);
+        println!(
+            "    - safety ratio spread {:.3} < 0.15 acceptable",
+            safety_spread
+        );
         println!("    - per-hour throughput drift < 20% across trials");
         println!("    - TRL 5.5 → TRL 5.7 evidence: software stack ready for hardware.");
         println!("  bench complete.");
         std::process::exit(0);
     } else {
-        eprintln!("  [FAIL] safety spread {:.3} or drift unacceptable", safety_spread);
+        eprintln!(
+            "  [FAIL] safety spread {:.3} or drift unacceptable",
+            safety_spread
+        );
         std::process::exit(1);
     }
 }

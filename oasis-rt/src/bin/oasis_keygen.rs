@@ -25,19 +25,33 @@ fn main() -> ExitCode {
     let mut i = 1;
     while i < args.len() {
         match args[i].as_str() {
-            "--json" => { json = true; i += 1; }
+            "--json" => {
+                json = true;
+                i += 1;
+            }
             "--env-file" => {
-                env_file = Some(args.get(i+1).map(|s| s.clone())
-                    .unwrap_or_else(|| { eprintln!("--env-file needs path"); std::process::exit(2) }));
+                env_file = Some(args.get(i + 1).map(|s| s.clone()).unwrap_or_else(|| {
+                    eprintln!("--env-file needs path");
+                    std::process::exit(2)
+                }));
                 i += 2;
             }
             "--label" => {
-                label = args.get(i+1).cloned()
-                    .unwrap_or_else(|| { eprintln!("--label needs value"); std::process::exit(2) });
+                label = args.get(i + 1).cloned().unwrap_or_else(|| {
+                    eprintln!("--label needs value");
+                    std::process::exit(2)
+                });
                 i += 2;
             }
-            "-h" | "--help" => { print_usage(); return ExitCode::SUCCESS; }
-            other => { eprintln!("unknown arg: {}", other); print_usage(); return ExitCode::from(2); }
+            "-h" | "--help" => {
+                print_usage();
+                return ExitCode::SUCCESS;
+            }
+            other => {
+                eprintln!("unknown arg: {}", other);
+                print_usage();
+                return ExitCode::from(2);
+            }
         }
     }
 
@@ -50,8 +64,7 @@ fn main() -> ExitCode {
     let fp_human = human_fp(&fp);
 
     if json {
-        println!(r#"{{"label":"{}","priv_hex":"{}","pub_hex":"{}","fp_hex":"{}","fp_human":"{}"}}"#,
-            label, priv_hex, pub_hex, fp_hex, fp_human);
+        println!(r#"{{"label":"{}","priv_hex":"{}","pub_hex":"{}","fp_hex":"{}","fp_human":"{}"}}"#, label, priv_hex, pub_hex, fp_hex, fp_human);
     } else if let Some(path) = env_file {
         let body = format!(
             "# OASIS node {} — generated keypair\n\
@@ -59,7 +72,8 @@ fn main() -> ExitCode {
              export OASIS_SPORE_ID_PRIV_HEX={}\n\
              export OASIS_SPORE_ID_PUB_HEX={}\n\
              # fingerprint (read aloud during pairing): {}\n",
-            label, priv_hex, pub_hex, fp_human);
+            label, priv_hex, pub_hex, fp_human
+        );
         if let Err(e) = std::fs::write(&path, body) {
             eprintln!("write {} failed: {}", path, e);
             return ExitCode::FAILURE;
@@ -80,7 +94,9 @@ fn main() -> ExitCode {
 
 fn hex_lower(b: &[u8]) -> String {
     let mut s = String::with_capacity(b.len() * 2);
-    for byte in b { s.push_str(&format!("{:02x}", byte)); }
+    for byte in b {
+        s.push_str(&format!("{:02x}", byte));
+    }
     s
 }
 

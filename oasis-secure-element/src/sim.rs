@@ -5,10 +5,10 @@
 //!
 //! For unit / integration tests of the OASIS-SE contract.
 
-use std::time::Duration;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Duration;
 
-use crate::{SecureElement, SeError, TamperReason};
+use crate::{SeError, SecureElement, TamperReason};
 
 /// Realistic ATECC608B sign() latency on real hardware:
 /// - Wakeup: ~1.5 ms
@@ -76,10 +76,14 @@ impl SimSecureElement {
     /// Inspect the wipe reason if the SE has been wiped. None means
     /// either not wiped, or wiped without a recorded reason (real SEs
     /// always have a reason).
-    pub fn wipe_reason(&self) -> Option<TamperReason> { self.wiped_reason }
+    pub fn wipe_reason(&self) -> Option<TamperReason> {
+        self.wiped_reason
+    }
 
     fn keypair(&self) -> Result<ed25519_compact::KeyPair, SeError> {
-        if self.is_wiped() { return Err(SeError::Wiped); }
+        if self.is_wiped() {
+            return Err(SeError::Wiped);
+        }
         let seed = self.seed.as_ref().ok_or(SeError::NotProvisioned)?;
         let s = ed25519_compact::Seed::from_slice(seed.as_ref())
             .map_err(|_| SeError::InternalCrypto)?;
@@ -89,7 +93,9 @@ impl SimSecureElement {
 
 impl SecureElement for SimSecureElement {
     fn provision(&mut self, seed: &[u8; 32]) -> Result<(), SeError> {
-        if self.is_wiped() { return Err(SeError::Wiped); }
+        if self.is_wiped() {
+            return Err(SeError::Wiped);
+        }
         self.seed = Some(Box::new(*seed));
         Ok(())
     }
@@ -98,7 +104,8 @@ impl SecureElement for SimSecureElement {
         let kp = self.keypair()?;
         if self.pubkey_latency_ms > 0 {
             std::thread::sleep(Duration::from_millis(self.pubkey_latency_ms));
-            self.total_latency_ms.fetch_add(self.pubkey_latency_ms, Ordering::SeqCst);
+            self.total_latency_ms
+                .fetch_add(self.pubkey_latency_ms, Ordering::SeqCst);
         }
         let mut out = [0u8; 32];
         out.copy_from_slice(kp.pk.as_ref());
@@ -113,7 +120,8 @@ impl SecureElement for SimSecureElement {
         // honest way to make benchmarks predict real-hardware throughput.
         if self.sign_latency_ms > 0 {
             std::thread::sleep(Duration::from_millis(self.sign_latency_ms));
-            self.total_latency_ms.fetch_add(self.sign_latency_ms, Ordering::SeqCst);
+            self.total_latency_ms
+                .fetch_add(self.sign_latency_ms, Ordering::SeqCst);
         }
         let sig = kp.sk.sign(msg, None);
         let mut out = [0u8; 64];
@@ -128,25 +136,30 @@ impl SecureElement for SimSecureElement {
         // but on a real SE this is hardware-enforced erasure).
         if let Some(mut s) = self.seed.take() {
             // Manual zeroize before drop to make the intent explicit.
-            for b in s.iter_mut() { *b = 0; }
+            for b in s.iter_mut() {
+                *b = 0;
+            }
             drop(s);
         }
         self.wiped_reason = Some(reason);
         Ok(())
     }
 
-    fn is_wiped(&self) -> bool { self.wiped_reason.is_some() }
+    fn is_wiped(&self) -> bool {
+        self.wiped_reason.is_some()
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use oasis_rt::mesh::{
-        MeshDecision, MeshEdSeed, MeshEdPub, MeshPubRegistry, MeshRouter,
-        mesh_v10_pubkey_from_seed,
+        mesh_v10_pubkey_from_seed, MeshDecision, MeshEdPub, MeshEdSeed, MeshPubRegistry, MeshRouter,
     };
 
-    fn fp(b: u8) -> [u8; 8] { [b, 0, 0, 0, 0, 0, 0, 0] }
+    fn fp(b: u8) -> [u8; 8] {
+        [b, 0, 0, 0, 0, 0, 0, 0]
+    }
 
     #[test]
     fn provision_then_sign_then_pubkey_consistent() {
@@ -194,17 +207,19 @@ mod tests {
         // SE-signing in production).
         let pk_a = mesh_v10_pubkey_from_seed(&MeshEdSeed(seed_bytes)).unwrap();
         let mut router_a = MeshRouter::new_ed25519_signed(
-            fp(0xAA), MeshEdSeed(seed_bytes), MeshPubRegistry::new());
+            fp(0xAA),
+            MeshEdSeed(seed_bytes),
+            MeshPubRegistry::new(),
+        );
         let env = router_a.origin_wrap(b"telemetry");
 
         // Receiver — same as production
         let mut reg_b = MeshPubRegistry::new();
         reg_b.insert(fp(0xAA), pk_a);
-        let mut router_b = MeshRouter::new_ed25519_signed(
-            fp(0xBB), MeshEdSeed([0x99; 32]), reg_b);
+        let mut router_b = MeshRouter::new_ed25519_signed(fp(0xBB), MeshEdSeed([0x99; 32]), reg_b);
 
         match router_b.process(&env) {
-            MeshDecision::Arrived { .. } => {},
+            MeshDecision::Arrived { .. } => {}
             other => panic!("standard verify should accept: {:?}", other),
         }
 
@@ -217,13 +232,15 @@ mod tests {
 
         let mut se = SimSecureElement::new_no_latency();
         se.provision(&seed_bytes).unwrap();
-        let sig_via_se = crate::sign_v10_envelope_via_se(&se, msg_id, fp(0xAA))
-            .unwrap();
+        let sig_via_se = crate::sign_v10_envelope_via_se(&se, msg_id, fp(0xAA)).unwrap();
 
         // The signature in the envelope sits at bytes 25..89.
         let sig_in_envelope = &env[25..89];
-        assert_eq!(&sig_via_se[..], sig_in_envelope,
-            "SE-produced signature must match in-process signature byte-for-byte");
+        assert_eq!(
+            &sig_via_se[..],
+            sig_in_envelope,
+            "SE-produced signature must match in-process signature byte-for-byte"
+        );
     }
 
     #[test]
@@ -237,9 +254,11 @@ mod tests {
         se.provision(&seed_bytes).unwrap();
         let se_pk = se.pubkey().unwrap();
 
-        let oasis_pk: MeshEdPub =
-            mesh_v10_pubkey_from_seed(&MeshEdSeed(seed_bytes)).unwrap();
-        assert_eq!(&se_pk[..], &oasis_pk.0[..],
-            "SE pubkey must equal the standard helper output");
+        let oasis_pk: MeshEdPub = mesh_v10_pubkey_from_seed(&MeshEdSeed(seed_bytes)).unwrap();
+        assert_eq!(
+            &se_pk[..],
+            &oasis_pk.0[..],
+            "SE pubkey must equal the standard helper output"
+        );
     }
 }

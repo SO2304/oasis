@@ -67,7 +67,14 @@ pub struct Sx1262Driver<SPI, NSS, BUSY, RESET, DIO1> {
 
 impl<SPI, NSS, BUSY, RESET, DIO1> Sx1262Driver<SPI, NSS, BUSY, RESET, DIO1> {
     pub fn new(spi: SPI, nss: NSS, busy: BUSY, reset: RESET, dio1: DIO1) -> Self {
-        Self { spi, nss, busy, reset, dio1, initialized: false }
+        Self {
+            spi,
+            nss,
+            busy,
+            reset,
+            dio1,
+            initialized: false,
+        }
     }
 }
 
@@ -89,8 +96,10 @@ impl<SPI, NSS, BUSY, RESET, DIO1> LoRaRadio for Sx1262Driver<SPI, NSS, BUSY, RES
         //  12. calibrate_image(freq)
         // Until the driver is real, refuse to pretend:
         self.initialized = false;
-        Err(LoRaError::Driver("Sx1262Driver: init not yet implemented — \
-            pending hardware validation. Use SimulatedLoRaRadio for tests."))
+        Err(LoRaError::Driver(
+            "Sx1262Driver: init not yet implemented — \
+            pending hardware validation. Use SimulatedLoRaRadio for tests.",
+        ))
     }
 
     fn tx_payload(&mut self, _payload: &[u8]) -> Result<(), LoRaError> {
@@ -101,5 +110,7 @@ impl<SPI, NSS, BUSY, RESET, DIO1> LoRaRadio for Sx1262Driver<SPI, NSS, BUSY, RES
         Err(LoRaError::Driver("Sx1262Driver: rx_payload stub"))
     }
 
-    fn max_payload(&self) -> usize { 255 }
+    fn max_payload(&self) -> usize {
+        255
+    }
 }

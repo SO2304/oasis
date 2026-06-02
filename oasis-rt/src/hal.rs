@@ -7,12 +7,12 @@
 //! Safety: force/torque/velocity clamping (R9), geofencing, kill switch.
 
 use crate::vec::*;
-#[cfg(feature = "std")]
-use std::sync::atomic::{AtomicBool, Ordering};
+#[cfg(not(feature = "std"))]
+use alloc::{format, string::String, vec, vec::Vec};
 #[cfg(not(feature = "std"))]
 use core::sync::atomic::{AtomicBool, Ordering};
-#[cfg(not(feature = "std"))]
-use alloc::{vec::Vec, string::String, vec, format};
+#[cfg(feature = "std")]
+use std::sync::atomic::{AtomicBool, Ordering};
 
 // ─── Physical Constraints (R9) ──────────────────────────────
 

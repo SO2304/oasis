@@ -23,12 +23,12 @@ use std::collections::VecDeque;
 use std::time::{Duration, Instant};
 
 const N_DRONES: usize = 200;
-const AREA_M: f64 = 1000.0;      // 1 km × 1 km
-const RANGE_M: f64 = 120.0;       // radio range
-const TICK_MS: u64 = 100;         // 100 ms per tick = 10 Hz
+const AREA_M: f64 = 1000.0; // 1 km × 1 km
+const RANGE_M: f64 = 120.0; // radio range
+const TICK_MS: u64 = 100; // 100 ms per tick = 10 Hz
 const BROADCAST_EVERY_TICKS: u32 = 5; // 500 ms between broadcasts
-const SIM_DURATION_S: u64 = 30;   // 30 seconds of real-time
-const PAYLOAD_LEN: usize = 200;   // typical OASIS digest
+const SIM_DURATION_S: u64 = 30; // 30 seconds of real-time
+const PAYLOAD_LEN: usize = 200; // typical OASIS digest
 
 fn main() {
     println!("╔════════════════════════════════════════════════════════════╗");
@@ -48,9 +48,7 @@ fn main() {
         rng = rng.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
         rng
     };
-    let mut rnd_f = |r: &mut dyn FnMut() -> u64| -> f64 {
-        (r() >> 11) as f64 / ((1u64 << 53) as f64)
-    };
+    let mut rnd_f = |r: &mut dyn FnMut() -> u64| -> f64 { (r() >> 11) as f64 / ((1u64 << 53) as f64) };
 
     // Generate drone positions + create MeshRouters
     struct Drone {
@@ -58,9 +56,9 @@ fn main() {
         router: MeshRouter,
         pos: (f64, f64),
         neighbors: Vec<usize>,
-        rx_count: u64,            // unique messages received
-        fwd_count: u64,            // messages forwarded
-        dup_count: u64,            // dedup drops
+        rx_count: u64,  // unique messages received
+        fwd_count: u64, // messages forwarded
+        dup_count: u64, // dedup drops
     }
     let mut drones: Vec<Drone> = Vec::with_capacity(N_DRONES);
     for i in 0..N_DRONES {
@@ -70,22 +68,19 @@ fn main() {
         fp[1] = ((i >> 8) & 0xFF) as u8;
         fp[2..].copy_from_slice(&[7, 7, 7, 7, 7, 7]);
         let pos = (rnd_f(&mut rnd_u64) * AREA_M, rnd_f(&mut rnd_u64) * AREA_M);
-        drones.push(Drone {
-            fp, pos,
-            router: MeshRouter::with_config(fp, 8, 8192),
-            neighbors: Vec::new(),
-            rx_count: 0, fwd_count: 0, dup_count: 0,
-        });
+        drones.push(Drone { fp, pos, router: MeshRouter::with_config(fp, 8, 8192), neighbors: Vec::new(), rx_count: 0, fwd_count: 0, dup_count: 0 });
     }
 
     // Compute neighbor lists
     let mut total_edges = 0u64;
     for i in 0..N_DRONES {
         for j in 0..N_DRONES {
-            if i == j { continue; }
+            if i == j {
+                continue;
+            }
             let dx = drones[i].pos.0 - drones[j].pos.0;
             let dy = drones[i].pos.1 - drones[j].pos.1;
-            if (dx*dx + dy*dy).sqrt() < RANGE_M {
+            if (dx * dx + dy * dy).sqrt() < RANGE_M {
                 drones[i].neighbors.push(j);
                 total_edges += 1;
             }
@@ -162,7 +157,10 @@ fn main() {
             let d = &mut drones[drone_idx];
             let decision = d.router.process_owned(env);
             match decision {
-                MeshDecision::Drop("duplicate") => { d.dup_count += 1; total_dups += 1; }
+                MeshDecision::Drop("duplicate") => {
+                    d.dup_count += 1;
+                    total_dups += 1;
+                }
                 MeshDecision::Drop(_) => {}
                 MeshDecision::Arrived { envelope, forward, .. } => {
                     d.rx_count += 1;
@@ -195,13 +193,10 @@ fn main() {
         // ── Live print every 5 seconds ──
         if tick > 0 && tick % 50 == 0 {
             let elapsed = start.elapsed().as_secs_f64();
-            let reached_now: usize = broadcasts.iter()
-                .map(|b| b.reached.iter().filter(|&&r| r).count())
-                .sum();
+            let reached_now: usize = broadcasts.iter().map(|b| b.reached.iter().filter(|&&r| r).count()).sum();
             let expected = broadcasts.len() * N_DRONES;
             let reach_pct = if expected > 0 { 100.0 * reached_now as f64 / expected as f64 } else { 0.0 };
-            println!("  [{:5.1} s, tick {}] broadcasts={}  reach_avg={:.1}%  pkts_sent={}  fwds={}  dups={}",
-                elapsed, tick, total_broadcasts, reach_pct, total_packets, total_forwards, total_dups);
+            println!("  [{:5.1} s, tick {}] broadcasts={}  reach_avg={:.1}%  pkts_sent={}  fwds={}  dups={}", elapsed, tick, total_broadcasts, reach_pct, total_packets, total_forwards, total_dups);
         }
 
         // Sleep to maintain real-time pace
@@ -219,12 +214,9 @@ fn main() {
     println!("╚════════════════════════════════════════════════════════════╝");
     println!("Wall-clock elapsed:  {:.2} s  (target {} s)", wall.as_secs_f64(), SIM_DURATION_S);
     println!("Total broadcasts:    {}", total_broadcasts);
-    println!("Total packets sent:  {}  ({:.1} avg per broadcast)",
-        total_packets, total_packets as f64 / total_broadcasts.max(1) as f64);
-    println!("Total forwards:      {}  ({:.1} avg per broadcast)",
-        total_forwards, total_forwards as f64 / total_broadcasts.max(1) as f64);
-    println!("Dedup drops:         {}  ({:.1}%)  ← measure of flood overhead saved",
-        total_dups, 100.0 * total_dups as f64 / total_packets.max(1) as f64);
+    println!("Total packets sent:  {}  ({:.1} avg per broadcast)", total_packets, total_packets as f64 / total_broadcasts.max(1) as f64);
+    println!("Total forwards:      {}  ({:.1} avg per broadcast)", total_forwards, total_forwards as f64 / total_broadcasts.max(1) as f64);
+    println!("Dedup drops:         {}  ({:.1}%)  ← measure of flood overhead saved", total_dups, 100.0 * total_dups as f64 / total_packets.max(1) as f64);
     println!();
 
     // Coverage distribution
@@ -251,16 +243,16 @@ fn main() {
     let avg_hops = if hop_cnt > 0 { hop_sum as f64 / hop_cnt as f64 } else { 0.0 };
     println!("Coverage distribution (% drones reached per broadcast):");
     for (i, &c) in reach_buckets.iter().enumerate() {
-        if c == 0 { continue; }
+        if c == 0 {
+            continue;
+        }
         println!("  {:>3}% : {} broadcasts", i * 10, c);
     }
     println!();
     println!("Avg hops to reach a drone (excluding origin): {:.2}", avg_hops);
     if done_cnt > 0 {
-        println!("Full-coverage latency (ticks):                 {:.1} avg  ({} fully-covered broadcasts)",
-            done_lat_sum as f64 / done_cnt as f64, done_cnt);
-        println!("Full-coverage latency (ms):                    {:.1}",
-            (done_lat_sum as f64 / done_cnt as f64) * TICK_MS as f64);
+        println!("Full-coverage latency (ticks):                 {:.1} avg  ({} fully-covered broadcasts)", done_lat_sum as f64 / done_cnt as f64, done_cnt);
+        println!("Full-coverage latency (ms):                    {:.1}", (done_lat_sum as f64 / done_cnt as f64) * TICK_MS as f64);
     } else {
         println!("Full coverage not achieved in any broadcast within sim duration.");
     }
@@ -270,6 +262,5 @@ fn main() {
     let min_fwd = drones.iter().map(|d| d.fwd_count).min().unwrap_or(0);
     let avg_fwd = drones.iter().map(|d| d.fwd_count).sum::<u64>() as f64 / N_DRONES as f64;
     println!();
-    println!("Per-drone forward load: min={}, avg={:.1}, max={}",
-        min_fwd, avg_fwd, max_fwd);
+    println!("Per-drone forward load: min={}, avg={:.1}, max={}", min_fwd, avg_fwd, max_fwd);
 }

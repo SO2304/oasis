@@ -7,20 +7,25 @@
 //! Reports only key checkpoints (day 1, 7, 14, 21, 30) to keep
 //! output small; full per-hour series would be 720 lines.
 
-use std::time::Instant;
 use oasis_rt::mesh::{
-    MeshDecision, MeshEdSeed, MeshPubRegistry, MeshRouter,
-    mesh_v10_pubkey_from_seed,
+    mesh_v10_pubkey_from_seed, MeshDecision, MeshEdSeed, MeshPubRegistry, MeshRouter,
 };
-use oasis_rt::vec::{V, vz};
+use oasis_rt::vec::{vz, V};
 use oasis_rt::world_model::{WorldModel, ZoneType};
 use oasis_trl_harness::*;
+use std::time::Instant;
 
-fn fp(b: u8) -> [u8; 8] { let mut f = [0u8; 8]; f[0] = b; f }
-fn seed(b: u8) -> MeshEdSeed { MeshEdSeed([b; 32]) }
+fn fp(b: u8) -> [u8; 8] {
+    let mut f = [0u8; 8];
+    f[0] = b;
+    f
+}
+fn seed(b: u8) -> MeshEdSeed {
+    MeshEdSeed([b; 32])
+}
 
 const TICKS_PER_VIRTUAL_HOUR: u64 = 3600;
-const VIRTUAL_HOURS_TO_SOAK: u64 = 720;          // 30 days
+const VIRTUAL_HOURS_TO_SOAK: u64 = 720; // 30 days
 const ADVERSARY_INTERVAL_TICKS: u64 = 30;
 const AUTO_RESET_THRESHOLD: u64 = 40_000;
 
@@ -28,7 +33,10 @@ fn main() {
     println!();
     println!("╔══════════════════════════════════════════════════════════════════╗");
     println!("║  AD3 — 30-day compressed soak (2 592 000 ticks)                  ║");
-    println!("║  auto-reset @ {} inserts                                         ║", AUTO_RESET_THRESHOLD);
+    println!(
+        "║  auto-reset @ {} inserts                                         ║",
+        AUTO_RESET_THRESHOLD
+    );
     println!("╚══════════════════════════════════════════════════════════════════╝");
     println!();
 
@@ -45,9 +53,15 @@ fn main() {
 
     let mut world_a = WorldModel::new();
     let mut world_b = WorldModel::new();
-    let mut goal: V = vz(); goal[0] = 10.0; goal[1] = 10.0;
-    world_a.try_add_zone(ZoneType::Attractive, goal, 5.0, 8.0).expect("setup");
-    world_b.try_add_zone(ZoneType::Attractive, goal, 5.0, 8.0).expect("setup");
+    let mut goal: V = vz();
+    goal[0] = 10.0;
+    goal[1] = 10.0;
+    world_a
+        .try_add_zone(ZoneType::Attractive, goal, 5.0, 8.0)
+        .expect("setup");
+    world_b
+        .try_add_zone(ZoneType::Attractive, goal, 5.0, 8.0)
+        .expect("setup");
 
     let mut sensor_a = SensorNoiseModel::new(10.0);
     let mut sensor_b = SensorNoiseModel::new(10.0);
@@ -67,11 +81,11 @@ fn main() {
     let mut reset_count_history: Vec<u64> = Vec::new();
 
     for tick in 0..total_ticks {
-        for (s, w) in [(&mut sensor_a, &mut world_a),
-                       (&mut sensor_b, &mut world_b)].iter_mut() {
+        for (s, w) in [(&mut sensor_a, &mut world_a), (&mut sensor_b, &mut world_b)].iter_mut() {
             let v = s.sample(&mut rng);
             if (v - 10.0).abs() > 0.5 {
-                let mut c: V = vz(); c[0] = v;
+                let mut c: V = vz();
+                c[0] = v;
                 let _ = w.try_add_zone(ZoneType::Repulsive, c, 1.0, 0.5);
             }
         }
@@ -103,9 +117,13 @@ fn main() {
                     throughputs[i] = current_hour_arrived;
                     reset_count_history.push(router_b.bloom_reset_count());
                     let elapsed_min = trial_start.elapsed().as_secs() / 60;
-                    println!("    hour {:>4}: env/h={:>4}, router_b resets={:>3} (elapsed: {} min)",
-                        h, current_hour_arrived,
-                        router_b.bloom_reset_count(), elapsed_min);
+                    println!(
+                        "    hour {:>4}: env/h={:>4}, router_b resets={:>3} (elapsed: {} min)",
+                        h,
+                        current_hour_arrived,
+                        router_b.bloom_reset_count(),
+                        elapsed_min
+                    );
                 }
             }
             current_hour_arrived = 0;
@@ -115,11 +133,24 @@ fn main() {
 
     let duration_ms = trial_start.elapsed().as_millis();
     println!();
-    println!("    Total wall clock: {} ms ({} min)", duration_ms, duration_ms / 60_000);
+    println!(
+        "    Total wall clock: {} ms ({} min)",
+        duration_ms,
+        duration_ms / 60_000
+    );
     println!("    router_b final state:");
-    println!("      bloom_resets:              {}", router_b.bloom_reset_count());
-    println!("      bloom_inserts_since_reset: {}", router_b.bloom_inserts_since_reset());
-    println!("      bloom_inserts (total):     {}", router_b.bloom_inserts());
+    println!(
+        "      bloom_resets:              {}",
+        router_b.bloom_reset_count()
+    );
+    println!(
+        "      bloom_inserts_since_reset: {}",
+        router_b.bloom_inserts_since_reset()
+    );
+    println!(
+        "      bloom_inserts (total):     {}",
+        router_b.bloom_inserts()
+    );
 
     let hour_1 = throughputs[0];
     let hour_720 = throughputs[checkpoint_hours.len() - 1];
@@ -132,13 +163,15 @@ fn main() {
     println!("    hour 1:   {} env/h", hour_1);
     println!("    hour 720: {} env/h", hour_720);
     println!("    drift over 30 days: {:+.2}%", drift);
-    println!("    auto-resets fired: {} (predicted ~64 per AC1)", router_b.bloom_reset_count());
+    println!(
+        "    auto-resets fired: {} (predicted ~64 per AC1)",
+        router_b.bloom_reset_count()
+    );
 
     let wall_min = duration_ms / 60_000;
     let drift_ok = drift.abs() < 5.0;
-    let wall_ok = wall_min >= 10 && wall_min <= 40;       // AC1 said ~20 min
-    let resets_ok = router_b.bloom_reset_count() >= 50
-                 && router_b.bloom_reset_count() <= 80;
+    let wall_ok = wall_min >= 10 && wall_min <= 40; // AC1 said ~20 min
+    let resets_ok = router_b.bloom_reset_count() >= 50 && router_b.bloom_reset_count() <= 80;
     println!();
     if drift_ok && wall_ok && resets_ok {
         println!("    [PASS] AC1 prediction CONFIRMED on all 3 axes:");
@@ -148,9 +181,21 @@ fn main() {
         std::process::exit(0);
     } else {
         eprintln!("    [PARTIAL] AC1 prediction needs honest re-statement:");
-        eprintln!("      - drift < 5%:    {} ({:+.2}%)", if drift_ok { "✓" } else { "✗" }, drift);
-        eprintln!("      - wall 10-40 min:{} ({} min)", if wall_ok { "✓" } else { "✗" }, wall_min);
-        eprintln!("      - resets 50-80:  {} ({})", if resets_ok { "✓" } else { "✗" }, router_b.bloom_reset_count());
+        eprintln!(
+            "      - drift < 5%:    {} ({:+.2}%)",
+            if drift_ok { "✓" } else { "✗" },
+            drift
+        );
+        eprintln!(
+            "      - wall 10-40 min:{} ({} min)",
+            if wall_ok { "✓" } else { "✗" },
+            wall_min
+        );
+        eprintln!(
+            "      - resets 50-80:  {} ({})",
+            if resets_ok { "✓" } else { "✗" },
+            router_b.bloom_reset_count()
+        );
         std::process::exit(1);
     }
 }

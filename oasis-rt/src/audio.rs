@@ -6,11 +6,11 @@
 //!
 //! Dimensions 50-55 of the 128-dim latent vector.
 
-use crate::vec::*;
-#[cfg(not(feature = "std"))]
-use alloc::{vec::Vec, string::String, vec, format};
 #[cfg(not(feature = "std"))]
 use crate::fmath::F64Ext;
+use crate::vec::*;
+#[cfg(not(feature = "std"))]
+use alloc::{format, string::String, vec, vec::Vec};
 
 /// Audio analysis result — all values normalized [0, 1]
 pub struct AudioPercept {

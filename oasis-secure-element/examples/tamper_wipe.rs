@@ -2,9 +2,9 @@
 //! ops fail. The graceful-degradation pattern that links this Gap 4
 //! work to the L5 layer of the lab-pack v2 demo (Vitality + KillSwitch).
 
-use oasis_secure_element::{SecureElement, TamperReason};
-use oasis_secure_element::sim::SimSecureElement;
 use oasis_secure_element::sign_v10_envelope_via_se;
+use oasis_secure_element::sim::SimSecureElement;
+use oasis_secure_element::{SecureElement, TamperReason};
 
 fn main() {
     println!();
@@ -35,8 +35,10 @@ fn main() {
     println!();
     println!("[4] Post-tamper operations:");
     println!("    pubkey() = {:?}", se.pubkey());
-    println!("    sign(...) = {:?}",
-             sign_v10_envelope_via_se(&se, 0x103, [0xAA; 8]));
+    println!(
+        "    sign(...) = {:?}",
+        sign_v10_envelope_via_se(&se, 0x103, [0xAA; 8])
+    );
     println!("    re-provision attempt = {:?}", se.provision(&[0x77; 32]));
 
     println!();

@@ -42,25 +42,50 @@ fn main() -> ExitCode {
     let mut i = 1;
     while i < args.len() {
         match args[i].as_str() {
-            "--op-seed-hex" => { op_seed_hex = Some(args.get(i+1).cloned().unwrap_or_default()); i += 2; }
-            "--op-pub-hex" => { op_pub_hex = Some(args.get(i+1).cloned().unwrap_or_default()); i += 2; }
+            "--op-seed-hex" => {
+                op_seed_hex = Some(args.get(i + 1).cloned().unwrap_or_default());
+                i += 2;
+            }
+            "--op-pub-hex" => {
+                op_pub_hex = Some(args.get(i + 1).cloned().unwrap_or_default());
+                i += 2;
+            }
             "--revoke" => {
-                for fp in args.get(i+1).map(|s| s.clone()).unwrap_or_default().split(',') {
+                for fp in args.get(i + 1).map(|s| s.clone()).unwrap_or_default().split(',') {
                     revoke_fps.push(fp.trim().to_string());
                 }
                 i += 2;
             }
-            "--broadcast" => { broadcast_target = Some(args.get(i+1).cloned().unwrap_or_default()); i += 2; }
-            "--write-file" => { write_file = Some(args.get(i+1).cloned().unwrap_or_default()); i += 2; }
-            "--load-file" => { load_file = Some(args.get(i+1).cloned().unwrap_or_default()); i += 2; }
-            "-h" | "--help" => { print_usage(); return ExitCode::SUCCESS; }
-            other => { eprintln!("unknown arg: {}", other); print_usage(); return ExitCode::from(2); }
+            "--broadcast" => {
+                broadcast_target = Some(args.get(i + 1).cloned().unwrap_or_default());
+                i += 2;
+            }
+            "--write-file" => {
+                write_file = Some(args.get(i + 1).cloned().unwrap_or_default());
+                i += 2;
+            }
+            "--load-file" => {
+                load_file = Some(args.get(i + 1).cloned().unwrap_or_default());
+                i += 2;
+            }
+            "-h" | "--help" => {
+                print_usage();
+                return ExitCode::SUCCESS;
+            }
+            other => {
+                eprintln!("unknown arg: {}", other);
+                print_usage();
+                return ExitCode::from(2);
+            }
         }
     }
 
     let op_seed = match op_seed_hex.as_deref().and_then(parse_hex32) {
         Some(s) => s,
-        None => { eprintln!("error: --op-seed-hex (64 hex chars) required"); return ExitCode::from(2); }
+        None => {
+            eprintln!("error: --op-seed-hex (64 hex chars) required");
+            return ExitCode::from(2);
+        }
     };
 
     // Start from existing list if --load-file given
@@ -71,8 +96,14 @@ fn main() -> ExitCode {
             std::process::exit(2);
         });
         match spore_crypto::load_revocation_file(path, &op_pub) {
-            Ok(l) => { eprintln!("[spore_revoke] loaded {} existing revocations from {}", l.len(), path); list = l; }
-            Err(e) => { eprintln!("error: load_revocation_file failed: {}", e); return ExitCode::FAILURE; }
+            Ok(l) => {
+                eprintln!("[spore_revoke] loaded {} existing revocations from {}", l.len(), path);
+                list = l;
+            }
+            Err(e) => {
+                eprintln!("error: load_revocation_file failed: {}", e);
+                return ExitCode::FAILURE;
+            }
         }
     }
 
@@ -81,16 +112,24 @@ fn main() -> ExitCode {
     for fp_str in &revoke_fps {
         match parse_fp8(fp_str) {
             Some(fp) => {
-                if list.revoke(fp, now) { added += 1; }
+                if list.revoke(fp, now) {
+                    added += 1;
+                }
             }
-            None => { eprintln!("error: bad fingerprint '{}'", fp_str); return ExitCode::from(2); }
+            None => {
+                eprintln!("error: bad fingerprint '{}'", fp_str);
+                return ExitCode::from(2);
+            }
         }
     }
     eprintln!("[spore_revoke] {} added, {} total revocations", added, list.len());
 
     let signed = match list.serialize_signed(&op_seed) {
         Ok(b) => b,
-        Err(e) => { eprintln!("error: sign failed: {}", e); return ExitCode::FAILURE; }
+        Err(e) => {
+            eprintln!("error: sign failed: {}", e);
+            return ExitCode::FAILURE;
+        }
     };
 
     if let Some(path) = &write_file {
@@ -105,12 +144,18 @@ fn main() -> ExitCode {
         let envelope = spore_crypto::wrap_revocation_envelope(&signed);
         let sock = match UdpSocket::bind("0.0.0.0:0") {
             Ok(s) => s,
-            Err(e) => { eprintln!("error: bind failed: {}", e); return ExitCode::FAILURE; }
+            Err(e) => {
+                eprintln!("error: bind failed: {}", e);
+                return ExitCode::FAILURE;
+            }
         };
         sock.set_multicast_ttl_v4(2).ok();
         match sock.send_to(&envelope, target) {
             Ok(n) => eprintln!("[spore_revoke] broadcast {} bytes (envelope) → {}", n, target),
-            Err(e) => { eprintln!("error: send_to({}) failed: {}", target, e); return ExitCode::FAILURE; }
+            Err(e) => {
+                eprintln!("error: send_to({}) failed: {}", target, e);
+                return ExitCode::FAILURE;
+            }
         }
     }
 
@@ -122,11 +167,13 @@ fn main() -> ExitCode {
 }
 
 fn parse_hex32(hex: &str) -> Option<[u8; 32]> {
-    if hex.len() != 64 { return None; }
+    if hex.len() != 64 {
+        return None;
+    }
     let mut out = [0u8; 32];
     for i in 0..32 {
-        let hi = hex_digit(hex.as_bytes()[i*2])?;
-        let lo = hex_digit(hex.as_bytes()[i*2+1])?;
+        let hi = hex_digit(hex.as_bytes()[i * 2])?;
+        let lo = hex_digit(hex.as_bytes()[i * 2 + 1])?;
         out[i] = (hi << 4) | lo;
     }
     Some(out)
@@ -135,11 +182,13 @@ fn parse_hex32(hex: &str) -> Option<[u8; 32]> {
 fn parse_fp8(s: &str) -> Option<[u8; 8]> {
     // Accept forms: "AA-BB-CC-DD-EE-FF-00-11" or "AABBCCDDEEFF0011"
     let clean: String = s.chars().filter(|c| *c != '-' && *c != ':' && *c != ' ').collect();
-    if clean.len() != 16 { return None; }
+    if clean.len() != 16 {
+        return None;
+    }
     let mut out = [0u8; 8];
     for i in 0..8 {
-        let hi = hex_digit(clean.as_bytes()[i*2])?;
-        let lo = hex_digit(clean.as_bytes()[i*2+1])?;
+        let hi = hex_digit(clean.as_bytes()[i * 2])?;
+        let lo = hex_digit(clean.as_bytes()[i * 2 + 1])?;
         out[i] = (hi << 4) | lo;
     }
     Some(out)

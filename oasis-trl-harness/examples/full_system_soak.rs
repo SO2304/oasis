@@ -16,20 +16,25 @@
 //! the remaining hardware gap.
 
 use oasis_rt::mesh::{
-    MeshDecision, MeshEdSeed, MeshPubRegistry, MeshRouter,
-    mesh_v10_pubkey_from_seed,
+    mesh_v10_pubkey_from_seed, MeshDecision, MeshEdSeed, MeshPubRegistry, MeshRouter,
 };
-use oasis_rt::vec::{V, vz};
+use oasis_rt::vec::{vz, V};
 use oasis_rt::world_model::{WorldModel, ZoneType};
 use oasis_trl_harness::*;
 
-fn fp(b: u8) -> [u8; 8] { let mut f = [0u8; 8]; f[0] = b; f }
-fn seed(b: u8) -> MeshEdSeed { MeshEdSeed([b; 32]) }
+fn fp(b: u8) -> [u8; 8] {
+    let mut f = [0u8; 8];
+    f[0] = b;
+    f
+}
+fn seed(b: u8) -> MeshEdSeed {
+    MeshEdSeed([b; 32])
+}
 
 const TICKS_PER_VIRTUAL_MINUTE: u64 = 60;
-const VIRTUAL_MINUTES_TO_SOAK: u64 = 60;       // 1 virtual hour
+const VIRTUAL_MINUTES_TO_SOAK: u64 = 60; // 1 virtual hour
 const SENSOR_REPORTS_PER_TICK: u32 = 1;
-const ADVERSARY_INTERVAL_TICKS: u64 = 30;       // attempt every 30s of virtual time
+const ADVERSARY_INTERVAL_TICKS: u64 = 30; // attempt every 30s of virtual time
 
 struct Node {
     name: &'static str,
@@ -47,8 +52,8 @@ impl Node {
             fp: fp(fp_byte),
             router: MeshRouter::new_ed25519_signed(fp(fp_byte), seed(seed_byte), registry),
             world: WorldModel::new(),
-            sensor_a: SensorNoiseModel::new(10.0),    // e.g., voltage
-            sensor_b: SensorNoiseModel::new(50.0),    // e.g., current
+            sensor_a: SensorNoiseModel::new(10.0), // e.g., voltage
+            sensor_b: SensorNoiseModel::new(50.0), // e.g., current
         }
     }
 
@@ -64,9 +69,10 @@ impl Node {
             center[0] = voltage;
             center[1] = current;
             // Use the new fail-LOUD API
-            if let Err(_) = self.world.try_add_zone(
-                ZoneType::Repulsive, center, 1.0, 0.5
-            ) {
+            if let Err(_) = self
+                .world
+                .try_add_zone(ZoneType::Repulsive, center, 1.0, 0.5)
+            {
                 // Cap hit — already counted by WorldModel telemetry
             }
         }
@@ -86,11 +92,15 @@ fn main() {
     println!("    3 nodes (NODE_A, NODE_B, NODE_C) with mesh sigs + world models");
     println!("    Sensor noise: Gaussian σ=0.05 + drift 5e-5/tick + 0.1% bursts");
     println!("    Network: Gilbert-Elliott (good=1% loss, bad=40% loss)");
-    println!("    Adversary: injects every {} ticks ({}s virtual) from fp_AA",
-             ADVERSARY_INTERVAL_TICKS, ADVERSARY_INTERVAL_TICKS);
+    println!(
+        "    Adversary: injects every {} ticks ({}s virtual) from fp_AA",
+        ADVERSARY_INTERVAL_TICKS, ADVERSARY_INTERVAL_TICKS
+    );
     println!("    Operator: alarm at 5 cap-hit accumulation, auto-revoke");
-    println!("    Soak duration: {} ticks = {} virtual minutes",
-             total_ticks, VIRTUAL_MINUTES_TO_SOAK);
+    println!(
+        "    Soak duration: {} ticks = {} virtual minutes",
+        total_ticks, VIRTUAL_MINUTES_TO_SOAK
+    );
     println!();
 
     // ── Build registry: every node knows every other ────────────
@@ -107,10 +117,21 @@ fn main() {
     let mut node_c = Node::new("C", 0xC0, 0xC0, full_reg);
 
     // Each node gets a goal at (10, 10)
-    let mut goal: V = vz(); goal[0] = 10.0; goal[1] = 10.0;
-    node_a.world.try_add_zone(ZoneType::Attractive, goal, 5.0, 8.0).expect("setup");
-    node_b.world.try_add_zone(ZoneType::Attractive, goal, 5.0, 8.0).expect("setup");
-    node_c.world.try_add_zone(ZoneType::Attractive, goal, 5.0, 8.0).expect("setup");
+    let mut goal: V = vz();
+    goal[0] = 10.0;
+    goal[1] = 10.0;
+    node_a
+        .world
+        .try_add_zone(ZoneType::Attractive, goal, 5.0, 8.0)
+        .expect("setup");
+    node_b
+        .world
+        .try_add_zone(ZoneType::Attractive, goal, 5.0, 8.0)
+        .expect("setup");
+    node_c
+        .world
+        .try_add_zone(ZoneType::Attractive, goal, 5.0, 8.0)
+        .expect("setup");
 
     // ── Realistic environment models ───────────────────────────
     let mut rng = Rng::new(20260511);
@@ -134,7 +155,9 @@ fn main() {
         }
 
         // 2. Each node sends a signed envelope to peers (subject to network)
-        let env_a = node_a.router.origin_wrap(format!("tick {}", tick).as_bytes());
+        let env_a = node_a
+            .router
+            .origin_wrap(format!("tick {}", tick).as_bytes());
         let (delivered, _lat) = net.transmit(&mut rng);
         if delivered {
             // Apply revocation filter at receiver before processing
@@ -169,9 +192,9 @@ fn main() {
                 let mut bad_pos: V = vz();
                 bad_pos[0] = 5.0 + rng.next_gaussian(0.0, 1.0);
                 bad_pos[1] = 5.0 + rng.next_gaussian(0.0, 1.0);
-                let _ = node_b.world.try_add_zone(
-                    ZoneType::Repulsive, bad_pos, 8.0, 1.0
-                );
+                let _ = node_b
+                    .world
+                    .try_add_zone(ZoneType::Repulsive, bad_pos, 8.0, 1.0);
                 // Until operator notices, this counts as success
                 metrics.attacks_succeeded += 1;
             }
@@ -198,32 +221,49 @@ fn main() {
     metrics.ticks_simulated = total_ticks;
     metrics.operator_alarms = operator.alarms_raised;
     metrics.operator_revocations = operator.revocations_issued;
-    metrics.total_cap_hits = node_a.world.cap_hit_count()
-        + node_b.world.cap_hit_count() + node_c.world.cap_hit_count();
-    metrics.final_zone_count = node_a.world.zone_count()
-        + node_b.world.zone_count() + node_c.world.zone_count();
+    metrics.total_cap_hits =
+        node_a.world.cap_hit_count() + node_b.world.cap_hit_count() + node_c.world.cap_hit_count();
+    metrics.final_zone_count =
+        node_a.world.zone_count() + node_b.world.zone_count() + node_c.world.zone_count();
 
     println!();
     println!("══════════════════════════════════════════════════════════════════");
-    println!(" Soak complete — {} ticks = {} virtual minutes",
-             metrics.ticks_simulated, VIRTUAL_MINUTES_TO_SOAK);
+    println!(
+        " Soak complete — {} ticks = {} virtual minutes",
+        metrics.ticks_simulated, VIRTUAL_MINUTES_TO_SOAK
+    );
     println!("──────────────────────────────────────────────────────────────────");
-    println!("  Envelopes processed     : {}", metrics.envelopes_processed);
+    println!(
+        "  Envelopes processed     : {}",
+        metrics.envelopes_processed
+    );
     println!("  Envelopes lost (network): {}", metrics.envelopes_lost);
     println!("  Adversary attempts      : {}", metrics.adversary_attempts);
     println!("  Attacks blocked         : {}", metrics.attacks_blocked);
-    println!("  Attacks succeeded       : {} (pre-revocation window)", metrics.attacks_succeeded);
+    println!(
+        "  Attacks succeeded       : {} (pre-revocation window)",
+        metrics.attacks_succeeded
+    );
     println!("  Operator alarms raised  : {}", metrics.operator_alarms);
-    println!("  Operator revocations    : {}", metrics.operator_revocations);
+    println!(
+        "  Operator revocations    : {}",
+        metrics.operator_revocations
+    );
     println!("  Total cap-hits          : {}", metrics.total_cap_hits);
     println!("  Final zone count (A+B+C): {}", metrics.final_zone_count);
-    println!("  Safety ratio (blocked/attempted): {:.3}", metrics.safety_ratio());
+    println!(
+        "  Safety ratio (blocked/attempted): {:.3}",
+        metrics.safety_ratio()
+    );
     println!();
     println!("──────────────────────────────────────────────────────────────────");
     println!("  TRL self-assessment:");
     println!("──────────────────────────────────────────────────────────────────");
     println!("  Achieved: TRL 5+ (full-system in SOFTWARE-EMULATED environment)");
-    println!("    - 3-node mesh sustained for {} virtual minutes", VIRTUAL_MINUTES_TO_SOAK);
+    println!(
+        "    - 3-node mesh sustained for {} virtual minutes",
+        VIRTUAL_MINUTES_TO_SOAK
+    );
     println!("    - Realistic noise + Gilbert-Elliott loss + adversary + operator");
     println!("    - Continuous operation without crash, leak, or drift");
     println!("    - Cross-layer integration (mesh + WorldModel + revocation cascade)");
@@ -240,8 +280,11 @@ fn main() {
         println!("  bench complete.");
         std::process::exit(0);
     } else {
-        eprintln!("  [FAIL] safety ratio {:.3} or revocation count {} below threshold",
-                 metrics.safety_ratio(), metrics.operator_revocations);
+        eprintln!(
+            "  [FAIL] safety ratio {:.3} or revocation count {} below threshold",
+            metrics.safety_ratio(),
+            metrics.operator_revocations
+        );
         std::process::exit(1);
     }
 }

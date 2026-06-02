@@ -65,7 +65,9 @@ pub trait Jammer: Send + Sync + 'static {
 /// Static narrowband jammer — bitmask of permanently-jammed channels.
 /// Gap 2 round 1 adversary. Simulates a CW transmitter sitting on a
 /// fixed frequency regardless of time.
-pub struct StaticJammer { pub jammed_mask: u64 }
+pub struct StaticJammer {
+    pub jammed_mask: u64,
+}
 impl Jammer for StaticJammer {
     fn jams(&self, channel: u32, _start_ms: u64, _dur: u64) -> bool {
         self.jammed_mask & (1u64 << channel) != 0
@@ -113,19 +115,21 @@ impl Jammer for FollowerJammer {
         // Follower detects the start of the packet, switches after
         // latency_ms. Overlap window = duration_ms - latency_ms. If this
         // window covers >= threshold % of packet, packet fails.
-        if self.latency_ms >= duration_ms { return false; }
+        if self.latency_ms >= duration_ms {
+            return false;
+        }
         let overlap_pct = ((duration_ms - self.latency_ms) * 100) / duration_ms;
         overlap_pct >= self.catch_threshold_pct as u64
     }
 }
 
 pub mod channelized {
-    use std::sync::mpsc::{Receiver, Sender, RecvTimeoutError};
-    use std::sync::{Arc, Mutex};
-    use std::sync::atomic::{AtomicU64, Ordering};
-    use std::time::Duration;
-    use crate::{LoRaError, LoRaParams, LoRaRadio};
     use super::Jammer;
+    use crate::{LoRaError, LoRaParams, LoRaRadio};
+    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender};
+    use std::sync::{Arc, Mutex};
+    use std::time::Duration;
 
     /// Shared bus carrying (channel_index, bytes) pairs across the link.
     /// Supports multiple registered jammer models via `Jammer` trait;
@@ -133,7 +137,7 @@ pub mod channelized {
     /// jammers (sweep, follower) get a coherent view of packet timing.
     #[derive(Clone)]
     pub struct ChannelBus {
-        tx_ab: Sender<(u32, u64, Vec<u8>)>,   // (channel, start_ms, bytes)
+        tx_ab: Sender<(u32, u64, Vec<u8>)>, // (channel, start_ms, bytes)
         tx_ba: Sender<(u32, u64, Vec<u8>)>,
         rx_ab: Arc<Mutex<Receiver<(u32, u64, Vec<u8>)>>>,
         rx_ba: Arc<Mutex<Receiver<(u32, u64, Vec<u8>)>>>,
@@ -154,7 +158,8 @@ pub mod channelized {
             let (tx_ab, rx_ab) = std::sync::mpsc::channel();
             let (tx_ba, rx_ba) = std::sync::mpsc::channel();
             Self {
-                tx_ab, tx_ba,
+                tx_ab,
+                tx_ba,
                 rx_ab: Arc::new(Mutex::new(rx_ab)),
                 rx_ba: Arc::new(Mutex::new(rx_ba)),
                 n_channels,
@@ -179,7 +184,9 @@ pub mod channelized {
 
         /// Convenience for the original Static API.
         pub fn set_jammed(&self, channel: u32, jammed: bool) {
-            if !jammed { return; } // simplification — clearing static jammer unused
+            if !jammed {
+                return;
+            } // simplification — clearing static jammer unused
             self.add_jammer(Arc::new(super::StaticJammer {
                 jammed_mask: 1u64 << channel,
             }));
@@ -207,8 +214,16 @@ pub mod channelized {
     impl ChannelizedRadio {
         pub fn pair(n_channels: u32) -> (Self, Self, ChannelBus) {
             let bus = ChannelBus::new(n_channels);
-            let a = Self { bus: bus.clone(), role: 0, current_channel: 0 };
-            let b = Self { bus: bus.clone(), role: 1, current_channel: 0 };
+            let a = Self {
+                bus: bus.clone(),
+                role: 0,
+                current_channel: 0,
+            };
+            let b = Self {
+                bus: bus.clone(),
+                role: 1,
+                current_channel: 0,
+            };
             (a, b, bus)
         }
 
@@ -219,11 +234,15 @@ pub mod channelized {
             self.current_channel = channel;
         }
 
-        pub fn current_channel(&self) -> u32 { self.current_channel }
+        pub fn current_channel(&self) -> u32 {
+            self.current_channel
+        }
     }
 
     impl LoRaRadio for ChannelizedRadio {
-        fn init(&mut self, _params: &LoRaParams) -> Result<(), LoRaError> { Ok(()) }
+        fn init(&mut self, _params: &LoRaParams) -> Result<(), LoRaError> {
+            Ok(())
+        }
 
         fn tx_payload(&mut self, payload: &[u8]) -> Result<(), LoRaError> {
             let start_ms = self.bus.advance_clock();
@@ -239,9 +258,7 @@ pub mod channelized {
             Ok(())
         }
 
-        fn rx_payload(&mut self, buf: &mut [u8], timeout_ms: u32)
-            -> Result<usize, LoRaError>
-        {
+        fn rx_payload(&mut self, buf: &mut [u8], timeout_ms: u32) -> Result<usize, LoRaError> {
             let rx = match self.role {
                 0 => &self.bus.rx_ba,
                 _ => &self.bus.rx_ab,
@@ -249,7 +266,9 @@ pub mod channelized {
             let deadline = std::time::Instant::now() + Duration::from_millis(timeout_ms as u64);
             loop {
                 let now = std::time::Instant::now();
-                if now >= deadline { return Err(LoRaError::Timeout); }
+                if now >= deadline {
+                    return Err(LoRaError::Timeout);
+                }
                 let remaining = deadline - now;
                 let rx_guard = rx.lock().unwrap();
                 match rx_guard.recv_timeout(remaining) {
@@ -270,7 +289,9 @@ pub mod channelized {
             }
         }
 
-        fn max_payload(&self) -> usize { 255 }
+        fn max_payload(&self) -> usize {
+            255
+        }
     }
 }
 
@@ -286,10 +307,17 @@ pub struct FhssRadio<R> {
 
 impl<R> FhssRadio<R> {
     pub fn new(inner: R, seed: [u8; 32], n_channels: u32) -> Self {
-        Self { inner, seed, n_channels, packet_counter: 0 }
+        Self {
+            inner,
+            seed,
+            n_channels,
+            packet_counter: 0,
+        }
     }
 
-    pub fn counter(&self) -> u64 { self.packet_counter }
+    pub fn counter(&self) -> u64 {
+        self.packet_counter
+    }
 
     /// The channel this radio WOULD use for the next packet. Useful
     /// for RX-side synchronization or logging.
@@ -319,9 +347,11 @@ impl FhssRadio<channelized::ChannelizedRadio> {
     /// Requires TX and RX counters are in sync — this implementation
     /// advances the counter on every successful RX (and on timeout, so
     /// both sides stay aligned even if a packet is lost to the jammer).
-    pub fn rx_hopped(&mut self, buf: &mut [u8], timeout_ms: u32)
-        -> Result<(u32, usize), LoRaError>
-    {
+    pub fn rx_hopped(
+        &mut self,
+        buf: &mut [u8],
+        timeout_ms: u32,
+    ) -> Result<(u32, usize), LoRaError> {
         let ch = self.next_channel();
         self.inner.set_channel(ch);
         let res = self.inner.rx_payload(buf, timeout_ms);
@@ -339,14 +369,15 @@ impl FhssRadio<channelized::ChannelizedRadio> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::channelized::ChannelizedRadio;
+    use super::*;
 
-    fn run_trial(seed: [u8; 32], n_channels: u32, jam: Option<u32>, packets: u32)
-        -> (u32, u32)  // (sent, received)
+    fn run_trial(seed: [u8; 32], n_channels: u32, jam: Option<u32>, packets: u32) -> (u32, u32) // (sent, received)
     {
         let (radio_a, radio_b, bus) = ChannelizedRadio::pair(n_channels);
-        if let Some(j) = jam { bus.set_jammed(j, true); }
+        if let Some(j) = jam {
+            bus.set_jammed(j, true);
+        }
 
         let mut fhss_tx = FhssRadio::new(radio_a, seed, n_channels);
         let mut fhss_rx = FhssRadio::new(radio_b, seed, n_channels);
@@ -383,9 +414,13 @@ mod tests {
         // Allow wide band for N=80 trials.
         let (sent, recv) = run_trial([0x22u8; 32], 8, Some(3), 80);
         let ratio = recv as f64 / sent as f64;
-        assert!(ratio > 0.70 && ratio < 0.95,
+        assert!(
+            ratio > 0.70 && ratio < 0.95,
             "FHSS 8-chan with 1 jammer should deliver 70-95%, got {}/{} = {:.2}",
-            recv, sent, ratio);
+            recv,
+            sent,
+            ratio
+        );
     }
 
     #[test]
@@ -403,8 +438,12 @@ mod tests {
         for (i, h) in hits.iter().enumerate() {
             assert!(*h > 0, "channel {} never picked in 1024 samples", i);
             // Rough uniformity: each gets ~128; allow 96-160.
-            assert!(*h > 96 && *h < 160,
-                "channel {} hit count {} outside [96,160]", i, h);
+            assert!(
+                *h > 96 && *h < 160,
+                "channel {} hit count {} outside [96,160]",
+                i,
+                h
+            );
         }
     }
 
@@ -413,8 +452,12 @@ mod tests {
         // More channels → better anti-jam ratio.
         let (sent, recv) = run_trial([0x44u8; 32], 16, Some(7), 160);
         let ratio = recv as f64 / sent as f64;
-        assert!(ratio > 0.85,
+        assert!(
+            ratio > 0.85,
             "FHSS 16-chan with 1 jammer should deliver ≥85%, got {}/{} = {:.2}",
-            recv, sent, ratio);
+            recv,
+            sent,
+            ratio
+        );
     }
 }

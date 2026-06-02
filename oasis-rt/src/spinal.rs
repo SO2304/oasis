@@ -379,12 +379,10 @@ pub fn zone_for(kind: &DeviceKind) -> (usize, usize) {
     match kind {
         DeviceKind::Accelerometer | DeviceKind::Gyroscope => ZONE_INERTIAL,
         DeviceKind::Magnetometer => ZONE_ORIENT,
-        DeviceKind::Barometer | DeviceKind::LightSensor
-            | DeviceKind::Temperature | DeviceKind::Humidity => ZONE_ENV,
+        DeviceKind::Barometer | DeviceKind::LightSensor | DeviceKind::Temperature | DeviceKind::Humidity => ZONE_ENV,
         DeviceKind::Gps | DeviceKind::StepCounter | DeviceKind::Proximity => ZONE_POSITION,
         DeviceKind::AudioIn => ZONE_PERCEPT,
-        DeviceKind::Led | DeviceKind::Backlight | DeviceKind::Motor
-            | DeviceKind::AudioOut | DeviceKind::Gpio => ZONE_ACTUATOR,
+        DeviceKind::Led | DeviceKind::Backlight | DeviceKind::Motor | DeviceKind::AudioOut | DeviceKind::Gpio => ZONE_ACTUATOR,
         DeviceKind::WifiRadio | DeviceKind::Bluetooth | DeviceKind::Nfc => ZONE_RADIO,
         DeviceKind::Battery => ZONE_THERMAL,
         DeviceKind::Unknown(_) => ZONE_UNKNOWN,
@@ -392,10 +390,7 @@ pub fn zone_for(kind: &DeviceKind) -> (usize, usize) {
 }
 
 /// All 9 zones, const-time array for proof/audit.
-pub const ALL_ZONES: [(usize, usize); 9] = [
-    ZONE_INERTIAL, ZONE_ORIENT, ZONE_ENV, ZONE_POSITION,
-    ZONE_PERCEPT, ZONE_ACTUATOR, ZONE_RADIO, ZONE_THERMAL, ZONE_UNKNOWN,
-];
+pub const ALL_ZONES: [(usize, usize); 9] = [ZONE_INERTIAL, ZONE_ORIENT, ZONE_ENV, ZONE_POSITION, ZONE_PERCEPT, ZONE_ACTUATOR, ZONE_RADIO, ZONE_THERMAL, ZONE_UNKNOWN];
 
 #[cfg(kani)]
 mod kani_proofs {
@@ -421,8 +416,7 @@ mod kani_proofs {
         kani::assume(i != j);
         let (s1, e1) = ALL_ZONES[i];
         let (s2, e2) = ALL_ZONES[j];
-        assert!(e1 < s2 || e2 < s1,
-                "zones {} and {} overlap: [{},{}] vs [{},{}]", i, j, s1, e1, s2, e2);
+        assert!(e1 < s2 || e2 < s1, "zones {} and {} overlap: [{},{}] vs [{},{}]", i, j, s1, e1, s2, e2);
     }
 
     /// PROVE: `assign_dims` returns dims within the target zone for a few kinds.
@@ -506,11 +500,15 @@ mod tests {
     fn assign_dims_returns_err_when_zone_full() {
         let mut bm = BodyMap::new();
         // Force-saturate ZONE_INERTIAL (10..=19, 10 dims). Each accel/gyro takes 3 → 4 calls fill 12 slots, but cap at 10 → 4th call partial then ZoneFull.
-        for d in ZONE_INERTIAL.0..=ZONE_INERTIAL.1 { bm.dim_used[d] = true; }
+        for d in ZONE_INERTIAL.0..=ZONE_INERTIAL.1 {
+            bm.dim_used[d] = true;
+        }
         let err = bm.assign_dims(&DeviceKind::Accelerometer).unwrap_err();
-        match err { DimAssignError::ZoneFull(s, e) => {
-            assert_eq!((s, e), ZONE_INERTIAL);
-        }}
+        match err {
+            DimAssignError::ZoneFull(s, e) => {
+                assert_eq!((s, e), ZONE_INERTIAL);
+            }
+        }
     }
 
     #[test]

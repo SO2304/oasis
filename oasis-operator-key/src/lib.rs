@@ -96,9 +96,7 @@ impl OperatorAuthority {
     /// Construct a Multisig authority from a list of seeds + threshold.
     /// Each seed produces one pubkey; the resulting authority requires
     /// at least `k` distinct signatures on every authorized action.
-    pub fn multisig_from_seeds(seeds: &[[u8; 32]], k: usize)
-        -> Result<Self, AuthorityError>
-    {
+    pub fn multisig_from_seeds(seeds: &[[u8; 32]], k: usize) -> Result<Self, AuthorityError> {
         if k == 0 || k > seeds.len() {
             return Err(AuthorityError::BadTransition("k must be in [1, n]"));
         }
@@ -115,7 +113,9 @@ impl OperatorAuthority {
         for i in 0..pub_keys.len() {
             for j in (i + 1)..pub_keys.len() {
                 if pub_keys[i] == pub_keys[j] {
-                    return Err(AuthorityError::BadTransition("duplicate pubkey in multisig set"));
+                    return Err(AuthorityError::BadTransition(
+                        "duplicate pubkey in multisig set",
+                    ));
                 }
             }
         }
@@ -180,8 +180,8 @@ impl OperatorAuthority {
 fn verify_one(pub_key: &Pub, msg: &[u8], sig: &Sig) -> Result<(), AuthorityError> {
     let pk = ed25519_compact::PublicKey::from_slice(pub_key)
         .map_err(|_| AuthorityError::BadSignature)?;
-    let s = ed25519_compact::Signature::from_slice(sig)
-        .map_err(|_| AuthorityError::BadSignature)?;
+    let s =
+        ed25519_compact::Signature::from_slice(sig).map_err(|_| AuthorityError::BadSignature)?;
     pk.verify(msg, &s).map_err(|_| AuthorityError::BadSignature)
 }
 
@@ -226,14 +226,16 @@ impl Transition {
         buf.extend_from_slice(&self.retire_at_unix.to_le_bytes());
         match &self.new_authority {
             OperatorAuthority::Single { pub_key } => {
-                buf.push(0x01);     // tag
+                buf.push(0x01); // tag
                 buf.extend_from_slice(pub_key);
             }
             OperatorAuthority::Multisig { pub_keys, k } => {
                 buf.push(0x02);
                 buf.push(*k as u8);
                 buf.push(pub_keys.len() as u8);
-                for pk in pub_keys { buf.extend_from_slice(pk); }
+                for pk in pub_keys {
+                    buf.extend_from_slice(pk);
+                }
             }
             OperatorAuthority::Locked => {
                 buf.push(0x03);
@@ -293,8 +295,10 @@ mod proofs {
         // false → true). Never flips true → false.
         let accepts_plus_one = (provided.saturating_add(1)) >= required;
         if accepts {
-            assert!(accepts_plus_one,
-                "adding a signature must not revoke acceptance");
+            assert!(
+                accepts_plus_one,
+                "adding a signature must not revoke acceptance"
+            );
         }
         // Conversely, removing a sig never grants acceptance.
         if !accepts && provided > 0 {
@@ -320,18 +324,26 @@ mod proofs {
         let k: u8 = 3;
         // Distinct count via pairwise compare.
         let mut distinct = 1u8;
-        if s2 != s1 { distinct += 1; }
-        if s3 != s1 && s3 != s2 { distinct += 1; }
+        if s2 != s1 {
+            distinct += 1;
+        }
+        if s3 != s1 && s3 != s2 {
+            distinct += 1;
+        }
         let accepts = distinct >= k;
         // If all three are the same, distinct = 1, never reaches k=3.
         if s1 == s2 && s2 == s3 {
-            assert!(!accepts,
-                "three sigs from same signer must NOT meet 3-of-N quorum");
+            assert!(
+                !accepts,
+                "three sigs from same signer must NOT meet 3-of-N quorum"
+            );
         }
         // If all three are distinct, distinct = 3, accepts = true.
         if s1 != s2 && s2 != s3 && s1 != s3 {
-            assert!(accepts,
-                "three sigs from three distinct signers MUST meet 3-of-N quorum");
+            assert!(
+                accepts,
+                "three sigs from three distinct signers MUST meet 3-of-N quorum"
+            );
         }
     }
 
@@ -345,12 +357,14 @@ mod proofs {
         // Encode authority as u8 tag (0 = Single A, 1 = Single B).
         // After rotation A → B, the authority pointer points to B; any
         // verification call resolves against B's pubkey, not A's.
-        let pre_rotation_auth: u8 = 0;        // Single A
-        let post_rotation_auth: u8 = 1;       // Single B (after apply_transition)
-        // The authority "in effect" for new actions is the
-        // post-rotation one.
-        assert_ne!(pre_rotation_auth, post_rotation_auth,
-            "rotation must produce a different authority");
+        let pre_rotation_auth: u8 = 0; // Single A
+        let post_rotation_auth: u8 = 1; // Single B (after apply_transition)
+                                        // The authority "in effect" for new actions is the
+                                        // post-rotation one.
+        assert_ne!(
+            pre_rotation_auth, post_rotation_auth,
+            "rotation must produce a different authority"
+        );
         // After rotation, attempting to verify with the OLD authority
         // means using pre_rotation_auth — but the actual current
         // authority is post_rotation_auth. The verify call dispatches
@@ -374,12 +388,16 @@ mod proofs {
         // The swap policy: only swap if the new arrival is signed.
         let swap_authorized = new_auth_arrived && transition_signed_by_current;
         if new_auth_arrived && !transition_signed_by_current {
-            assert!(!swap_authorized,
-                "unsigned new authority must NOT cause swap");
+            assert!(
+                !swap_authorized,
+                "unsigned new authority must NOT cause swap"
+            );
         }
         if new_auth_arrived && transition_signed_by_current {
-            assert!(swap_authorized,
-                "properly signed new authority MUST cause swap");
+            assert!(
+                swap_authorized,
+                "properly signed new authority MUST cause swap"
+            );
         }
     }
 }
@@ -388,11 +406,14 @@ mod proofs {
 mod tests {
     use super::*;
 
-    fn seed(b: u8) -> [u8; 32] { [b; 32] }
+    fn seed(b: u8) -> [u8; 32] {
+        [b; 32]
+    }
     fn pub_from(s: &[u8; 32]) -> Pub {
-        let kp = ed25519_compact::KeyPair::from_seed(
-            ed25519_compact::Seed::from_slice(s).unwrap());
-        let mut p = [0u8; 32]; p.copy_from_slice(kp.pk.as_ref()); p
+        let kp = ed25519_compact::KeyPair::from_seed(ed25519_compact::Seed::from_slice(s).unwrap());
+        let mut p = [0u8; 32];
+        p.copy_from_slice(kp.pk.as_ref());
+        p
     }
 
     #[test]
@@ -419,9 +440,9 @@ mod tests {
         let seeds = [seed(1), seed(2), seed(3), seed(4), seed(5)];
         let auth = OperatorAuthority::multisig_from_seeds(&seeds, 3).unwrap();
         let msg = b"revocation-batch";
-        let sigs: Vec<(Pub, Sig)> = (0..3).map(|i|
-            (pub_from(&seeds[i]), sign_with_seed(&seeds[i], msg))
-        ).collect();
+        let sigs: Vec<(Pub, Sig)> = (0..3)
+            .map(|i| (pub_from(&seeds[i]), sign_with_seed(&seeds[i], msg)))
+            .collect();
         assert!(auth.verify_authorization(msg, &sigs).is_ok());
     }
 
@@ -430,11 +451,17 @@ mod tests {
         let seeds = [seed(1), seed(2), seed(3), seed(4), seed(5)];
         let auth = OperatorAuthority::multisig_from_seeds(&seeds, 3).unwrap();
         let msg = b"revocation-batch";
-        let sigs: Vec<(Pub, Sig)> = (0..2).map(|i|
-            (pub_from(&seeds[i]), sign_with_seed(&seeds[i], msg))
-        ).collect();
+        let sigs: Vec<(Pub, Sig)> = (0..2)
+            .map(|i| (pub_from(&seeds[i]), sign_with_seed(&seeds[i], msg)))
+            .collect();
         let r = auth.verify_authorization(msg, &sigs);
-        assert_eq!(r, Err(AuthorityError::QuorumNotMet { provided: 2, required: 3 }));
+        assert_eq!(
+            r,
+            Err(AuthorityError::QuorumNotMet {
+                provided: 2,
+                required: 3
+            })
+        );
     }
 
     #[test]
@@ -443,11 +470,13 @@ mod tests {
         let auth = OperatorAuthority::multisig_from_seeds(&seeds, 3).unwrap();
         let msg = b"revocation-batch";
         let sig1 = sign_with_seed(&seeds[0], msg);
-        let sig2 = sign_with_seed(&seeds[0], msg);   // SAME signer, different sig instance
+        let sig2 = sign_with_seed(&seeds[0], msg); // SAME signer, different sig instance
         let sig3 = sign_with_seed(&seeds[1], msg);
-        let sigs = [(pub_from(&seeds[0]), sig1),
-                    (pub_from(&seeds[0]), sig2),
-                    (pub_from(&seeds[1]), sig3)];
+        let sigs = [
+            (pub_from(&seeds[0]), sig1),
+            (pub_from(&seeds[0]), sig2),
+            (pub_from(&seeds[1]), sig3),
+        ];
         let r = auth.verify_authorization(msg, &sigs);
         assert_eq!(r, Err(AuthorityError::DuplicateSigner));
     }
@@ -472,18 +501,23 @@ mod tests {
         let msg = transition.signing_message();
         let sig = sign_with_seed(&s_old, &msg);
         // Sign with the OLD authority — should succeed
-        apply_transition(&mut current, &transition, &[(pub_from(&s_old), sig)])
-            .unwrap();
+        apply_transition(&mut current, &transition, &[(pub_from(&s_old), sig)]).unwrap();
         assert_eq!(current, new_auth);
 
         // Now try to rotate AGAIN using the OLD authority — should fail
         let s_other = seed(0x33);
         let other_auth = OperatorAuthority::single_from_seed(&s_other).unwrap();
-        let t2 = Transition { retire_at_unix: 1746883300, new_authority: other_auth };
+        let t2 = Transition {
+            retire_at_unix: 1746883300,
+            new_authority: other_auth,
+        };
         let msg2 = t2.signing_message();
         let sig_old_again = sign_with_seed(&s_old, &msg2);
         let r = apply_transition(&mut current, &t2, &[(pub_from(&s_old), sig_old_again)]);
-        assert_eq!(r, Err(AuthorityError::UnknownSigner),
-            "old authority must NOT authorize after rotation");
+        assert_eq!(
+            r,
+            Err(AuthorityError::UnknownSigner),
+            "old authority must NOT authorize after rotation"
+        );
     }
 }

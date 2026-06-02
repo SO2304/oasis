@@ -21,19 +21,24 @@
 use std::time::Instant;
 
 use oasis_rt::mesh::{
-    MeshDecision, MeshEdSeed, MeshPubRegistry, MeshRouter,
-    mesh_v10_pubkey_from_seed, BloomHealthSnapshot,
-    bloom_capacity_estimate_1pct_fpr,
+    bloom_capacity_estimate_1pct_fpr, mesh_v10_pubkey_from_seed, BloomHealthSnapshot, MeshDecision,
+    MeshEdSeed, MeshPubRegistry, MeshRouter,
 };
-use oasis_rt::vec::{V, vz};
+use oasis_rt::vec::{vz, V};
 use oasis_rt::world_model::{WorldModel, ZoneType};
 use oasis_trl_harness::*;
 
-fn fp(b: u8) -> [u8; 8] { let mut f = [0u8; 8]; f[0] = b; f }
-fn seed(b: u8) -> MeshEdSeed { MeshEdSeed([b; 32]) }
+fn fp(b: u8) -> [u8; 8] {
+    let mut f = [0u8; 8];
+    f[0] = b;
+    f
+}
+fn seed(b: u8) -> MeshEdSeed {
+    MeshEdSeed([b; 32])
+}
 
 const TICKS_PER_VIRTUAL_HOUR: u64 = 3600;
-const VIRTUAL_HOURS_TO_SOAK: u64 = 1440;    // 60 days
+const VIRTUAL_HOURS_TO_SOAK: u64 = 1440; // 60 days
 const ADVERSARY_INTERVAL_TICKS: u64 = 30;
 const AUTO_RESET_THRESHOLD: u64 = 40_000;
 
@@ -58,9 +63,15 @@ fn main() {
 
     let mut world_a = WorldModel::new();
     let mut world_b = WorldModel::new();
-    let mut goal: V = vz(); goal[0] = 10.0; goal[1] = 10.0;
-    world_a.try_add_zone(ZoneType::Attractive, goal, 5.0, 8.0).expect("setup");
-    world_b.try_add_zone(ZoneType::Attractive, goal, 5.0, 8.0).expect("setup");
+    let mut goal: V = vz();
+    goal[0] = 10.0;
+    goal[1] = 10.0;
+    world_a
+        .try_add_zone(ZoneType::Attractive, goal, 5.0, 8.0)
+        .expect("setup");
+    world_b
+        .try_add_zone(ZoneType::Attractive, goal, 5.0, 8.0)
+        .expect("setup");
 
     let mut sensor_a = SensorNoiseModel::new(10.0);
     let mut sensor_b = SensorNoiseModel::new(10.0);
@@ -85,11 +96,11 @@ fn main() {
     let mut wire_roundtrips_failed: u64 = 0;
 
     for tick in 0..total_ticks {
-        for (s, w) in [(&mut sensor_a, &mut world_a),
-                       (&mut sensor_b, &mut world_b)].iter_mut() {
+        for (s, w) in [(&mut sensor_a, &mut world_a), (&mut sensor_b, &mut world_b)].iter_mut() {
             let v = s.sample(&mut rng);
             if (v - 10.0).abs() > 0.5 {
-                let mut c: V = vz(); c[0] = v;
+                let mut c: V = vz();
+                c[0] = v;
                 let _ = w.try_add_zone(ZoneType::Repulsive, c, 1.0, 0.5);
             }
         }
@@ -130,8 +141,12 @@ fn main() {
                     last_alert_hour = Some(current_virtual_hour);
                 }
             }
-            if current_virtual_hour == 1 { hour_1_throughput = current_hour_arrived; }
-            if current_virtual_hour == VIRTUAL_HOURS_TO_SOAK { hour_1440_throughput = current_hour_arrived; }
+            if current_virtual_hour == 1 {
+                hour_1_throughput = current_hour_arrived;
+            }
+            if current_virtual_hour == VIRTUAL_HOURS_TO_SOAK {
+                hour_1440_throughput = current_hour_arrived;
+            }
 
             for &h in &checkpoint_hours {
                 if current_virtual_hour == h {
@@ -150,8 +165,8 @@ fn main() {
     }
 
     let duration_ms = trial_start.elapsed().as_millis();
-    let drift = (hour_1440_throughput as f64 - hour_1_throughput as f64)
-        * 100.0 / hour_1_throughput.max(1) as f64;
+    let drift = (hour_1440_throughput as f64 - hour_1_throughput as f64) * 100.0
+        / hour_1_throughput.max(1) as f64;
     let auto_resets = router_b.bloom_reset_count();
     let final_snap = router_b.bloom_health_snapshot();
 
@@ -159,18 +174,28 @@ fn main() {
     println!("══════════════════════════════════════════════════════════════════");
     println!(" AF4 verdict");
     println!("══════════════════════════════════════════════════════════════════");
-    println!("    Total wall clock: {} ms ({} min)", duration_ms, duration_ms / 60_000);
+    println!(
+        "    Total wall clock: {} ms ({} min)",
+        duration_ms,
+        duration_ms / 60_000
+    );
     println!("    Dashboard alerts fired:  {}", dashboard_alerts);
     println!("    Auto-resets fired:       {}", auto_resets);
     println!("    AF2 wire roundtrips OK:  {}", wire_roundtrips_ok);
     println!("    AF2 wire roundtrips bad: {}", wire_roundtrips_failed);
-    println!("    Final capacity_consumed_milli: {}", final_snap.capacity_consumed_milli());
+    println!(
+        "    Final capacity_consumed_milli: {}",
+        final_snap.capacity_consumed_milli()
+    );
     println!();
     println!("    hour    1:  {} env/h", hour_1_throughput);
     println!("    hour 1440:  {} env/h", hour_1440_throughput);
     println!("    drift over 60 days: {:+.2}%", drift);
     println!();
-    println!("    capacity estimate (build): {} inserts", bloom_capacity_estimate_1pct_fpr());
+    println!(
+        "    capacity estimate (build): {} inserts",
+        bloom_capacity_estimate_1pct_fpr()
+    );
     println!("    auto_reset threshold:      {}", AUTO_RESET_THRESHOLD);
     println!();
 
@@ -180,11 +205,32 @@ fn main() {
     let af4d_wall_ok = duration_ms / 60_000 >= 15 && duration_ms / 60_000 <= 50;
     let wire_ok = wire_roundtrips_failed == 0;
 
-    println!("  AF4-a (zero alerts):     {} (got {})", if af4a_zero_alerts { "✓" } else { "✗" }, dashboard_alerts);
-    println!("  AF4-b (resets 100-140):  {} (got {})", if af4b_resets_in_band { "✓" } else { "✗" }, auto_resets);
-    println!("  AF4-c (drift < 5%):      {} (got {:+.2}%)", if af4c_drift_ok { "✓" } else { "✗" }, drift);
-    println!("  AF4-d (wall 15-50 min):  {} (got {} min)", if af4d_wall_ok { "✓" } else { "✗" }, duration_ms / 60_000);
-    println!("  AF2  (wire roundtrips):  {} ({} ok / {} bad)", if wire_ok { "✓" } else { "✗" }, wire_roundtrips_ok, wire_roundtrips_failed);
+    println!(
+        "  AF4-a (zero alerts):     {} (got {})",
+        if af4a_zero_alerts { "✓" } else { "✗" },
+        dashboard_alerts
+    );
+    println!(
+        "  AF4-b (resets 100-140):  {} (got {})",
+        if af4b_resets_in_band { "✓" } else { "✗" },
+        auto_resets
+    );
+    println!(
+        "  AF4-c (drift < 5%):      {} (got {:+.2}%)",
+        if af4c_drift_ok { "✓" } else { "✗" },
+        drift
+    );
+    println!(
+        "  AF4-d (wall 15-50 min):  {} (got {} min)",
+        if af4d_wall_ok { "✓" } else { "✗" },
+        duration_ms / 60_000
+    );
+    println!(
+        "  AF2  (wire roundtrips):  {} ({} ok / {} bad)",
+        if wire_ok { "✓" } else { "✗" },
+        wire_roundtrips_ok,
+        wire_roundtrips_failed
+    );
     println!();
     if af4a_zero_alerts && af4b_resets_in_band && af4c_drift_ok && af4d_wall_ok && wire_ok {
         println!("    [PASS] combined deployment validated at 60-day scale");

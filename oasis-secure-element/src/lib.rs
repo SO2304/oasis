@@ -138,16 +138,34 @@ mod proofs {
     /// incident attribution the operator needs.
     #[kani::proof]
     fn proof_tamper_reasons_distinct() {
-        assert_ne!(TamperReason::ChassisSwitch,        TamperReason::TemperatureExcursion);
-        assert_ne!(TamperReason::ChassisSwitch,        TamperReason::VoltageGlitch);
-        assert_ne!(TamperReason::ChassisSwitch,        TamperReason::UnauthorizedI2cTraffic);
-        assert_ne!(TamperReason::ChassisSwitch,        TamperReason::ManualWipe);
-        assert_ne!(TamperReason::TemperatureExcursion, TamperReason::VoltageGlitch);
-        assert_ne!(TamperReason::TemperatureExcursion, TamperReason::UnauthorizedI2cTraffic);
+        assert_ne!(
+            TamperReason::ChassisSwitch,
+            TamperReason::TemperatureExcursion
+        );
+        assert_ne!(TamperReason::ChassisSwitch, TamperReason::VoltageGlitch);
+        assert_ne!(
+            TamperReason::ChassisSwitch,
+            TamperReason::UnauthorizedI2cTraffic
+        );
+        assert_ne!(TamperReason::ChassisSwitch, TamperReason::ManualWipe);
+        assert_ne!(
+            TamperReason::TemperatureExcursion,
+            TamperReason::VoltageGlitch
+        );
+        assert_ne!(
+            TamperReason::TemperatureExcursion,
+            TamperReason::UnauthorizedI2cTraffic
+        );
         assert_ne!(TamperReason::TemperatureExcursion, TamperReason::ManualWipe);
-        assert_ne!(TamperReason::VoltageGlitch,        TamperReason::UnauthorizedI2cTraffic);
-        assert_ne!(TamperReason::VoltageGlitch,        TamperReason::ManualWipe);
-        assert_ne!(TamperReason::UnauthorizedI2cTraffic, TamperReason::ManualWipe);
+        assert_ne!(
+            TamperReason::VoltageGlitch,
+            TamperReason::UnauthorizedI2cTraffic
+        );
+        assert_ne!(TamperReason::VoltageGlitch, TamperReason::ManualWipe);
+        assert_ne!(
+            TamperReason::UnauthorizedI2cTraffic,
+            TamperReason::ManualWipe
+        );
     }
 
     /// PROVE: signature byte length is 64. Catches drift if anyone
@@ -214,12 +232,16 @@ mod proofs {
         // for all seed. Below: trivial reflexivity Kani checks at the
         // type/syntactic level.
         let pk_from_in_process: [u8; 32] = identity_derive(&seed);
-        let pk_from_se:         [u8; 32] = identity_derive(&seed);
-        assert_eq!(pk_from_in_process, pk_from_se,
-            "same seed must derive the same pubkey via either path");
+        let pk_from_se: [u8; 32] = identity_derive(&seed);
+        assert_eq!(
+            pk_from_in_process, pk_from_se,
+            "same seed must derive the same pubkey via either path"
+        );
     }
 
-    fn identity_derive(s: &[u8; 32]) -> [u8; 32] { *s }
+    fn identity_derive(s: &[u8; 32]) -> [u8; 32] {
+        *s
+    }
 
     /// PROVE: migration phase is monotonically NON-DECREASING per
     /// node. Once a node is migrated to SE-backed signing, it
@@ -247,8 +269,10 @@ mod proofs {
         if valid {
             // Whenever the sequence is valid, no transition decreases.
             for i in 0..4 {
-                assert!(seq[i] <= seq[i + 1],
-                    "valid migration must be non-decreasing");
+                assert!(
+                    seq[i] <= seq[i + 1],
+                    "valid migration must be non-decreasing"
+                );
             }
         }
         // Also: the END state being SE-backed implies SOMEWHERE in the
@@ -271,14 +295,16 @@ mod proofs {
         // but we encode the property: TWO byte-equal envelopes produce
         // the same verify decision, regardless of how each was built).
         let env: [u8; 89] = kani::any();
-        let env_copy = env;   // byte-equal copy
-        // Pure-function principle: stock verify() is a function of bytes.
-        // Two byte-equal inputs through any pure function produce the
-        // same output. Asserted below.
+        let env_copy = env; // byte-equal copy
+                            // Pure-function principle: stock verify() is a function of bytes.
+                            // Two byte-equal inputs through any pure function produce the
+                            // same output. Asserted below.
         let decision_a = naive_byte_decision(&env);
         let decision_b = naive_byte_decision(&env_copy);
-        assert_eq!(decision_a, decision_b,
-            "verifier must be blind to signer path");
+        assert_eq!(
+            decision_a, decision_b,
+            "verifier must be blind to signer path"
+        );
     }
 
     fn naive_byte_decision(env: &[u8; 89]) -> u8 {
@@ -298,15 +324,17 @@ mod proofs {
     #[kani::proof]
     fn proof_wire_bytes_bitequal_under_path_swap() {
         let bytes_in_proc: [u8; 89] = kani::any();
-        let bytes_via_se:  [u8; 89] = bytes_in_proc;  // assumption
+        let bytes_via_se: [u8; 89] = bytes_in_proc; // assumption
         let mut hamming = 0u32;
         for i in 0..89 {
             if bytes_in_proc[i] != bytes_via_se[i] {
                 hamming += 1;
             }
         }
-        assert_eq!(hamming, 0,
-            "wire bytes must be bit-equal across signer paths");
+        assert_eq!(
+            hamming, 0,
+            "wire bytes must be bit-equal across signer paths"
+        );
     }
 
     // ── Iterator invariants (RevocationList::entries / fingerprints) ──
@@ -325,24 +353,28 @@ mod proofs {
         // Symbolic: a 4-bit bitmap (4 possible fps for the proof; full
         // fp space is 2^64 but the iteration semantic is the same).
         let inserted: u8 = kani::any();
-        kani::assume(inserted < 16);    // 4 distinct possible fps
-        // The "iterator yield set" is by definition the inserted set
-        // (RevocationList preserves insertion via Vec; deduplicates via
-        // HashSet index). This proof states the relationship: yielded
-        // bits ⊆ inserted bits AND yielded bits ⊇ inserted bits.
-        let yielded = inserted;          // by contract
-        // Subset:
+        kani::assume(inserted < 16); // 4 distinct possible fps
+                                     // The "iterator yield set" is by definition the inserted set
+                                     // (RevocationList preserves insertion via Vec; deduplicates via
+                                     // HashSet index). This proof states the relationship: yielded
+                                     // bits ⊆ inserted bits AND yielded bits ⊇ inserted bits.
+        let yielded = inserted; // by contract
+                                // Subset:
         for bit in 0..4u8 {
             if (yielded >> bit) & 1 == 1 {
-                assert!((inserted >> bit) & 1 == 1,
-                    "iterator must not yield a fp that wasn't inserted");
+                assert!(
+                    (inserted >> bit) & 1 == 1,
+                    "iterator must not yield a fp that wasn't inserted"
+                );
             }
         }
         // Superset:
         for bit in 0..4u8 {
             if (inserted >> bit) & 1 == 1 {
-                assert!((yielded >> bit) & 1 == 1,
-                    "iterator must yield every inserted fp");
+                assert!(
+                    (yielded >> bit) & 1 == 1,
+                    "iterator must yield every inserted fp"
+                );
             }
         }
     }
@@ -361,8 +393,10 @@ mod proofs {
         let pass1: [u8; 8] = seq;
         let pass2: [u8; 8] = seq;
         for i in 0..8 {
-            assert_eq!(pass1[i], pass2[i],
-                "iterator must be order-stable across calls");
+            assert_eq!(
+                pass1[i], pass2[i],
+                "iterator must be order-stable across calls"
+            );
         }
     }
 
@@ -379,10 +413,12 @@ mod proofs {
         // guarantees iter ↔ is_revoked agreement via shared underlying
         // Vec + HashSet index; this proof states the equivalence.
         let was_inserted: bool = kani::any();
-        let iter_yields:  bool = was_inserted;   // by contract
-        let is_revoked:   bool = was_inserted;   // by contract
-        assert_eq!(iter_yields, is_revoked,
-            "iterator membership must agree with is_revoked() lookup");
+        let iter_yields: bool = was_inserted; // by contract
+        let is_revoked: bool = was_inserted; // by contract
+        assert_eq!(
+            iter_yields, is_revoked,
+            "iterator membership must agree with is_revoked() lookup"
+        );
     }
 
     // ── Migration cleanup invariants (W1 round) ────────────────────
@@ -405,15 +441,17 @@ mod proofs {
         let disposition_tag: u8 = kani::any();
         kani::assume(disposition_tag < 4);
         let handled_explicitly = match disposition_tag {
-            0 => true,  // expect() — caller asserts no overflow
-            1 => true,  // let _ = — caller explicitly ignores Result
-            2 => true,  // if let Err — caller branches on error
-            3 => true,  // propagate via ? — caller surfaces upward
+            0 => true, // expect() — caller asserts no overflow
+            1 => true, // let _ = — caller explicitly ignores Result
+            2 => true, // if let Err — caller branches on error
+            3 => true, // propagate via ? — caller surfaces upward
             _ => false,
         };
-        assert!(handled_explicitly,
+        assert!(
+            handled_explicitly,
             "every try_add_zone result must be explicitly disposed of — \
-             none of the 4 dispositions is fail-QUIET");
+             none of the 4 dispositions is fail-QUIET"
+        );
     }
 
     /// PROVE: deprecation warnings on `add_zone` ensure no NEW silent-
@@ -429,9 +467,11 @@ mod proofs {
         let used_deprecated_api: bool = kani::any();
         let warning_emitted: bool = used_deprecated_api;
         if used_deprecated_api {
-            assert!(warning_emitted,
+            assert!(
+                warning_emitted,
                 "deprecated add_zone() use MUST emit a compiler warning, \
-                 making any new silent-drop site visible at build time");
+                 making any new silent-drop site visible at build time"
+            );
         }
     }
 
@@ -445,10 +485,12 @@ mod proofs {
         let cap_hit_occurred: bool = kani::any();
         let stderr_message_emitted: bool = cap_hit_occurred;
         if cap_hit_occurred {
-            assert!(stderr_message_emitted,
+            assert!(
+                stderr_message_emitted,
                 "production-path cap hits MUST emit a stderr message — \
                  the if-let-Err pattern in drone_bridge / main / nav \
-                 ensures operator-visible telemetry on every overflow");
+                 ensures operator-visible telemetry on every overflow"
+            );
         }
     }
 
@@ -472,11 +514,14 @@ mod proofs {
         let active_after = if result_ok {
             active_before + 1
         } else {
-            active_before  // Err: nothing changed
+            active_before // Err: nothing changed
         };
         if result_ok {
-            assert_eq!(active_after, active_before + 1,
-                "Ok return MUST mean active zone count increased by 1");
+            assert_eq!(
+                active_after,
+                active_before + 1,
+                "Ok return MUST mean active zone count increased by 1"
+            );
         }
     }
 
@@ -489,13 +534,15 @@ mod proofs {
         let returned_err: bool = kani::any();
         kani::assume(active_before <= 32);
         let active_after = if returned_err {
-            active_before  // Err: zone count unchanged
+            active_before // Err: zone count unchanged
         } else {
-            active_before + 1  // Ok: incremented
+            active_before + 1 // Ok: incremented
         };
         if returned_err {
-            assert_eq!(active_after, active_before,
-                "Err return MUST mean active zone count unchanged");
+            assert_eq!(
+                active_after, active_before,
+                "Err return MUST mean active zone count unchanged"
+            );
         }
     }
 
@@ -509,7 +556,7 @@ mod proofs {
         let min_dist_sq: u64 = kani::any();
         // Safety threshold: dist² ≥ 1.0 (= 1000 in milli-units).
         const THRESHOLD_MILLI: u64 = 1000;
-        let dist_sq_milli = min_dist_sq;     // already in milli units
+        let dist_sq_milli = min_dist_sq; // already in milli units
         let safe = dist_sq_milli >= THRESHOLD_MILLI;
         // The bench's verdict logic must agree with this classification.
         if dist_sq_milli < THRESHOLD_MILLI {
@@ -533,8 +580,10 @@ mod proofs {
         // slot, regardless of vec_len = MAX.
         let try_add_succeeds = inactive_slots > 0 || vec_len < 32;
         if inactive_slots > 0 {
-            assert!(try_add_succeeds,
-                "slot-reuse: try_add succeeds when inactive slot present, even at Vec cap");
+            assert!(
+                try_add_succeeds,
+                "slot-reuse: try_add succeeds when inactive slot present, even at Vec cap"
+            );
         }
     }
 
@@ -556,8 +605,10 @@ mod proofs {
         let count_t2: u32 = kani::any();
         // Constraint: t2 is later than t1, telemetry only increments.
         kani::assume(count_t1 <= count_t2);
-        assert!(count_t1 <= count_t2,
-            "cap_hit_count must be monotonically non-decreasing");
+        assert!(
+            count_t1 <= count_t2,
+            "cap_hit_count must be monotonically non-decreasing"
+        );
         // No saturation — caller can clear/reset, but in operation
         // it monotonically grows until reset.
     }
@@ -577,8 +628,10 @@ mod proofs {
         let _ = (silent_refuse, silent_evict);
         // The implication: cap_hits > 0 ⇒ silent drops occurred.
         if cap_hits > 0 {
-            assert!(cap_hits > 0,
-                "in SILENT_DROP, cap_hit_count > 0 means hazards were lost");
+            assert!(
+                cap_hits > 0,
+                "in SILENT_DROP, cap_hit_count > 0 means hazards were lost"
+            );
         }
     }
 
@@ -600,8 +653,10 @@ mod proofs {
         };
         let measured_evictions: u32 = kani::any();
         kani::assume(measured_evictions == expected_evictions);
-        assert_eq!(measured_evictions, expected_evictions,
-            "LRU eviction count must equal overflow count");
+        assert_eq!(
+            measured_evictions, expected_evictions,
+            "LRU eviction count must equal overflow count"
+        );
         // Under SILENT_DROP, eviction_count = 0 but cap_hit_count =
         // adds_attempted - max_zones (same overflow, different telemetry).
     }
@@ -623,13 +678,17 @@ mod proofs {
         let action_replace = new_intensity > current_min_intensity;
         if !action_replace {
             // New is dropped; current min stays.
-            assert!(new_intensity <= current_min_intensity,
-                "priority drop only when new intensity ≤ current minimum");
+            assert!(
+                new_intensity <= current_min_intensity,
+                "priority drop only when new intensity ≤ current minimum"
+            );
         }
         if action_replace {
             // Replaced; new intensity now in set, old min gone.
-            assert!(new_intensity > current_min_intensity,
-                "priority replace only when new intensity > current minimum");
+            assert!(
+                new_intensity > current_min_intensity,
+                "priority replace only when new intensity > current minimum"
+            );
         }
     }
 
@@ -661,8 +720,10 @@ mod proofs {
         // in arrival timing within ticks). The formal bound is the cap.
         let measured_max: u64 = kani::any();
         kani::assume(measured_max <= steady_state_bound + ttl as u64);
-        assert!(measured_max <= steady_state_bound + ttl as u64,
-            "TTL keeps zone count bounded by ~ rate × TTL");
+        assert!(
+            measured_max <= steady_state_bound + ttl as u64,
+            "TTL keeps zone count bounded by ~ rate × TTL"
+        );
     }
 
     /// PROVE: prune_expired removes EXACTLY the zones whose expiry has
@@ -681,12 +742,16 @@ mod proofs {
         // 1. expiry > now AND was_removed → premature kill
         // 2. expiry <= now AND !was_removed → leaked zone
         if zone_expiry > now {
-            assert!(!was_removed,
-                "must NOT remove zone with expiry > now (premature)");
+            assert!(
+                !was_removed,
+                "must NOT remove zone with expiry > now (premature)"
+            );
         }
         if zone_expiry <= now {
-            assert!(was_removed,
-                "MUST remove zone with expiry <= now (no leaks)");
+            assert!(
+                was_removed,
+                "MUST remove zone with expiry <= now (no leaks)"
+            );
         }
     }
 
@@ -703,12 +768,13 @@ mod proofs {
         let trial_b_zone_count: u32 = kani::any();
         // For pure (no I/O, no time-dependent input) functions on
         // deterministic input: outputs are identical.
-        let deterministic_property: bool =
-            trial_a_zone_count == trial_b_zone_count;
+        let deterministic_property: bool = trial_a_zone_count == trial_b_zone_count;
         // The bench reports zone_count delta. If 0, this property holds.
         kani::assume(deterministic_property);
-        assert_eq!(trial_a_zone_count, trial_b_zone_count,
-            "deterministic soak: same input must yield same zone count");
+        assert_eq!(
+            trial_a_zone_count, trial_b_zone_count,
+            "deterministic soak: same input must yield same zone count"
+        );
     }
 
     /// PROVE: WorldModel's hard cap MAX_ZONES = 32 is enforced.
@@ -728,12 +794,16 @@ mod proofs {
             zones_before
         };
         // Invariant: after any add, zones_after <= cap.
-        assert!(zones_after <= cap,
-            "WorldModel cap MAX_ZONES = 32 must hold after any add");
+        assert!(
+            zones_after <= cap,
+            "WorldModel cap MAX_ZONES = 32 must hold after any add"
+        );
         // At cap, add is a no-op.
         if zones_before == cap {
-            assert_eq!(zones_after, cap,
-                "add at cap must be no-op (returns silently)");
+            assert_eq!(
+                zones_after, cap,
+                "add at cap must be no-op (returns silently)"
+            );
         }
     }
 
@@ -764,8 +834,10 @@ mod proofs {
         // If sender is revoked, m10 must NOT have changed via this path.
         kani::assume(policy_holds);
         if sender_revoked {
-            assert!(!m10_changed,
-                "revoked sender MUST NOT alter the M10 world model");
+            assert!(
+                !m10_changed,
+                "revoked sender MUST NOT alter the M10 world model"
+            );
         }
         let _ = sensor_reading_received;
     }
@@ -784,8 +856,10 @@ mod proofs {
         kani::assume(added_this_round <= 1_000_000);
         kani::assume(zones_before.checked_add(added_this_round).is_some());
         let zones_after = zones_before + added_this_round;
-        assert!(zones_after >= zones_before,
-            "M10 zone count must monotonically grow under add-only API");
+        assert!(
+            zones_after >= zones_before,
+            "M10 zone count must monotonically grow under add-only API"
+        );
     }
 
     /// PROVE: M10 trajectory progression invariant. After
@@ -813,8 +887,10 @@ mod proofs {
 
         // The bench MUST report `[FAIL]` if this is violated.
         if progression_holds {
-            assert!(end_to_goal_sq <= start_to_goal_sq,
-                "M10 navigate must produce a trajectory that progresses toward goal");
+            assert!(
+                end_to_goal_sq <= start_to_goal_sq,
+                "M10 navigate must produce a trajectory that progresses toward goal"
+            );
         } else {
             // The bench would print "DIVERGED" — operator alerted.
             // This proof formalizes the alarm condition.
@@ -851,8 +927,10 @@ mod proofs {
             // Encoded: if measurement violates this, the bench / Bloom
             // is buggy.
             kani::assume(fp_at_m2 <= fp_at_m1);
-            assert!(fp_at_m2 <= fp_at_m1,
-                "FP rate must be monotonically non-increasing in m");
+            assert!(
+                fp_at_m2 <= fp_at_m1,
+                "FP rate must be monotonically non-increasing in m"
+            );
         }
     }
 
@@ -874,14 +952,32 @@ mod proofs {
         // For HIT (all bits set), we MUST check all 4 — no early exit
         // because no 0-bit terminates the loop.
         let mut bits_checked = 0u32;
-        if bit0 { bits_checked += 1; } else { return; /* early exit */ }
-        if bit1 { bits_checked += 1; } else { return; }
-        if bit2 { bits_checked += 1; } else { return; }
-        if bit3 { bits_checked += 1; } else { return; }
+        if bit0 {
+            bits_checked += 1;
+        } else {
+            return; /* early exit */
+        }
+        if bit1 {
+            bits_checked += 1;
+        } else {
+            return;
+        }
+        if bit2 {
+            bits_checked += 1;
+        } else {
+            return;
+        }
+        if bit3 {
+            bits_checked += 1;
+        } else {
+            return;
+        }
         // After the loop: returned true (contains hit). Must have
         // checked all 4 bits.
-        assert_eq!(bits_checked, 4,
-            "Bloom hit path must check ALL k bits, no early exit on hit");
+        assert_eq!(
+            bits_checked, 4,
+            "Bloom hit path must check ALL k bits, no early exit on hit"
+        );
     }
 
     /// PROVE: Bloom miss path CAN early-exit at the first 0-bit.
@@ -896,15 +992,21 @@ mod proofs {
         // position 1. contains() probes b0=1 (continue), b1=0 (return
         // false). Only 2 bits checked.
         let bit0: bool = true;
-        let bit1: bool = false;     // <-- the early exit
+        let bit1: bool = false; // <-- the early exit
         let _bit2: bool = true;
         let _bit3: bool = true;
         let mut bits_checked = 0u32;
-        if bit0 { bits_checked += 1; } else { return; }
+        if bit0 {
+            bits_checked += 1;
+        } else {
+            return;
+        }
         if !bit1 {
             // Early-exit branch: contains returns false here.
-            assert_eq!(bits_checked, 1,
-                "miss path must early-exit before checking remaining bits");
+            assert_eq!(
+                bits_checked, 1,
+                "miss path must early-exit before checking remaining bits"
+            );
             return;
         }
         // Unreachable in this case; only here if we DIDN'T early-exit.
@@ -942,7 +1044,10 @@ mod proofs {
         let _ = (bit_b1, bit_b2, bit_b3, bit_b4);
         // contains(fp) = AND over all 4 bits
         let contains = inserted_b1 && inserted_b2 && inserted_b3 && inserted_b4;
-        assert!(contains, "Bloom MUST return true for an inserted fp (no false negatives)");
+        assert!(
+            contains,
+            "Bloom MUST return true for an inserted fp (no false negatives)"
+        );
     }
 
     /// PROVE: Bloom filter false-positive direction is the SAFE
@@ -965,8 +1070,10 @@ mod proofs {
         // and assert FN never occurs.
         kani::assume(!actual_revoked || bloom_says_revoked);
         // Under this assumption: !is_false_negative.
-        assert!(!is_false_negative,
-            "Bloom must never produce false negative (revoked fp slipped through)");
+        assert!(
+            !is_false_negative,
+            "Bloom must never produce false negative (revoked fp slipped through)"
+        );
     }
 
     /// PROVE: Bloom FP rate is monotonically non-decreasing in
@@ -996,8 +1103,10 @@ mod proofs {
             // Without simulation we just assert the invariant holds
             // when caller respects monotonicity.
             kani::assume(fp_at_m1 <= fp_at_m2);
-            assert!(fp_at_m1 <= fp_at_m2,
-                "Bloom FP rate must be monotonic in load (m2 > m1 ⇒ FP(m2) >= FP(m1))");
+            assert!(
+                fp_at_m1 <= fp_at_m2,
+                "Bloom FP rate must be monotonic in load (m2 > m1 ⇒ FP(m2) >= FP(m1))"
+            );
         }
     }
 
@@ -1025,13 +1134,18 @@ mod proofs {
         // observed). Using a generous 20 000 ns ceiling for the proof.
         kani::assume(per_check_ns <= 20_000);
         const R20_NS: u64 = 1_000_000;
-        assert!(per_check_ns < R20_NS,
-            "per-envelope steady-state check must stay under R20");
+        assert!(
+            per_check_ns < R20_NS,
+            "per-envelope steady-state check must stay under R20"
+        );
         // Headroom must be at least 50× even at the most pessimistic
         // assumed cost.
         let headroom = R20_NS / per_check_ns.max(1);
-        assert!(headroom >= 50,
-            "R20 headroom must be at least 50× — got {}×", headroom);
+        assert!(
+            headroom >= 50,
+            "R20 headroom must be at least 50× — got {}×",
+            headroom
+        );
     }
 
     /// PROVE: build-once invariant. The local BTreeSet is constructed
@@ -1053,11 +1167,15 @@ mod proofs {
         let per_check_buggy = (loop_elapsed_ns + build_ns) / n_checks as u64;
         // Correct is always ≤ buggy. The bench's reported value MUST
         // match `per_check_correct`.
-        assert!(per_check_correct <= per_check_buggy,
-            "build-once cost must NOT inflate per-envelope reported value");
+        assert!(
+            per_check_correct <= per_check_buggy,
+            "build-once cost must NOT inflate per-envelope reported value"
+        );
         if build_ns > 0 {
-            assert!(per_check_correct < per_check_buggy,
-                "with non-zero build cost, correct < buggy");
+            assert!(
+                per_check_correct < per_check_buggy,
+                "with non-zero build cost, correct < buggy"
+            );
         }
     }
 
@@ -1078,15 +1196,16 @@ mod proofs {
         // The bench reports min, median, max. If max - min > 1% of
         // median, something interfered. On the actual run, max - min = 0
         // for all 3 tiers (perfectly deterministic).
-        let bench_invariant_met =
-            trial_a_ns == trial_b_ns ||
-            (trial_a_ns.abs_diff(trial_b_ns) * 100) < trial_a_ns.max(trial_b_ns);
+        let bench_invariant_met = trial_a_ns == trial_b_ns
+            || (trial_a_ns.abs_diff(trial_b_ns) * 100) < trial_a_ns.max(trial_b_ns);
         // The proof asserts the bench's INVARIANT: tolerance band
         // is at most 1%. If the actual benches violate this, the
         // [WARN] path in the source would alert.
         if trial_a_ns == trial_b_ns {
-            assert!(bench_invariant_met,
-                "perfect determinism is the strongest case of the invariant");
+            assert!(
+                bench_invariant_met,
+                "perfect determinism is the strongest case of the invariant"
+            );
         }
     }
 
@@ -1115,8 +1234,10 @@ mod proofs {
         kani::assume(dt < 3_600_000_000);
         let t_end = t_start.wrapping_add(dt);
         // Within the constraint, end >= start.
-        assert!(t_end >= t_start,
-            "bench elapsed must be non-negative within the realistic window");
+        assert!(
+            t_end >= t_start,
+            "bench elapsed must be non-negative within the realistic window"
+        );
     }
 
     /// PROVE: the bench's intersection count is bounded by min(fleet, rev).
@@ -1130,15 +1251,18 @@ mod proofs {
         kani::assume(fleet_size <= 10_000 && rev_count <= 10_000);
         // The bench fp space is [0..fleet_size) for fleet and
         // [0..rev_count) for rev. Intersection = [0..min(fleet, rev)).
-        let expected_max = if fleet_size < rev_count { fleet_size } else { rev_count };
+        let expected_max = if fleet_size < rev_count {
+            fleet_size
+        } else {
+            rev_count
+        };
         // The bench reports hits = intersection size; harness must
         // enforce intersection <= expected_max.
         if intersection > expected_max {
             // This should never happen — assert it doesn't.
             // (If the harness was buggy, this proof would FAIL when
             // run on Kani CI, alerting us.)
-            assert!(false,
-                "intersection MUST be bounded by min(fleet, rev)");
+            assert!(false, "intersection MUST be bounded by min(fleet, rev)");
         } else {
             assert!(intersection <= expected_max);
         }
@@ -1163,8 +1287,10 @@ mod proofs {
             // the source flags it. Asserting !agree being detectable.
             assert!(a_hits != b_hits, "WARN path activates");
         } else {
-            assert_eq!(a_hits, b_hits,
-                "patterns must agree on intersection count for the speedup ratio to be meaningful");
+            assert_eq!(
+                a_hits, b_hits,
+                "patterns must agree on intersection count for the speedup ratio to be meaningful"
+            );
         }
     }
 
@@ -1193,8 +1319,11 @@ mod proofs {
         let pos: u8 = kani::any();
         kani::assume(pos < 64);
         if (initial >> pos) & 1 == 1 {
-            assert_eq!((after >> pos) & 1, 1,
-                "revocation set must be monotonic — once revoked, stays revoked");
+            assert_eq!(
+                (after >> pos) & 1,
+                1,
+                "revocation set must be monotonic — once revoked, stays revoked"
+            );
         }
     }
 
@@ -1210,8 +1339,10 @@ mod proofs {
         kani::assume(bit < 64);
         let once = initial | (1u64 << bit);
         let twice = once | (1u64 << bit);
-        assert_eq!(once, twice,
-            "double-insert of same fp must be a no-op (idempotent)");
+        assert_eq!(
+            once, twice,
+            "double-insert of same fp must be a no-op (idempotent)"
+        );
     }
 
     /// PROVE: at the application layer, a positive revocation check
@@ -1229,8 +1360,10 @@ mod proofs {
         let app_accepts = mesh_decision_arrived && !origin_revoked;
         // Conversely: if revoked, no path to accept exists
         if origin_revoked {
-            assert!(!app_accepts,
-                "revoked origin must always cause app-layer rejection regardless of sig");
+            assert!(
+                !app_accepts,
+                "revoked origin must always cause app-layer rejection regardless of sig"
+            );
         }
     }
 
@@ -1255,13 +1388,14 @@ mod proofs {
         let wipe_emitted: bool = kani::any();
         let revocation_received: bool = kani::any();
         // The actual registry-effective set after the cascade:
-        let registry_effective = registry_had_pubkey
-            && !revocation_received;        // wipe alone doesn't change it
-        // Negation of the bad invariant: it is NOT the case that wipe
-        // alone suffices to unregister.
+        let registry_effective = registry_had_pubkey && !revocation_received; // wipe alone doesn't change it
+                                                                              // Negation of the bad invariant: it is NOT the case that wipe
+                                                                              // alone suffices to unregister.
         if wipe_emitted && !revocation_received && registry_had_pubkey {
-            assert!(registry_effective,
-                "wipe without revocation must NOT unregister — operator must broadcast");
+            assert!(
+                registry_effective,
+                "wipe without revocation must NOT unregister — operator must broadcast"
+            );
         }
     }
 
@@ -1329,8 +1463,7 @@ mod tests {
             use crate::sim::SimSecureElement;
             let mut se = SimSecureElement::new_no_latency();
             se.provision(&[0x42; 32]).unwrap();
-            let sig = sign_v10_envelope_via_se(&se, 0xDEAD_BEEF_CAFE_F00D, [0xAA; 8])
-                .unwrap();
+            let sig = sign_v10_envelope_via_se(&se, 0xDEAD_BEEF_CAFE_F00D, [0xAA; 8]).unwrap();
             // Verify against ed25519-compact directly using the SE's pubkey.
             let pk_bytes = se.pubkey().unwrap();
             let pk = ed25519_compact::PublicKey::from_slice(&pk_bytes).unwrap();
@@ -1339,8 +1472,10 @@ mod tests {
             preimage.extend_from_slice(b"SPORE\x0A");
             preimage.extend_from_slice(&0xDEAD_BEEF_CAFE_F00D_u64.to_le_bytes());
             preimage.extend_from_slice(&[0xAA; 8]);
-            assert!(pk.verify(&preimage, &sig_obj).is_ok(),
-                "sig should verify against canonical preimage");
+            assert!(
+                pk.verify(&preimage, &sig_obj).is_ok(),
+                "sig should verify against canonical preimage"
+            );
         }
     }
 }

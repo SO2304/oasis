@@ -4,10 +4,10 @@
 //! based on field needs. Specialization is reversible.
 
 use crate::vec::*;
-#[cfg(feature = "std")]
-use std::collections::HashMap;
 #[cfg(not(feature = "std"))]
 use alloc::{collections::BTreeMap as HashMap, vec::Vec};
+#[cfg(feature = "std")]
+use std::collections::HashMap;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash, PartialOrd, Ord)]
 pub enum Role {
@@ -323,15 +323,17 @@ mod tests {
     fn invariant_agent_count_conserved() {
         let mut engine = MorphoEngine::new();
         let n = 20;
-        for _ in 0..n { engine.register(); }
+        for _ in 0..n {
+            engine.register();
+        }
         for round in 0..50 {
             let threat = (round as f64 * 0.1) % 1.0;
             let unknown = ((round * 3) as f64 * 0.1) % 1.0;
-            engine.differentiate(&vec![0.5; n], &vec![0.3; n],
-                threat, unknown, 0.2, round % 2 == 0);
-            let total: usize = [Role::Stem, Role::Navigator, Role::Sentinel,
-                               Role::Worker, Role::Scout, Role::Healer]
-                .iter().map(|&r| engine.count_by_role(r)).sum();
+            engine.differentiate(&vec![0.5; n], &vec![0.3; n], threat, unknown, 0.2, round % 2 == 0);
+            let total: usize = [Role::Stem, Role::Navigator, Role::Sentinel, Role::Worker, Role::Scout, Role::Healer]
+                .iter()
+                .map(|&r| engine.count_by_role(r))
+                .sum();
             assert_eq!(total, n, "count drifted at round {}: {}", round, total);
         }
     }
@@ -341,27 +343,32 @@ mod tests {
     #[test]
     fn invariant_diversity_grows_with_mixed_needs() {
         fn shannon_h(engine: &MorphoEngine) -> f64 {
-            let n: usize = [Role::Stem, Role::Navigator, Role::Sentinel,
-                           Role::Worker, Role::Scout, Role::Healer]
-                .iter().map(|&r| engine.count_by_role(r)).sum();
-            if n == 0 { return 0.0; }
+            let n: usize = [Role::Stem, Role::Navigator, Role::Sentinel, Role::Worker, Role::Scout, Role::Healer]
+                .iter()
+                .map(|&r| engine.count_by_role(r))
+                .sum();
+            if n == 0 {
+                return 0.0;
+            }
             let mut h = 0.0;
-            for role in [Role::Stem, Role::Navigator, Role::Sentinel,
-                        Role::Worker, Role::Scout, Role::Healer] {
+            for role in [Role::Stem, Role::Navigator, Role::Sentinel, Role::Worker, Role::Scout, Role::Healer] {
                 let p = engine.count_by_role(role) as f64 / n as f64;
-                if p > 0.0 { h -= p * p.log2(); }
+                if p > 0.0 {
+                    h -= p * p.log2();
+                }
             }
             h
         }
         let mut engine = MorphoEngine::new();
         let n = 12;
-        for _ in 0..n { engine.register(); }
+        for _ in 0..n {
+            engine.register();
+        }
         for _ in 0..3 {
             engine.differentiate(&vec![0.5; n], &vec![0.4; n], 0.4, 0.4, 0.3, true);
         }
         let h = shannon_h(&engine);
-        assert!(h > 1.0,
-            "Shannon diversity with mixed needs should be > 1.0 bits, got {}", h);
+        assert!(h > 1.0, "Shannon diversity with mixed needs should be > 1.0 bits, got {}", h);
     }
 
     /// Invariant 3 — churn RATE decreases over time under constant pressure.
@@ -373,20 +380,23 @@ mod tests {
     fn invariant_churn_rate_decreases_under_constant_pressure() {
         let mut engine = MorphoEngine::new();
         let n = 8;
-        for _ in 0..n { engine.register(); }
+        for _ in 0..n {
+            engine.register();
+        }
         let mut early_changes = 0u32;
         let mut late_changes = 0u32;
         for round in 0..400 {
-            let c = engine.differentiate(
-                &vec![0.5; n], &vec![0.3; n], 0.5, 0.5, 0.2, true,
-            );
-            if round < 50 { early_changes += c; }
-            if round >= 300 { late_changes += c; }
+            let c = engine.differentiate(&vec![0.5; n], &vec![0.3; n], 0.5, 0.5, 0.2, true);
+            if round < 50 {
+                early_changes += c;
+            }
+            if round >= 300 {
+                late_changes += c;
+            }
         }
         // First 50 rounds should have >> more changes than last 100 rounds,
         // because agents start as Stem and spend early rounds differentiating.
-        assert!(early_changes > late_changes,
-            "churn rate did not decrease: early={} late={}", early_changes, late_changes);
+        assert!(early_changes > late_changes, "churn rate did not decrease: early={} late={}", early_changes, late_changes);
     }
 
     /// Invariant 4 — Stem is terminal once left (cannot re-enter).
@@ -394,13 +404,14 @@ mod tests {
     fn invariant_stem_is_terminal_once_left() {
         let mut engine = MorphoEngine::new();
         let n = 5;
-        for _ in 0..n { engine.register(); }
+        for _ in 0..n {
+            engine.register();
+        }
         engine.differentiate(&vec![0.4; n], &vec![0.5; n], 0.5, 0.5, 0.3, true);
         assert_eq!(engine.count_by_role(Role::Stem), 0);
         for _ in 0..30 {
             engine.differentiate(&vec![0.8; n], &vec![0.0; n], 0.0, 0.0, 0.9, false);
-            assert_eq!(engine.count_by_role(Role::Stem), 0,
-                "Stem must not reappear after first differentiation");
+            assert_eq!(engine.count_by_role(Role::Stem), 0, "Stem must not reappear after first differentiation");
         }
     }
 
@@ -409,13 +420,14 @@ mod tests {
     fn invariant_commitment_bounded_0_to_1() {
         let mut engine = MorphoEngine::new();
         let n = 5;
-        for _ in 0..n { engine.register(); }
+        for _ in 0..n {
+            engine.register();
+        }
         for _ in 0..200 {
             engine.differentiate(&vec![0.5; n], &vec![0.3; n], 0.5, 0.5, 0.3, true);
             for i in 0..n {
                 let c = engine.profiles[i].commitment;
-                assert!((0.0..=1.0).contains(&c),
-                    "commitment {} out of [0,1] on agent {}", c, i);
+                assert!((0.0..=1.0).contains(&c), "commitment {} out of [0,1] on agent {}", c, i);
             }
         }
     }

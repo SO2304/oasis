@@ -31,15 +31,19 @@
 //! for authenticated RPC. ROS 2 needs separate SecureROS + rmw config layers.
 
 use crate::topics::hash_topic;
+#[cfg(not(feature = "std"))]
+use alloc::{
+    collections::BTreeMap as HashMap,
+    string::{String, ToString},
+    vec::Vec,
+};
 #[cfg(feature = "std")]
 use std::collections::HashMap;
-#[cfg(not(feature = "std"))]
-use alloc::{collections::BTreeMap as HashMap, string::{String, ToString}, vec::Vec};
 
 pub const SPORE_VA_MAGIC: &[u8] = b"SPORE\x0A"; // request
 pub const SPORE_VB_MAGIC: &[u8] = b"SPORE\x0B"; // response
-pub const REQ_HEADER_LEN: usize = 6 + 8 + 8 + 4;   // 26 bytes
-pub const RESP_HEADER_LEN: usize = 6 + 8 + 1 + 4;  // 19 bytes
+pub const REQ_HEADER_LEN: usize = 6 + 8 + 8 + 4; // 26 bytes
+pub const RESP_HEADER_LEN: usize = 6 + 8 + 1 + 4; // 19 bytes
 
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -78,12 +82,18 @@ pub fn wrap_request_hash(service_hash: u64, request_id: u64, payload: &[u8]) -> 
 
 /// Parse a request envelope. Zero-copy payload slice.
 pub fn parse_request(envelope: &[u8]) -> Result<(u64, u64, &[u8]), &'static str> {
-    if envelope.len() < REQ_HEADER_LEN { return Err("request envelope too short"); }
-    if &envelope[..6] != SPORE_VA_MAGIC { return Err("bad request magic"); }
+    if envelope.len() < REQ_HEADER_LEN {
+        return Err("request envelope too short");
+    }
+    if &envelope[..6] != SPORE_VA_MAGIC {
+        return Err("bad request magic");
+    }
     let request_id = u64::from_le_bytes(envelope[6..14].try_into().unwrap());
     let service_hash = u64::from_le_bytes(envelope[14..22].try_into().unwrap());
     let plen = u32::from_le_bytes(envelope[22..26].try_into().unwrap()) as usize;
-    if envelope.len() < REQ_HEADER_LEN + plen { return Err("request payload truncated"); }
+    if envelope.len() < REQ_HEADER_LEN + plen {
+        return Err("request payload truncated");
+    }
     Ok((request_id, service_hash, &envelope[REQ_HEADER_LEN..REQ_HEADER_LEN + plen]))
 }
 
@@ -100,12 +110,18 @@ pub fn wrap_response(request_id: u64, status: ServiceStatus, payload: &[u8]) -> 
 
 /// Parse a response envelope.
 pub fn parse_response(envelope: &[u8]) -> Result<(u64, ServiceStatus, &[u8]), &'static str> {
-    if envelope.len() < RESP_HEADER_LEN { return Err("response envelope too short"); }
-    if &envelope[..6] != SPORE_VB_MAGIC { return Err("bad response magic"); }
+    if envelope.len() < RESP_HEADER_LEN {
+        return Err("response envelope too short");
+    }
+    if &envelope[..6] != SPORE_VB_MAGIC {
+        return Err("bad response magic");
+    }
     let request_id = u64::from_le_bytes(envelope[6..14].try_into().unwrap());
     let status = ServiceStatus::from_u8(envelope[14]);
     let plen = u32::from_le_bytes(envelope[15..19].try_into().unwrap()) as usize;
-    if envelope.len() < RESP_HEADER_LEN + plen { return Err("response payload truncated"); }
+    if envelope.len() < RESP_HEADER_LEN + plen {
+        return Err("response payload truncated");
+    }
     Ok((request_id, status, &envelope[RESP_HEADER_LEN..RESP_HEADER_LEN + plen]))
 }
 
@@ -118,7 +134,9 @@ pub struct ServiceRouter {
 }
 
 impl Default for ServiceRouter {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl ServiceRouter {
@@ -149,7 +167,9 @@ impl ServiceRouter {
         self.names.values().map(|s| s.as_str()).collect()
     }
 
-    pub fn service_count(&self) -> usize { self.handlers.len() }
+    pub fn service_count(&self) -> usize {
+        self.handlers.len()
+    }
 }
 
 #[cfg(kani)]
@@ -245,8 +265,12 @@ mod tests {
         assert!(parse_request(&env).is_err());
     }
 
-    fn echo_handler(input: &[u8]) -> Vec<u8> { input.to_vec() }
-    fn add_42_handler(_input: &[u8]) -> Vec<u8> { vec![42] }
+    fn echo_handler(input: &[u8]) -> Vec<u8> {
+        input.to_vec()
+    }
+    fn add_42_handler(_input: &[u8]) -> Vec<u8> {
+        vec![42]
+    }
 
     #[test]
     fn server_echo_service() {
@@ -325,7 +349,9 @@ mod tests {
         let req = wrap_request("/fast", 1, b"payload");
         let start = std::time::Instant::now();
         const N: u32 = 50_000;
-        for _ in 0..N { let _ = router.handle(&req).unwrap(); }
+        for _ in 0..N {
+            let _ = router.handle(&req).unwrap();
+        }
         let per_us = start.elapsed().as_nanos() as f64 / N as f64 / 1000.0;
         assert!(per_us < 5.0, "service dispatch too slow: {} µs/op", per_us);
         eprintln!("service dispatch latency: {:.2} µs/op (echo handler)", per_us);

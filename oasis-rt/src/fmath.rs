@@ -37,16 +37,52 @@ pub trait F64Ext {
 
 #[cfg(not(feature = "std"))]
 impl F64Ext for f64 {
-    #[inline] fn cos(self) -> f64 { libm::cos(self) }
-    #[inline] fn sin(self) -> f64 { libm::sin(self) }
-    #[inline] fn atan2(self, other: f64) -> f64 { libm::atan2(self, other) }
-    #[inline] fn sqrt(self) -> f64 { libm::sqrt(self) }
-    #[inline] fn exp(self) -> f64 { libm::exp(self) }
-    #[inline] fn ln(self) -> f64 { libm::log(self) }
-    #[inline] fn powi(self, n: i32) -> f64 { libm::pow(self, n as f64) }
-    #[inline] fn abs(self) -> f64 { libm::fabs(self) }
-    #[inline] fn floor(self) -> f64 { libm::floor(self) }
-    #[inline] fn ceil(self) -> f64 { libm::ceil(self) }
-    #[inline] fn round(self) -> f64 { libm::round(self) }
-    #[inline] fn powf(self, n: f64) -> f64 { libm::pow(self, n) }
+    #[inline]
+    fn cos(self) -> f64 {
+        libm::cos(self)
+    }
+    #[inline]
+    fn sin(self) -> f64 {
+        libm::sin(self)
+    }
+    #[inline]
+    fn atan2(self, other: f64) -> f64 {
+        libm::atan2(self, other)
+    }
+    #[inline]
+    fn sqrt(self) -> f64 {
+        libm::sqrt(self)
+    }
+    #[inline]
+    fn exp(self) -> f64 {
+        libm::exp(self)
+    }
+    #[inline]
+    fn ln(self) -> f64 {
+        libm::log(self)
+    }
+    #[inline]
+    fn powi(self, n: i32) -> f64 {
+        libm::pow(self, n as f64)
+    }
+    #[inline]
+    fn abs(self) -> f64 {
+        libm::fabs(self)
+    }
+    #[inline]
+    fn floor(self) -> f64 {
+        libm::floor(self)
+    }
+    #[inline]
+    fn ceil(self) -> f64 {
+        libm::ceil(self)
+    }
+    #[inline]
+    fn round(self) -> f64 {
+        libm::round(self)
+    }
+    #[inline]
+    fn powf(self, n: f64) -> f64 {
+        libm::pow(self, n)
+    }
 }

@@ -30,7 +30,7 @@
 use crate::vec::*;
 use crate::world_model::{WorldModel, ZoneType};
 #[cfg(not(feature = "std"))]
-use alloc::{vec::Vec, string::String, vec, format};
+use alloc::{format, string::String, vec, vec::Vec};
 
 pub struct Navigator {
     world: WorldModel,
@@ -38,7 +38,9 @@ pub struct Navigator {
 }
 
 impl Default for Navigator {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Navigator {
@@ -52,23 +54,17 @@ impl Navigator {
     /// Returns Err if the WorldModel cap is reached — caller MUST decide
     /// whether to evict / refuse / log. Migrated 2026-05-11 from silent
     /// no-op to Result-typed surface for fail-LOUD discipline.
-    pub fn add_obstacle(&mut self, pos: V, intensity: f64, falloff: f64)
-        -> Result<(), crate::world_model::ZoneError>
-    {
+    pub fn add_obstacle(&mut self, pos: V, intensity: f64, falloff: f64) -> Result<(), crate::world_model::ZoneError> {
         self.world.try_add_zone(ZoneType::Repulsive, pos, intensity, falloff)
     }
 
     /// Add a semantic zone (e.g., "slow down", damping behavior).
-    pub fn add_caution_zone(&mut self, pos: V, intensity: f64, falloff: f64)
-        -> Result<(), crate::world_model::ZoneError>
-    {
+    pub fn add_caution_zone(&mut self, pos: V, intensity: f64, falloff: f64) -> Result<(), crate::world_model::ZoneError> {
         self.world.try_add_zone(ZoneType::Semantic, pos, intensity, falloff)
     }
 
     /// Add an entropy zone (unknown region — agents should explore cautiously).
-    pub fn add_unknown_zone(&mut self, pos: V, intensity: f64, falloff: f64)
-        -> Result<(), crate::world_model::ZoneError>
-    {
+    pub fn add_unknown_zone(&mut self, pos: V, intensity: f64, falloff: f64) -> Result<(), crate::world_model::ZoneError> {
         self.world.try_add_zone(ZoneType::Entropy, pos, intensity, falloff)
     }
 
@@ -107,8 +103,9 @@ impl Navigator {
             Some(g) => {
                 let to_goal = vsub(g, pos);
                 let d = vn(&to_goal);
-                if d < 1e-6 { grad }
-                else {
+                if d < 1e-6 {
+                    grad
+                } else {
                     let pull = vscale(&to_goal, 0.3 / d);
                     vadd(&grad, &pull)
                 }
@@ -118,8 +115,12 @@ impl Navigator {
     }
 
     /// Introspection.
-    pub fn zone_count(&self) -> usize { self.world.zone_count() }
-    pub fn has_goal(&self) -> bool { self.goal.is_some() }
+    pub fn zone_count(&self) -> usize {
+        self.world.zone_count()
+    }
+    pub fn has_goal(&self) -> bool {
+        self.goal.is_some()
+    }
 }
 
 #[cfg(test)]
@@ -138,7 +139,8 @@ mod tests {
     #[test]
     fn goal_convergence() {
         let mut nav = Navigator::new();
-        let mut goal = vz(); goal[0] = 4.0;
+        let mut goal = vz();
+        goal[0] = 4.0;
         nav.set_goal(goal);
         let path = nav.plan(&vz(), 100);
         let end = path.last().unwrap();
@@ -149,20 +151,22 @@ mod tests {
     #[test]
     fn obstacle_avoidance() {
         let mut nav = Navigator::new();
-        let mut obs = vz(); obs[0] = 3.0;
+        let mut obs = vz();
+        obs[0] = 3.0;
         nav.add_obstacle(obs, 8.0, 0.8);
-        let mut goal = vz(); goal[0] = 6.0;
+        let mut goal = vz();
+        goal[0] = 6.0;
         nav.set_goal(goal);
         let path = nav.plan(&vz(), 100);
-        let min_dist_to_obs = path.iter().map(|p| vd(p, &obs))
-            .fold(f64::INFINITY, f64::min);
+        let min_dist_to_obs = path.iter().map(|p| vd(p, &obs)).fold(f64::INFINITY, f64::min);
         assert!(min_dist_to_obs > 0.3, "path too close to obstacle: {}", min_dist_to_obs);
     }
 
     #[test]
     fn instantaneous_control_points_toward_goal() {
         let mut nav = Navigator::new();
-        let mut goal = vz(); goal[0] = 5.0;
+        let mut goal = vz();
+        goal[0] = 5.0;
         nav.set_goal(goal);
         let ctl = nav.instantaneous_control(&vz());
         assert!(ctl[0] > 0.0, "control should pull toward +x goal, got {}", ctl[0]);
@@ -180,12 +184,16 @@ mod tests {
     #[test]
     fn multiple_obstacles_compose() {
         let mut nav = Navigator::new();
-        let mut o1 = vz(); o1[0] = 2.0;
-        let mut o2 = vz(); o2[1] = 2.0;
+        let mut o1 = vz();
+        o1[0] = 2.0;
+        let mut o2 = vz();
+        o2[1] = 2.0;
         nav.add_obstacle(o1, 5.0, 1.0);
         nav.add_obstacle(o2, 5.0, 1.0);
         assert_eq!(nav.zone_count(), 2);
-        let mut goal = vz(); goal[0] = 5.0; goal[1] = 5.0;
+        let mut goal = vz();
+        goal[0] = 5.0;
+        goal[1] = 5.0;
         nav.set_goal(goal);
         let path = nav.plan(&vz(), 100);
         // Path must avoid BOTH obstacles
@@ -200,7 +208,8 @@ mod tests {
     #[test]
     fn bench_plan_latency() {
         let mut nav = Navigator::new();
-        let mut goal = vz(); goal[0] = 10.0;
+        let mut goal = vz();
+        goal[0] = 10.0;
         nav.set_goal(goal);
         // Add 20 obstacles to stress
         for i in 0..20 {

@@ -1,6 +1,8 @@
 use super::*;
 
-fn fp(i: u8) -> [u8; FP_LEN] { [i, 0, 0, 0, 0, 0, 0, 0] }
+fn fp(i: u8) -> [u8; FP_LEN] {
+    [i, 0, 0, 0, 0, 0, 0, 0]
+}
 
 // ── AC round (Bloom auto-reset) ──────────────────────────────
 //
@@ -16,13 +18,11 @@ fn fp(i: u8) -> [u8; FP_LEN] { [i, 0, 0, 0, 0, 0, 0, 0] }
 #[test]
 fn bloom_auto_reset_default_off() {
     let mut r = MeshRouter::new(fp(1));
-    assert_eq!(r.bloom_auto_reset_threshold(), None,
-        "default: no auto-reset configured");
+    assert_eq!(r.bloom_auto_reset_threshold(), None, "default: no auto-reset configured");
     for _ in 0..1000 {
         let _ = r.origin_wrap(b"x");
     }
-    assert_eq!(r.bloom_reset_count(), 0,
-        "no auto-reset means counter never increments");
+    assert_eq!(r.bloom_reset_count(), 0, "no auto-reset means counter never increments");
     assert_eq!(r.bloom_inserts(), 1000);
     assert_eq!(r.bloom_inserts_since_reset(), 1000);
 }
@@ -35,12 +35,9 @@ fn bloom_auto_reset_fires_at_threshold() {
         let _ = r.origin_wrap(b"x");
     }
     // 1000 inserts / 100 threshold = ~10 resets fired.
-    assert!(r.bloom_reset_count() >= 9 && r.bloom_reset_count() <= 11,
-        "expected ~10 auto-resets, got {}", r.bloom_reset_count());
+    assert!(r.bloom_reset_count() >= 9 && r.bloom_reset_count() <= 11, "expected ~10 auto-resets, got {}", r.bloom_reset_count());
     // bloom_inserts_since_reset bounded by threshold + 1
-    assert!(r.bloom_inserts_since_reset() <= 101,
-        "bloom_inserts_since_reset must stay bounded by threshold +1, got {}",
-        r.bloom_inserts_since_reset());
+    assert!(r.bloom_inserts_since_reset() <= 101, "bloom_inserts_since_reset must stay bounded by threshold +1, got {}", r.bloom_inserts_since_reset());
 }
 
 #[test]
@@ -57,9 +54,11 @@ fn bloom_auto_reset_preserves_short_term_dedup() {
         d => panic!("expected first envelope to arrive, got {:?}", d),
     }
     // Send 200 more envelopes (triggers ~4 auto-resets at threshold 50)
-    for _ in 0..200 { let e = origin.origin_wrap(b"x"); let _ = hop.process(&e); }
-    assert!(hop.bloom_reset_count() >= 3,
-        "auto-reset should have fired, got {}", hop.bloom_reset_count());
+    for _ in 0..200 {
+        let e = origin.origin_wrap(b"x");
+        let _ = hop.process(&e);
+    }
+    assert!(hop.bloom_reset_count() >= 3, "auto-reset should have fired, got {}", hop.bloom_reset_count());
     // Replay the FIRST envelope — still rejected by seen_set even though
     // the Bloom was reset multiple times in between.
     match hop.process(&env) {
@@ -99,9 +98,7 @@ fn bloom_health_snapshot_tracks_inserts() {
     // capacity_consumed_milli = 100 * 1000 / 52 000 ≈ 1
     #[cfg(not(feature = "mesh_bloom_mcu"))]
     {
-        assert!(snap.capacity_consumed_milli() <= 2,
-            "100 / 52_000 should be ≈ 1.9 milli-units, got {}",
-            snap.capacity_consumed_milli());
+        assert!(snap.capacity_consumed_milli() <= 2, "100 / 52_000 should be ≈ 1.9 milli-units, got {}", snap.capacity_consumed_milli());
         assert!(!snap.capacity_alert());
     }
 }
@@ -117,10 +114,8 @@ fn bloom_health_snapshot_alert_fires_at_80pct() {
         let _ = r.origin_wrap(b"x");
     }
     let snap = r.bloom_health_snapshot();
-    assert!(snap.capacity_consumed_milli() >= 799 && snap.capacity_consumed_milli() <= 801,
-        "expected ~800 milli-units, got {}", snap.capacity_consumed_milli());
-    assert!(snap.capacity_alert(),
-        "alert MUST fire at 80% of capacity");
+    assert!(snap.capacity_consumed_milli() >= 799 && snap.capacity_consumed_milli() <= 801, "expected ~800 milli-units, got {}", snap.capacity_consumed_milli());
+    assert!(snap.capacity_alert(), "alert MUST fire at 80% of capacity");
 }
 
 #[test]
@@ -132,15 +127,11 @@ fn bloom_health_snapshot_after_auto_reset() {
     }
     let snap = r.bloom_health_snapshot();
     assert_eq!(snap.bloom_inserts_total, 200);
-    assert!(snap.bloom_inserts_since_reset <= 51,
-        "since_reset must stay bounded by threshold + 1");
+    assert!(snap.bloom_inserts_since_reset <= 51, "since_reset must stay bounded by threshold + 1");
     assert_eq!(snap.auto_reset_threshold, Some(50));
-    assert!(snap.bloom_reset_count >= 3,
-        "auto-reset should have fired ~4 times");
+    assert!(snap.bloom_reset_count >= 3, "auto-reset should have fired ~4 times");
     // Capacity-consumed should be tiny because reset cleared progress
-    assert!(snap.capacity_consumed_milli() < 5,
-        "post-reset, capacity-consumed should be near 0, got {}",
-        snap.capacity_consumed_milli());
+    assert!(snap.capacity_consumed_milli() < 5, "post-reset, capacity-consumed should be near 0, got {}", snap.capacity_consumed_milli());
     assert!(!snap.capacity_alert());
 }
 
@@ -160,12 +151,13 @@ fn bloom_snapshot_serialize_size_is_36() {
 fn bloom_snapshot_serialize_roundtrip_preserves_fields() {
     let mut r = MeshRouter::new(fp(1));
     r.set_bloom_auto_reset_threshold(Some(12_345));
-    for _ in 0..7_000 { let _ = r.origin_wrap(b"x"); }
+    for _ in 0..7_000 {
+        let _ = r.origin_wrap(b"x");
+    }
     let snap = r.bloom_health_snapshot();
     let wire = snap.serialize_topic_v1();
     let local_cap = snap.bloom_capacity_estimate_1pct_fpr;
-    let restored = BloomHealthSnapshot::deserialize_topic_v1(&wire, local_cap)
-        .expect("valid wire roundtrip");
+    let restored = BloomHealthSnapshot::deserialize_topic_v1(&wire, local_cap).expect("valid wire roundtrip");
     // All wire-carried fields preserved exactly.
     assert_eq!(restored.bloom_inserts_total, snap.bloom_inserts_total);
     assert_eq!(restored.bloom_inserts_since_reset, snap.bloom_inserts_since_reset);
@@ -194,7 +186,7 @@ fn bloom_snapshot_serialize_none_threshold_encodes_zero() {
 #[test]
 fn bloom_snapshot_deserialize_rejects_bad_magic() {
     let mut wire = [0u8; 36];
-    wire[0] = b'X';  // wrong magic
+    wire[0] = b'X'; // wrong magic
     wire[1] = 1;
     assert!(BloomHealthSnapshot::deserialize_topic_v1(&wire, 52_000).is_none());
 }
@@ -203,7 +195,7 @@ fn bloom_snapshot_deserialize_rejects_bad_magic() {
 fn bloom_snapshot_deserialize_rejects_wrong_version() {
     let mut wire = [0u8; 36];
     wire[0] = b'B';
-    wire[1] = 99;    // wrong version
+    wire[1] = 99; // wrong version
     assert!(BloomHealthSnapshot::deserialize_topic_v1(&wire, 52_000).is_none());
 }
 
@@ -212,7 +204,7 @@ fn bloom_snapshot_deserialize_rejects_nonzero_reserved() {
     let mut wire = [0u8; 36];
     wire[0] = b'B';
     wire[1] = 1;
-    wire[2] = 0xAA;   // reserved byte non-zero
+    wire[2] = 0xAA; // reserved byte non-zero
     assert!(BloomHealthSnapshot::deserialize_topic_v1(&wire, 52_000).is_none());
 }
 
@@ -234,10 +226,10 @@ fn bloom_reset_count_monotonic() {
     r.bloom_reset();
     assert_eq!(r.bloom_reset_count(), c0 + 2);
     r.set_bloom_auto_reset_threshold(Some(10));
-    for _ in 0..30 { let _ = r.origin_wrap(b"y"); }
-    assert!(r.bloom_reset_count() >= c0 + 4,
-        "manual + auto-resets accumulate monotonically, got {}",
-        r.bloom_reset_count());
+    for _ in 0..30 {
+        let _ = r.origin_wrap(b"y");
+    }
+    assert!(r.bloom_reset_count() >= c0 + 4, "manual + auto-resets accumulate monotonically, got {}", r.bloom_reset_count());
 }
 
 #[test]
@@ -256,7 +248,7 @@ fn origin_wrap_parse_roundtrip() {
 #[test]
 fn invariant_forward_decrements_ttl_and_increments_hops() {
     let mut origin = MeshRouter::new(fp(1));
-    let mut hop_a  = MeshRouter::new(fp(2));
+    let mut hop_a = MeshRouter::new(fp(2));
     let env = origin.origin_wrap(b"payload");
     match hop_a.process(&env) {
         MeshDecision::Arrived { envelope, hops_seen, forward, .. } => {
@@ -273,7 +265,7 @@ fn invariant_forward_decrements_ttl_and_increments_hops() {
 #[test]
 fn invariant_ttl_zero_is_terminal() {
     let mut origin = MeshRouter::with_config(fp(1), 1, 16);
-    let mut hop_a  = MeshRouter::new(fp(2));
+    let mut hop_a = MeshRouter::new(fp(2));
     let env_ttl1 = origin.origin_wrap(b"x"); // ttl = 1
     let fwd_bytes = match hop_a.process(&env_ttl1) {
         MeshDecision::Arrived { envelope, forward: true, .. } => envelope,
@@ -291,7 +283,7 @@ fn invariant_ttl_zero_is_terminal() {
 #[test]
 fn invariant_duplicate_msg_id_dropped() {
     let mut origin = MeshRouter::new(fp(1));
-    let mut hop   = MeshRouter::new(fp(2));
+    let mut hop = MeshRouter::new(fp(2));
     let env = origin.origin_wrap(b"x");
     let first = hop.process(&env);
     assert!(matches!(first, MeshDecision::Arrived { forward: true, .. }));
@@ -305,8 +297,7 @@ fn invariant_own_echo_dropped() {
     let env = origin.origin_wrap(b"x");
     // Simulate: the envelope comes back to origin via a neighbour
     let d = origin.process(&env);
-    assert!(matches!(d, MeshDecision::Drop("own echo")),
-        "origin receiving its own broadcast must drop: {:?}", d);
+    assert!(matches!(d, MeshDecision::Drop("own echo")), "origin receiving its own broadcast must drop: {:?}", d);
 }
 
 #[test]
@@ -318,13 +309,15 @@ fn invariant_hops_increase_along_chain() {
     let env_origin = origin.origin_wrap(b"relay me");
     let env_after_a = match a.process(&env_origin) {
         MeshDecision::Arrived { envelope, hops_seen, forward: true, .. } => {
-            assert_eq!(hops_seen, 0); envelope
+            assert_eq!(hops_seen, 0);
+            envelope
         }
         other => panic!("unexpected {:?}", other),
     };
     let env_after_b = match b.process(&env_after_a) {
         MeshDecision::Arrived { envelope, hops_seen, forward: true, .. } => {
-            assert_eq!(hops_seen, 1); envelope
+            assert_eq!(hops_seen, 1);
+            envelope
         }
         other => panic!("unexpected {:?}", other),
     };
@@ -352,8 +345,7 @@ fn invariant_inner_preserved_through_hops() {
     };
     match b.process(&e1) {
         MeshDecision::Arrived { envelope, .. } => {
-            assert_eq!(inner_slice(&envelope), payload,
-                "inner MUST be byte-identical through N hops");
+            assert_eq!(inner_slice(&envelope), payload, "inner MUST be byte-identical through N hops");
         }
         _ => unreachable!(),
     }
@@ -371,8 +363,7 @@ fn process_owned_fast_path_no_double_copy() {
     match hop.process_owned(env) {
         MeshDecision::Arrived { envelope, forward: true, .. } => {
             // Same backing buffer: the mutation was in place
-            assert_eq!(envelope.as_ptr() as usize, original_ptr,
-                "process_owned must reuse the input buffer");
+            assert_eq!(envelope.as_ptr() as usize, original_ptr, "process_owned must reuse the input buffer");
             assert_eq!(envelope.capacity(), original_capacity);
             // Header mutated correctly
             let hdr = parse_envelope(&envelope).unwrap();
@@ -426,8 +417,7 @@ fn dedup_cache_evicts_oldest() {
     // Bloom memory. Replay must be dropped.
     let first = &envs[0];
     let decision = hop.process(first);
-    assert!(matches!(decision, MeshDecision::Drop("duplicate")),
-        "evicted msg_id must stay blocked by Bloom layer, got {:?}", decision);
+    assert!(matches!(decision, MeshDecision::Drop("duplicate")), "evicted msg_id must stay blocked by Bloom layer, got {:?}", decision);
 }
 
 #[test]
@@ -438,13 +428,16 @@ fn bloom_blocks_replay_beyond_dedup_cap() {
     let cap = 16;
     let mut hop = MeshRouter::with_config(fp(1), 8, cap);
     let mut envs = Vec::new();
-    for _ in 0..50 { envs.push(origin.origin_wrap(b"x")); }
-    for env in &envs { hop.process(env); }
+    for _ in 0..50 {
+        envs.push(origin.origin_wrap(b"x"));
+    }
+    for env in &envs {
+        hop.process(env);
+    }
     // Replay every single one — all must be blocked.
     for (i, env) in envs.iter().enumerate() {
         let d = hop.process(env);
-        assert!(matches!(d, MeshDecision::Drop("duplicate")),
-            "msg #{} replay must be dropped, got {:?}", i, d);
+        assert!(matches!(d, MeshDecision::Drop("duplicate")), "msg #{} replay must be dropped, got {:?}", i, d);
     }
 }
 
@@ -458,18 +451,17 @@ fn bloom_reset_clears_long_memory() {
     let inserts_before_reset = hop.bloom_inserts();
     hop.bloom_reset();
     // AE-refinement: lifetime counter is monotonic, not cleared.
-    assert_eq!(hop.bloom_inserts(), inserts_before_reset,
-        "lifetime bloom_inserts must survive reset (AB3 monotonic invariant)");
+    assert_eq!(hop.bloom_inserts(), inserts_before_reset, "lifetime bloom_inserts must survive reset (AB3 monotonic invariant)");
     // Per-cycle counter IS cleared.
-    assert_eq!(hop.bloom_inserts_since_reset(), 0,
-        "per-cycle bloom_inserts_since_reset is cleared by reset");
+    assert_eq!(hop.bloom_inserts_since_reset(), 0, "per-cycle bloom_inserts_since_reset is cleared by reset");
     // After reset + cache already holds env (seen_set), still dupe from exact.
     // Clear seen_set cache indirectly by overflowing:
-    for _ in 0..20 { hop.process(&origin.origin_wrap(b"x")); }
+    for _ in 0..20 {
+        hop.process(&origin.origin_wrap(b"x"));
+    }
     // Original env must NOT be in exact cache anymore AND bloom is reset.
     let d = hop.process(&env);
-    assert!(matches!(d, MeshDecision::Arrived { forward: true, .. }),
-        "after bloom_reset + seen_set eviction, msg should be accepted again");
+    assert!(matches!(d, MeshDecision::Arrived { forward: true, .. }), "after bloom_reset + seen_set eviction, msg should be accepted again");
 }
 
 #[test]
@@ -482,13 +474,14 @@ fn msg_id_unique_across_distinct_broadcasts() {
         ids.push(hdr.msg_id);
     }
     let unique: HashSet<_> = ids.iter().copied().collect();
-    assert_eq!(unique.len(), ids.len(),
-        "msg_ids from the same origin+counter must all be unique");
+    assert_eq!(unique.len(), ids.len(), "msg_ids from the same origin+counter must all be unique");
 }
 
 fn mac_key(seed: u8) -> MeshMacKey {
     let mut k = [0u8; 32];
-    for i in 0..32 { k[i] = seed.wrapping_add(i as u8); }
+    for i in 0..32 {
+        k[i] = seed.wrapping_add(i as u8);
+    }
     MeshMacKey(k)
 }
 
@@ -496,7 +489,7 @@ fn mac_key(seed: u8) -> MeshMacKey {
 fn v9_signed_roundtrip_origin_to_hop() {
     let key = mac_key(7);
     let mut origin = MeshRouter::new_signed(fp(1), key.clone());
-    let mut hop    = MeshRouter::new_signed(fp(2), key.clone());
+    let mut hop = MeshRouter::new_signed(fp(2), key.clone());
     assert!(origin.is_signed() && hop.is_signed());
     let env = origin.origin_wrap(b"signed payload");
     assert!(env.starts_with(SPORE_V9_MAGIC), "origin_wrap must emit v9 when signed");
@@ -506,8 +499,7 @@ fn v9_signed_roundtrip_origin_to_hop() {
             // After forward, MAC still valid at next hop
             let mut hop2 = MeshRouter::new_signed(fp(3), key);
             let d2 = hop2.process(&envelope);
-            assert!(matches!(d2, MeshDecision::Arrived { forward: true, .. }),
-                "hop2 must accept forwarded v9, got {:?}", d2);
+            assert!(matches!(d2, MeshDecision::Arrived { forward: true, .. }), "hop2 must accept forwarded v9, got {:?}", d2);
         }
         other => panic!("expected Arrived forward=true, got {:?}", other),
     }
@@ -517,13 +509,12 @@ fn v9_signed_roundtrip_origin_to_hop() {
 fn v9_tag_tampering_rejected() {
     let key = mac_key(7);
     let mut origin = MeshRouter::new_signed(fp(1), key.clone());
-    let mut hop    = MeshRouter::new_signed(fp(2), key);
+    let mut hop = MeshRouter::new_signed(fp(2), key);
     let mut env = origin.origin_wrap(b"x");
     // Flip one bit of the tag (byte 25)
     env[25] ^= 0x01;
     let d = hop.process(&env);
-    assert!(matches!(d, MeshDecision::Drop("bad mesh mac")),
-        "tampered tag must be rejected, got {:?}", d);
+    assert!(matches!(d, MeshDecision::Drop("bad mesh mac")), "tampered tag must be rejected, got {:?}", d);
 }
 
 #[test]
@@ -532,44 +523,41 @@ fn v9_origin_fp_spoofing_rejected() {
     // Must fail because the tag is tied to the original fp.
     let key = mac_key(7);
     let mut origin = MeshRouter::new_signed(fp(1), key.clone());
-    let mut hop    = MeshRouter::new_signed(fp(2), key);
+    let mut hop = MeshRouter::new_signed(fp(2), key);
     let mut env = origin.origin_wrap(b"x");
     // Tamper origin_fp bytes [14..22]
-    env[14] = 99; env[15] = 99;
+    env[14] = 99;
+    env[15] = 99;
     let d = hop.process(&env);
-    assert!(matches!(d, MeshDecision::Drop("bad mesh mac")),
-        "origin_fp spoof must be rejected, got {:?}", d);
+    assert!(matches!(d, MeshDecision::Drop("bad mesh mac")), "origin_fp spoof must be rejected, got {:?}", d);
 }
 
 #[test]
 fn v9_wrong_key_rejected() {
     let mut origin = MeshRouter::new_signed(fp(1), mac_key(7));
-    let mut hop    = MeshRouter::new_signed(fp(2), mac_key(99));
+    let mut hop = MeshRouter::new_signed(fp(2), mac_key(99));
     let env = origin.origin_wrap(b"x");
     let d = hop.process(&env);
-    assert!(matches!(d, MeshDecision::Drop("bad mesh mac")),
-        "mismatched keys must reject, got {:?}", d);
+    assert!(matches!(d, MeshDecision::Drop("bad mesh mac")), "mismatched keys must reject, got {:?}", d);
 }
 
 #[test]
 fn v9_signed_router_rejects_unsigned_v8() {
     let mut v8_origin = MeshRouter::new(fp(1));
-    let mut v9_hop    = MeshRouter::new_signed(fp(2), mac_key(7));
+    let mut v9_hop = MeshRouter::new_signed(fp(2), mac_key(7));
     let env = v8_origin.origin_wrap(b"x");
     assert!(env.starts_with(SPORE_V8_MAGIC));
     let d = v9_hop.process(&env);
-    assert!(matches!(d, MeshDecision::Drop("unsigned v8 rejected by signed router")),
-        "signed router must reject v8, got {:?}", d);
+    assert!(matches!(d, MeshDecision::Drop("unsigned v8 rejected by signed router")), "signed router must reject v8, got {:?}", d);
 }
 
 #[test]
 fn v9_unsigned_router_rejects_v9() {
     let mut v9_origin = MeshRouter::new_signed(fp(1), mac_key(7));
-    let mut v8_hop    = MeshRouter::new(fp(2));
+    let mut v8_hop = MeshRouter::new(fp(2));
     let env = v9_origin.origin_wrap(b"x");
     let d = v8_hop.process(&env);
-    assert!(matches!(d, MeshDecision::Drop("v9 received but router has no key")),
-        "unsigned router must reject v9, got {:?}", d);
+    assert!(matches!(d, MeshDecision::Drop("v9 received but router has no key")), "unsigned router must reject v9, got {:?}", d);
 }
 
 #[test]
@@ -581,10 +569,12 @@ fn v9_ttl_decrement_preserves_mac_through_chain() {
     let mut c = MeshRouter::new_signed(fp(4), key);
     let e0 = origin.origin_wrap(b"relay signed");
     let e1 = match a.process(&e0) {
-        MeshDecision::Arrived { envelope, .. } => envelope, other => panic!("{:?}", other),
+        MeshDecision::Arrived { envelope, .. } => envelope,
+        other => panic!("{:?}", other),
     };
     let e2 = match b.process(&e1) {
-        MeshDecision::Arrived { envelope, .. } => envelope, other => panic!("{:?}", other),
+        MeshDecision::Arrived { envelope, .. } => envelope,
+        other => panic!("{:?}", other),
     };
     match c.process(&e2) {
         MeshDecision::Arrived { hops_seen: 2, forward: true, .. } => {}
@@ -623,8 +613,7 @@ fn origin_wrap_with_matches_origin_wrap_byte_for_byte() {
         })
         .unwrap();
 
-    assert_eq!(mesh_env_old, mesh_env_new,
-        "buffer-backed builder must produce identical bytes");
+    assert_eq!(mesh_env_old, mesh_env_new, "buffer-backed builder must produce identical bytes");
 }
 
 #[test]
@@ -632,8 +621,7 @@ fn origin_wrap_with_returns_none_on_signed_router() {
     let key = MeshMacKey([0u8; 32]);
     let mut r = MeshRouter::new_signed(fp(1), key);
     let result = r.origin_wrap_with(10, |_buf| {});
-    assert!(result.is_none(),
-        "signed router should refuse the zero-copy path (MAC needs full inner)");
+    assert!(result.is_none(), "signed router should refuse the zero-copy path (MAC needs full inner)");
 }
 
 #[test]
@@ -656,8 +644,7 @@ fn tx_counter_roundtrip_through_persistence() {
     // The next wrap must use counter 6, producing a msg_id not in seen_msg_ids
     let env = r2.origin_wrap(b"x");
     let new_id = parse_envelope(&env).unwrap().msg_id;
-    assert!(!seen_msg_ids.contains(&new_id),
-        "post-reboot msg_id must not collide with pre-reboot msg_ids");
+    assert!(!seen_msg_ids.contains(&new_id), "post-reboot msg_id must not collide with pre-reboot msg_ids");
     assert_eq!(r2.tx_counter(), 6);
 }
 
@@ -672,8 +659,7 @@ fn tx_counter_without_restore_collides() {
     // No set_tx_counter ⇒ counter starts at 0, first wrap uses counter 1
     let env2 = r2.origin_wrap(b"x");
     let id2 = parse_envelope(&env2).unwrap().msg_id;
-    assert_eq!(id1, id2,
-        "without persistence, reboot with same fp collides msg_ids");
+    assert_eq!(id1, id2, "without persistence, reboot with same fp collides msg_ids");
 }
 
 #[test]
@@ -689,7 +675,9 @@ fn bloom_words_matches_feature_flag() {
 #[cfg(feature = "mesh_v10")]
 fn ed_seed(byte: u8) -> MeshEdSeed {
     let mut s = [0u8; 32];
-    for i in 0..32 { s[i] = byte.wrapping_add(i as u8); }
+    for i in 0..32 {
+        s[i] = byte.wrapping_add(i as u8);
+    }
     MeshEdSeed(s)
 }
 
@@ -710,9 +698,9 @@ fn v10_signed_roundtrip_origin_to_hop() {
     let seed_hop = ed_seed(9);
     // Registry must contain BOTH nodes (each one verifies the other's envelopes)
     let origin_reg = build_registry(&[(fp(2), &seed_hop)]);
-    let hop_reg    = build_registry(&[(fp(1), &seed_origin)]);
+    let hop_reg = build_registry(&[(fp(1), &seed_origin)]);
     let mut origin = MeshRouter::new_ed25519_signed(fp(1), seed_origin.clone(), origin_reg);
-    let mut hop    = MeshRouter::new_ed25519_signed(fp(2), seed_hop.clone(), hop_reg);
+    let mut hop = MeshRouter::new_ed25519_signed(fp(2), seed_hop.clone(), hop_reg);
     assert!(origin.is_ed25519_signed() && hop.is_ed25519_signed());
 
     let env = origin.origin_wrap(b"v0A signed payload");
@@ -722,13 +710,9 @@ fn v10_signed_roundtrip_origin_to_hop() {
     match hop.process(&env) {
         MeshDecision::Arrived { envelope, forward: true, .. } => {
             // MAC covers immutable fields; TTL-- + hops++ still parse clean at next hop.
-            let mut hop2 = MeshRouter::new_ed25519_signed(
-                fp(3), ed_seed(11),
-                build_registry(&[(fp(1), &seed_origin)]),
-            );
+            let mut hop2 = MeshRouter::new_ed25519_signed(fp(3), ed_seed(11), build_registry(&[(fp(1), &seed_origin)]));
             let d2 = hop2.process(&envelope);
-            assert!(matches!(d2, MeshDecision::Arrived { forward: true, .. }),
-                "hop2 must accept forwarded v0A with unchanged signature, got {:?}", d2);
+            assert!(matches!(d2, MeshDecision::Arrived { forward: true, .. }), "hop2 must accept forwarded v0A with unchanged signature, got {:?}", d2);
         }
         other => panic!("expected Arrived{{forward=true}}, got {:?}", other),
     }
@@ -739,16 +723,13 @@ fn v10_signed_roundtrip_origin_to_hop() {
 fn v10_sig_tampering_rejected() {
     let seed_o = ed_seed(7);
     let seed_h = ed_seed(9);
-    let mut origin = MeshRouter::new_ed25519_signed(fp(1), seed_o.clone(),
-        build_registry(&[(fp(2), &seed_h)]));
-    let mut hop    = MeshRouter::new_ed25519_signed(fp(2), seed_h,
-        build_registry(&[(fp(1), &seed_o)]));
+    let mut origin = MeshRouter::new_ed25519_signed(fp(1), seed_o.clone(), build_registry(&[(fp(2), &seed_h)]));
+    let mut hop = MeshRouter::new_ed25519_signed(fp(2), seed_h, build_registry(&[(fp(1), &seed_o)]));
     let mut env = origin.origin_wrap(b"x");
     // Flip one bit in the signature field (bytes 25..89)
     env[30] ^= 0x01;
     let d = hop.process(&env);
-    assert!(matches!(d, MeshDecision::Drop("bad mesh signature")),
-        "tampered signature must be rejected, got {:?}", d);
+    assert!(matches!(d, MeshDecision::Drop("bad mesh signature")), "tampered signature must be rejected, got {:?}", d);
 }
 
 #[cfg(feature = "mesh_v10")]
@@ -763,15 +744,12 @@ fn v10_spoofed_origin_fp_rejected() {
     let seed_hop = ed_seed(11);
     // Hop's registry trusts the VICTIM's pubkey under fp(5).
     // The attacker signs with their key but claims fp(5).
-    let mut attacker = MeshRouter::new_ed25519_signed(fp(99), seed_attacker.clone(),
-        build_registry(&[]));
+    let mut attacker = MeshRouter::new_ed25519_signed(fp(99), seed_attacker.clone(), build_registry(&[]));
     let mut env = attacker.origin_wrap(b"forgery");
     env[14..22].copy_from_slice(&fp(5));
-    let mut hop = MeshRouter::new_ed25519_signed(fp(2), seed_hop,
-        build_registry(&[(fp(5), &seed_victim)]));
+    let mut hop = MeshRouter::new_ed25519_signed(fp(2), seed_hop, build_registry(&[(fp(5), &seed_victim)]));
     let d = hop.process(&env);
-    assert!(matches!(d, MeshDecision::Drop("bad mesh signature")),
-        "spoofed origin_fp must be rejected (signature doesn't match claimed fp's pubkey), got {:?}", d);
+    assert!(matches!(d, MeshDecision::Drop("bad mesh signature")), "spoofed origin_fp must be rejected (signature doesn't match claimed fp's pubkey), got {:?}", d);
 }
 
 #[cfg(feature = "mesh_v10")]
@@ -780,15 +758,12 @@ fn v10_unknown_sender_rejected() {
     // Envelope is legitimate (signed correctly by its origin) but the
     // receiver's registry doesn't include that origin's pubkey.
     let seed_o = ed_seed(7);
-    let mut origin = MeshRouter::new_ed25519_signed(fp(1), seed_o,
-        build_registry(&[]));
+    let mut origin = MeshRouter::new_ed25519_signed(fp(1), seed_o, build_registry(&[]));
     let env = origin.origin_wrap(b"x");
     // Hop has an EMPTY registry → fp(1) not recognized.
-    let mut hop = MeshRouter::new_ed25519_signed(fp(2), ed_seed(11),
-        MeshPubRegistry::new());
+    let mut hop = MeshRouter::new_ed25519_signed(fp(2), ed_seed(11), MeshPubRegistry::new());
     let d = hop.process(&env);
-    assert!(matches!(d, MeshDecision::Drop("unknown sender")),
-        "envelope from unregistered fp must be rejected, got {:?}", d);
+    assert!(matches!(d, MeshDecision::Drop("unknown sender")), "envelope from unregistered fp must be rejected, got {:?}", d);
 }
 
 #[cfg(feature = "mesh_v10")]
@@ -796,51 +771,42 @@ fn v10_unknown_sender_rejected() {
 fn v10_wrong_pubkey_in_registry_rejected() {
     // Registry has origin_fp but mapped to the WRONG pubkey.
     let seed_real = ed_seed(7);
-    let seed_wrong = ed_seed(42);  // different seed → different pubkey
-    let mut origin = MeshRouter::new_ed25519_signed(fp(1), seed_real,
-        build_registry(&[]));
+    let seed_wrong = ed_seed(42); // different seed → different pubkey
+    let mut origin = MeshRouter::new_ed25519_signed(fp(1), seed_real, build_registry(&[]));
     let env = origin.origin_wrap(b"x");
-    let mut hop = MeshRouter::new_ed25519_signed(fp(2), ed_seed(11),
-        build_registry(&[(fp(1), &seed_wrong)]));
+    let mut hop = MeshRouter::new_ed25519_signed(fp(2), ed_seed(11), build_registry(&[(fp(1), &seed_wrong)]));
     let d = hop.process(&env);
-    assert!(matches!(d, MeshDecision::Drop("bad mesh signature")),
-        "registry pointing at wrong pubkey must reject, got {:?}", d);
+    assert!(matches!(d, MeshDecision::Drop("bad mesh signature")), "registry pointing at wrong pubkey must reject, got {:?}", d);
 }
 
 #[cfg(feature = "mesh_v10")]
 #[test]
 fn v10_router_rejects_v8() {
     let mut v8_origin = MeshRouter::new(fp(1));
-    let mut v10_hop   = MeshRouter::new_ed25519_signed(fp(2), ed_seed(11),
-        build_registry(&[]));
+    let mut v10_hop = MeshRouter::new_ed25519_signed(fp(2), ed_seed(11), build_registry(&[]));
     let env = v8_origin.origin_wrap(b"x");
     let d = v10_hop.process(&env);
-    assert!(matches!(d, MeshDecision::Drop(_)),
-        "v0A router must reject v8 envelope, got {:?}", d);
+    assert!(matches!(d, MeshDecision::Drop(_)), "v0A router must reject v8 envelope, got {:?}", d);
 }
 
 #[cfg(feature = "mesh_v10")]
 #[test]
 fn v10_router_rejects_v9() {
     let mut v9_origin = MeshRouter::new_signed(fp(1), MeshMacKey([3u8; 32]));
-    let mut v10_hop   = MeshRouter::new_ed25519_signed(fp(2), ed_seed(11),
-        build_registry(&[]));
+    let mut v10_hop = MeshRouter::new_ed25519_signed(fp(2), ed_seed(11), build_registry(&[]));
     let env = v9_origin.origin_wrap(b"x");
     let d = v10_hop.process(&env);
-    assert!(matches!(d, MeshDecision::Drop("v9 rejected by v0A-only router")),
-        "v0A router must reject v9 envelope, got {:?}", d);
+    assert!(matches!(d, MeshDecision::Drop("v9 rejected by v0A-only router")), "v0A router must reject v9 envelope, got {:?}", d);
 }
 
 #[cfg(feature = "mesh_v10")]
 #[test]
 fn v10_unsigned_router_rejects_v10() {
-    let mut v10_origin = MeshRouter::new_ed25519_signed(fp(1), ed_seed(7),
-        build_registry(&[]));
-    let mut v8_hop    = MeshRouter::new(fp(2));
+    let mut v10_origin = MeshRouter::new_ed25519_signed(fp(1), ed_seed(7), build_registry(&[]));
+    let mut v8_hop = MeshRouter::new(fp(2));
     let env = v10_origin.origin_wrap(b"x");
     let d = v8_hop.process(&env);
-    assert!(matches!(d, MeshDecision::Drop("v0A received but router has no registry")),
-        "unsigned router must reject v0A, got {:?}", d);
+    assert!(matches!(d, MeshDecision::Drop("v0A received but router has no registry")), "unsigned router must reject v0A, got {:?}", d);
 }
 
 #[cfg(feature = "mesh_v10")]
@@ -858,8 +824,7 @@ fn v10_pubkey_from_seed_matches_ed25519_compact() {
 #[cfg(feature = "mesh_v10")]
 #[test]
 fn v10_inner_slice_zero_copy_view() {
-    let mut origin = MeshRouter::new_ed25519_signed(fp(1), ed_seed(7),
-        build_registry(&[]));
+    let mut origin = MeshRouter::new_ed25519_signed(fp(1), ed_seed(7), build_registry(&[]));
     let payload = b"inner-v0A-bytes";
     let env = origin.origin_wrap(payload);
     let view = inner_slice(&env);
@@ -872,7 +837,8 @@ fn hmac_sha256_8_matches_rfc_2104_shape() {
     // Smoke test: output is 8 bytes, deterministic for same input,
     // differs for different keys.
     let k1 = [0u8; 32];
-    let mut k2 = [0u8; 32]; k2[0] = 1;
+    let mut k2 = [0u8; 32];
+    k2[0] = 1;
     let t1 = hmac_sha256_8(&k1, b"hello");
     let t1b = hmac_sha256_8(&k1, b"hello");
     let t2 = hmac_sha256_8(&k2, b"hello");
@@ -890,6 +856,5 @@ fn different_origins_produce_different_msg_ids() {
     let e2 = r2.origin_wrap(b"x");
     let h1 = parse_envelope(&e1).unwrap();
     let h2 = parse_envelope(&e2).unwrap();
-    assert_ne!(h1.msg_id, h2.msg_id,
-        "different origins with same counter must hash to different msg_ids");
+    assert_ne!(h1.msg_id, h2.msg_id, "different origins with same counter must hash to different msg_ids");
 }

@@ -37,6 +37,7 @@ use core::fmt::Write;
 use cortex_m_rt::entry;
 use embedded_alloc::LlffHeap as Heap;
 use fugit::RateExtU32;
+use panic_halt as _;
 use rp_pico::hal::{
     clocks::init_clocks_and_plls,
     pac,
@@ -47,9 +48,8 @@ use rp_pico::hal::{
     Clock,
 };
 use rp_pico::{hal, XOSC_CRYSTAL_FREQ};
-use panic_halt as _;
 
-use oasis_rt::vec::{V, vz};
+use oasis_rt::vec::{vz, V};
 use oasis_rt::world_model::{WorldModel, ZoneType};
 
 #[global_allocator]
@@ -72,19 +72,27 @@ struct TtlWorld {
 
 impl TtlWorld {
     fn new() -> Self {
-        Self { inner: WorldModel::new(), expiries: Vec::new() }
+        Self {
+            inner: WorldModel::new(),
+            expiries: Vec::new(),
+        }
     }
 
     /// Add a zone that lives forever (e.g., goal, fixed obstacle).
-    fn add_permanent(&mut self, kind: ZoneType, center: V,
-                     intensity: f64, falloff: f64) {
+    fn add_permanent(&mut self, kind: ZoneType, center: V, intensity: f64, falloff: f64) {
         self.inner.add_zone(kind, center, intensity, falloff);
         self.expiries.push(u64::MAX);
     }
 
     /// Add a zone that auto-expires at `expires_at` tick.
-    fn add_with_ttl(&mut self, kind: ZoneType, center: V,
-                    intensity: f64, falloff: f64, expires_at: u64) {
+    fn add_with_ttl(
+        &mut self,
+        kind: ZoneType,
+        center: V,
+        intensity: f64,
+        falloff: f64,
+        expires_at: u64,
+    ) {
         self.inner.add_zone(kind, center, intensity, falloff);
         self.expiries.push(expires_at);
     }
@@ -95,7 +103,9 @@ impl TtlWorld {
         // Collect indices to remove (high to low).
         let mut to_remove: Vec<usize> = Vec::new();
         for (i, &exp) in self.expiries.iter().enumerate() {
-            if exp <= now { to_remove.push(i); }
+            if exp <= now {
+                to_remove.push(i);
+            }
         }
         // Remove in reverse so earlier indices stay valid.
         for &idx in to_remove.iter().rev() {
@@ -105,7 +115,9 @@ impl TtlWorld {
         to_remove.len() as u32
     }
 
-    fn zone_count(&self) -> usize { self.inner.zone_count() }
+    fn zone_count(&self) -> usize {
+        self.inner.zone_count()
+    }
 
     fn navigate(&self, start: &V, goal: &V, steps: usize) -> Vec<V> {
         self.inner.navigate(start, goal, steps)
@@ -114,38 +126,82 @@ impl TtlWorld {
 
 #[entry]
 fn main() -> ! {
-    unsafe { HEAP.init(HEAP_MEM.as_mut_ptr() as usize, HEAP_SIZE); }
+    unsafe {
+        HEAP.init(HEAP_MEM.as_mut_ptr() as usize, HEAP_SIZE);
+    }
 
     let mut pac = pac::Peripherals::take().unwrap();
     let _core = pac::CorePeripherals::take().unwrap();
     let mut watchdog = Watchdog::new(pac.WATCHDOG);
-    let clocks = init_clocks_and_plls(XOSC_CRYSTAL_FREQ, pac.XOSC, pac.CLOCKS,
-        pac.PLL_SYS, pac.PLL_USB, &mut pac.RESETS, &mut watchdog).ok().unwrap();
+    let clocks = init_clocks_and_plls(
+        XOSC_CRYSTAL_FREQ,
+        pac.XOSC,
+        pac.CLOCKS,
+        pac.PLL_SYS,
+        pac.PLL_USB,
+        &mut pac.RESETS,
+        &mut watchdog,
+    )
+    .ok()
+    .unwrap();
     let sio = Sio::new(pac.SIO);
-    let pins = rp_pico::Pins::new(pac.IO_BANK0, pac.PADS_BANK0,
-        sio.gpio_bank0, &mut pac.RESETS);
+    let pins = rp_pico::Pins::new(
+        pac.IO_BANK0,
+        pac.PADS_BANK0,
+        sio.gpio_bank0,
+        &mut pac.RESETS,
+    );
     let uart_pins = (
         pins.gpio0.into_function::<hal::gpio::FunctionUart>(),
         pins.gpio1.into_function::<hal::gpio::FunctionUart>(),
     );
     let mut uart = UartPeripheral::new(pac.UART0, uart_pins, &mut pac.RESETS)
-        .enable(UartConfig::new(115200.Hz(), DataBits::Eight, None, StopBits::One),
-            clocks.peripheral_clock.freq()).unwrap();
+        .enable(
+            UartConfig::new(115200.Hz(), DataBits::Eight, None, StopBits::One),
+            clocks.peripheral_clock.freq(),
+        )
+        .unwrap();
     let timer = Timer::new(pac.TIMER, &mut pac.RESETS, &clocks);
 
     writeln!(uart, "").ok();
-    writeln!(uart, "╔══════════════════════════════════════════════════════════════════╗").ok();
-    writeln!(uart, "║  R2 — zone TTL aging + compressed soak validation               ║").ok();
-    writeln!(uart, "╚══════════════════════════════════════════════════════════════════╝").ok();
+    writeln!(
+        uart,
+        "╔══════════════════════════════════════════════════════════════════╗"
+    )
+    .ok();
+    writeln!(
+        uart,
+        "║  R2 — zone TTL aging + compressed soak validation               ║"
+    )
+    .ok();
+    writeln!(
+        uart,
+        "╚══════════════════════════════════════════════════════════════════╝"
+    )
+    .ok();
     writeln!(uart, "").ok();
 
     // ── Phase A: no TTL, count grows ───────────────────────────
-    writeln!(uart, "──────────────────────────────────────────────────────────────────").ok();
-    writeln!(uart, "  Phase A — 200 reports WITHOUT TTL (baseline; count grows)").ok();
-    writeln!(uart, "──────────────────────────────────────────────────────────────────").ok();
+    writeln!(
+        uart,
+        "──────────────────────────────────────────────────────────────────"
+    )
+    .ok();
+    writeln!(
+        uart,
+        "  Phase A — 200 reports WITHOUT TTL (baseline; count grows)"
+    )
+    .ok();
+    writeln!(
+        uart,
+        "──────────────────────────────────────────────────────────────────"
+    )
+    .ok();
     {
         let mut w = TtlWorld::new();
-        let mut goal: V = vz(); goal[0] = 10.0; goal[1] = 10.0;
+        let mut goal: V = vz();
+        goal[0] = 10.0;
+        goal[1] = 10.0;
         w.add_permanent(ZoneType::Attractive, goal, 5.0, 8.0);
         for tick in 1..=200u32 {
             let mut center: V = vz();
@@ -153,7 +209,13 @@ fn main() -> ! {
             center[1] = ((tick * 11) % 100) as f64 / 10.0;
             w.add_permanent(ZoneType::Repulsive, center, 3.0, 1.0);
             if tick % 50 == 0 {
-                writeln!(uart, "    tick {:>3}: zone_count = {}", tick, w.zone_count()).ok();
+                writeln!(
+                    uart,
+                    "    tick {:>3}: zone_count = {}",
+                    tick,
+                    w.zone_count()
+                )
+                .ok();
             }
         }
         // Final navigate cost
@@ -161,19 +223,38 @@ fn main() -> ! {
         let t0 = timer.get_counter().ticks();
         let _path = w.navigate(&start, &goal, 50);
         let t1 = timer.get_counter().ticks();
-        writeln!(uart, "    final navigate(50 steps) cost: {} µs ({} per step)",
-                 t1 - t0, (t1 - t0) / 50).ok();
+        writeln!(
+            uart,
+            "    final navigate(50 steps) cost: {} µs ({} per step)",
+            t1 - t0,
+            (t1 - t0) / 50
+        )
+        .ok();
         writeln!(uart, "    final zone_count: {}", w.zone_count()).ok();
     }
     writeln!(uart, "").ok();
 
     // ── Phase B: TTL=20, count plateaus ───────────────────────
-    writeln!(uart, "──────────────────────────────────────────────────────────────────").ok();
-    writeln!(uart, "  Phase B — 200 reports WITH TTL=20 ticks (count plateaus)").ok();
-    writeln!(uart, "──────────────────────────────────────────────────────────────────").ok();
+    writeln!(
+        uart,
+        "──────────────────────────────────────────────────────────────────"
+    )
+    .ok();
+    writeln!(
+        uart,
+        "  Phase B — 200 reports WITH TTL=20 ticks (count plateaus)"
+    )
+    .ok();
+    writeln!(
+        uart,
+        "──────────────────────────────────────────────────────────────────"
+    )
+    .ok();
     {
         let mut w = TtlWorld::new();
-        let mut goal: V = vz(); goal[0] = 10.0; goal[1] = 10.0;
+        let mut goal: V = vz();
+        goal[0] = 10.0;
+        goal[1] = 10.0;
         w.add_permanent(ZoneType::Attractive, goal, 5.0, 8.0);
         const TTL: u64 = 20;
         for tick in 1..=200u64 {
@@ -185,8 +266,14 @@ fn main() -> ! {
             // Tick once per report — prune anything older than `tick`.
             let pruned = w.prune_expired(tick);
             if tick % 50 == 0 {
-                writeln!(uart, "    tick {:>3}: zone_count = {} (pruned {} this tick)",
-                         tick, w.zone_count(), pruned).ok();
+                writeln!(
+                    uart,
+                    "    tick {:>3}: zone_count = {} (pruned {} this tick)",
+                    tick,
+                    w.zone_count(),
+                    pruned
+                )
+                .ok();
             }
         }
         // Final navigate cost (with bounded zone count)
@@ -194,20 +281,43 @@ fn main() -> ! {
         let t0 = timer.get_counter().ticks();
         let _path = w.navigate(&start, &goal, 50);
         let t1 = timer.get_counter().ticks();
-        writeln!(uart, "    final navigate(50 steps) cost: {} µs ({} per step)",
-                 t1 - t0, (t1 - t0) / 50).ok();
+        writeln!(
+            uart,
+            "    final navigate(50 steps) cost: {} µs ({} per step)",
+            t1 - t0,
+            (t1 - t0) / 50
+        )
+        .ok();
         writeln!(uart, "    final zone_count: {}", w.zone_count()).ok();
     }
     writeln!(uart, "").ok();
 
     // ── Phase C: compressed soak — 10 000 reports w/ TTL ───────
-    writeln!(uart, "──────────────────────────────────────────────────────────────────").ok();
-    writeln!(uart, "  Phase C — compressed soak: 10 000 reports w/ TTL=20").ok();
-    writeln!(uart, "──────────────────────────────────────────────────────────────────").ok();
-    writeln!(uart, "  validates: bounded zone_count, bounded navigate cost, no drift").ok();
+    writeln!(
+        uart,
+        "──────────────────────────────────────────────────────────────────"
+    )
+    .ok();
+    writeln!(
+        uart,
+        "  Phase C — compressed soak: 10 000 reports w/ TTL=20"
+    )
+    .ok();
+    writeln!(
+        uart,
+        "──────────────────────────────────────────────────────────────────"
+    )
+    .ok();
+    writeln!(
+        uart,
+        "  validates: bounded zone_count, bounded navigate cost, no drift"
+    )
+    .ok();
     {
         let mut w = TtlWorld::new();
-        let mut goal: V = vz(); goal[0] = 10.0; goal[1] = 10.0;
+        let mut goal: V = vz();
+        goal[0] = 10.0;
+        goal[1] = 10.0;
         w.add_permanent(ZoneType::Attractive, goal, 5.0, 8.0);
         const TTL: u64 = 20;
         let mut max_zone_count = 0u32;
@@ -222,7 +332,9 @@ fn main() -> ! {
             w.add_with_ttl(ZoneType::Repulsive, center, 3.0, 1.0, tick + TTL);
             w.prune_expired(tick);
             let zc = w.zone_count() as u32;
-            if zc > max_zone_count { max_zone_count = zc; }
+            if zc > max_zone_count {
+                max_zone_count = zc;
+            }
             if tick > 50 && zc < min_zone_count_after_warmup {
                 min_zone_count_after_warmup = zc;
             }
@@ -235,30 +347,78 @@ fn main() -> ! {
                 let nav_us = t1 - t0;
                 sum_navigate_us += nav_us;
                 nav_samples += 1;
-                writeln!(uart, "    tick {:>5}: zone_count = {}, navigate(10) = {} µs",
-                         tick, zc, nav_us).ok();
+                writeln!(
+                    uart,
+                    "    tick {:>5}: zone_count = {}, navigate(10) = {} µs",
+                    tick, zc, nav_us
+                )
+                .ok();
             }
         }
         let t_soak_end = timer.get_counter().ticks();
-        writeln!(uart, "  ─────────────────────────────────────────────────────────────").ok();
-        writeln!(uart, "  soak total: {} ms across 10 000 reports", (t_soak_end - t_soak_start) / 1000).ok();
-        writeln!(uart, "  zone_count range (post-warmup): {} .. {}",
-                 min_zone_count_after_warmup, max_zone_count).ok();
-        writeln!(uart, "  zone_count delta (max - min): {}",
-                 max_zone_count.saturating_sub(min_zone_count_after_warmup)).ok();
-        let avg_nav_us = if nav_samples > 0 { sum_navigate_us / nav_samples as u64 } else { 0 };
-        writeln!(uart, "  navigate(10 steps) avg over 10 samples: {} µs", avg_nav_us).ok();
+        writeln!(
+            uart,
+            "  ─────────────────────────────────────────────────────────────"
+        )
+        .ok();
+        writeln!(
+            uart,
+            "  soak total: {} ms across 10 000 reports",
+            (t_soak_end - t_soak_start) / 1000
+        )
+        .ok();
+        writeln!(
+            uart,
+            "  zone_count range (post-warmup): {} .. {}",
+            min_zone_count_after_warmup, max_zone_count
+        )
+        .ok();
+        writeln!(
+            uart,
+            "  zone_count delta (max - min): {}",
+            max_zone_count.saturating_sub(min_zone_count_after_warmup)
+        )
+        .ok();
+        let avg_nav_us = if nav_samples > 0 {
+            sum_navigate_us / nav_samples as u64
+        } else {
+            0
+        };
+        writeln!(
+            uart,
+            "  navigate(10 steps) avg over 10 samples: {} µs",
+            avg_nav_us
+        )
+        .ok();
         if max_zone_count - min_zone_count_after_warmup <= 5 {
             writeln!(uart, "  [OK] zone_count stable (delta ≤ 5)").ok();
         } else {
-            writeln!(uart, "  [DRIFT] zone_count drifted by more than 5 — investigate").ok();
+            writeln!(
+                uart,
+                "  [DRIFT] zone_count drifted by more than 5 — investigate"
+            )
+            .ok();
         }
     }
 
     writeln!(uart, "").ok();
-    writeln!(uart, "──────────────────────────────────────────────────────────────────").ok();
-    writeln!(uart, "  R2 verdict: TTL aging keeps zone count bounded over uptime,").ok();
-    writeln!(uart, "  preserves M10 navigate cost regardless of total report volume.").ok();
+    writeln!(
+        uart,
+        "──────────────────────────────────────────────────────────────────"
+    )
+    .ok();
+    writeln!(
+        uart,
+        "  R2 verdict: TTL aging keeps zone count bounded over uptime,"
+    )
+    .ok();
+    writeln!(
+        uart,
+        "  preserves M10 navigate cost regardless of total report volume."
+    )
+    .ok();
     writeln!(uart, "  bench complete.").ok();
-    loop { cortex_m::asm::wfi(); }
+    loop {
+        cortex_m::asm::wfi();
+    }
 }

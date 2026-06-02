@@ -28,19 +28,19 @@
 //!   4. PATH METRIC: hops_so_far monotonic increasing along the forwarding chain.
 //!   5. INNER INTEGRITY: inner payload is byte-identical through all hops.
 
-#[cfg(feature = "std")]
-use std::collections::{HashSet, VecDeque};
-#[cfg(not(feature = "std"))]
-use alloc::{
-    collections::{BTreeSet as HashSet, VecDeque},
-    boxed::Box,
-    string::String,
-    vec::Vec,
-    vec,
-};
 #[cfg(not(feature = "std"))]
 use crate::fmath::F64Ext;
-use sha2::{Sha256, Digest};
+#[cfg(not(feature = "std"))]
+use alloc::{
+    boxed::Box,
+    collections::{BTreeSet as HashSet, VecDeque},
+    string::String,
+    vec,
+    vec::Vec,
+};
+use sha2::{Digest, Sha256};
+#[cfg(feature = "std")]
+use std::collections::{HashSet, VecDeque};
 
 pub const SPORE_V8_MAGIC: &[u8] = b"SPORE\x08";
 pub const MESH_HEADER_LEN: usize = 25;
@@ -105,11 +105,12 @@ pub fn mesh_v9_tag(key: &MeshMacKey, msg_id: u64, origin_fp: [u8; FP_LEN]) -> [u
 }
 
 /// Constant-time tag verification.
-pub fn mesh_v9_verify(key: &MeshMacKey, msg_id: u64, origin_fp: [u8; FP_LEN],
-                      got: &[u8; MESH_TAG_LEN]) -> bool {
+pub fn mesh_v9_verify(key: &MeshMacKey, msg_id: u64, origin_fp: [u8; FP_LEN], got: &[u8; MESH_TAG_LEN]) -> bool {
     let expected = mesh_v9_tag(key, msg_id, origin_fp);
     let mut diff: u8 = 0;
-    for i in 0..MESH_TAG_LEN { diff |= expected[i] ^ got[i]; }
+    for i in 0..MESH_TAG_LEN {
+        diff |= expected[i] ^ got[i];
+    }
     diff == 0
 }
 
@@ -170,11 +171,8 @@ pub type MeshPubRegistry = alloc::collections::BTreeMap<[u8; FP_LEN], MeshEdPub>
 /// Compute the Ed25519 signature for v0A's immutable header fields.
 /// Signs `magic || msg_id || origin_fp` (22 bytes).
 #[cfg(feature = "mesh_v10")]
-pub fn mesh_v10_sign(seed: &MeshEdSeed, msg_id: u64, origin_fp: [u8; FP_LEN])
-    -> Result<[u8; MESH_ED_SIG_LEN], &'static str>
-{
-    let s = ed25519_compact::Seed::from_slice(&seed.0)
-        .map_err(|_| "bad ed25519 seed")?;
+pub fn mesh_v10_sign(seed: &MeshEdSeed, msg_id: u64, origin_fp: [u8; FP_LEN]) -> Result<[u8; MESH_ED_SIG_LEN], &'static str> {
+    let s = ed25519_compact::Seed::from_slice(&seed.0).map_err(|_| "bad ed25519 seed")?;
     let kp = ed25519_compact::KeyPair::from_seed(s);
     Ok(mesh_v10_sign_with_kp(&kp, msg_id, origin_fp))
 }
@@ -183,11 +181,7 @@ pub fn mesh_v10_sign(seed: &MeshEdSeed, msg_id: u64, origin_fp: [u8; FP_LEN])
 /// seed→pubkey derivation.
 #[cfg(feature = "mesh_v10")]
 #[inline]
-pub fn mesh_v10_sign_with_kp(
-    kp: &ed25519_compact::KeyPair,
-    msg_id: u64,
-    origin_fp: [u8; FP_LEN],
-) -> [u8; MESH_ED_SIG_LEN] {
+pub fn mesh_v10_sign_with_kp(kp: &ed25519_compact::KeyPair, msg_id: u64, origin_fp: [u8; FP_LEN]) -> [u8; MESH_ED_SIG_LEN] {
     let mut buf = [0u8; 6 + 8 + FP_LEN];
     buf[..6].copy_from_slice(SPORE_V10_MAGIC);
     buf[6..14].copy_from_slice(&msg_id.to_le_bytes());
@@ -200,8 +194,7 @@ pub fn mesh_v10_sign_with_kp(
 
 /// Verify the Ed25519 signature of a v0A envelope.
 #[cfg(feature = "mesh_v10")]
-pub fn mesh_v10_verify(pubkey: &MeshEdPub, msg_id: u64, origin_fp: [u8; FP_LEN],
-                       got: &[u8; MESH_ED_SIG_LEN]) -> bool {
+pub fn mesh_v10_verify(pubkey: &MeshEdPub, msg_id: u64, origin_fp: [u8; FP_LEN], got: &[u8; MESH_ED_SIG_LEN]) -> bool {
     let mut buf = [0u8; 6 + 8 + FP_LEN];
     buf[..6].copy_from_slice(SPORE_V10_MAGIC);
     buf[6..14].copy_from_slice(&msg_id.to_le_bytes());
@@ -220,8 +213,7 @@ pub fn mesh_v10_verify(pubkey: &MeshEdPub, msg_id: u64, origin_fp: [u8; FP_LEN],
 /// Derive the Ed25519 public key from the seed.
 #[cfg(feature = "mesh_v10")]
 pub fn mesh_v10_pubkey_from_seed(seed: &MeshEdSeed) -> Result<MeshEdPub, &'static str> {
-    let s = ed25519_compact::Seed::from_slice(&seed.0)
-        .map_err(|_| "bad ed25519 seed")?;
+    let s = ed25519_compact::Seed::from_slice(&seed.0).map_err(|_| "bad ed25519 seed")?;
     let kp = ed25519_compact::KeyPair::from_seed(s);
     let mut out = [0u8; ED25519_PUB_LEN];
     out.copy_from_slice(kp.pk.as_ref());
@@ -290,9 +282,13 @@ pub const fn bloom_capacity_estimate_1pct_fpr() -> u32 {
     // Pre-computed at config time; the formula is well-known and the
     // constants are stable. See SHADOW_AUDIT_AB for the derivation.
     #[cfg(not(feature = "mesh_bloom_mcu"))]
-    { 52_000 }
+    {
+        52_000
+    }
     #[cfg(feature = "mesh_bloom_mcu")]
-    { 1_600 }
+    {
+        1_600
+    }
 }
 
 /// Health snapshot of the mesh router's Bloom dedup layer (AE round,
@@ -328,11 +324,17 @@ impl BloomHealthSnapshot {
     /// and false-positive drops are imminent. Operators should configure
     /// auto-reset thresholds so this stays < 800 (i.e., 80% of capacity).
     pub fn capacity_consumed_milli(&self) -> u32 {
-        if self.bloom_capacity_estimate_1pct_fpr == 0 { return 0; }
+        if self.bloom_capacity_estimate_1pct_fpr == 0 {
+            return 0;
+        }
         let consumed = self.bloom_inserts_since_reset.saturating_mul(1000);
         let cap = self.bloom_capacity_estimate_1pct_fpr as u64;
         let result = consumed / cap;
-        if result > u32::MAX as u64 { u32::MAX } else { result as u32 }
+        if result > u32::MAX as u64 {
+            u32::MAX
+        } else {
+            result as u32
+        }
     }
 
     /// Returns true if the current cycle has crossed 80% of 1%-FPR
@@ -384,13 +386,16 @@ impl BloomHealthSnapshot {
     /// magic / version / reserved bytes. The receiver must compute
     /// `bloom_capacity_estimate_1pct_fpr` from its own build config;
     /// for dashboards that's typically static per fleet generation.
-    pub fn deserialize_topic_v1(
-        bytes: &[u8; 36],
-        local_capacity_estimate: u32,
-    ) -> Option<Self> {
-        if bytes[0] != b'B' { return None; }
-        if bytes[1] != 1 { return None; }
-        if bytes[2] != 0 || bytes[3] != 0 { return None; }
+    pub fn deserialize_topic_v1(bytes: &[u8; 36], local_capacity_estimate: u32) -> Option<Self> {
+        if bytes[0] != b'B' {
+            return None;
+        }
+        if bytes[1] != 1 {
+            return None;
+        }
+        if bytes[2] != 0 || bytes[3] != 0 {
+            return None;
+        }
         let bloom_inserts_total = u64::from_le_bytes(bytes[4..12].try_into().ok()?);
         let bloom_inserts_since_reset = u64::from_le_bytes(bytes[12..20].try_into().ok()?);
         let bloom_reset_count = u64::from_le_bytes(bytes[20..28].try_into().ok()?);
@@ -418,9 +423,13 @@ pub fn bloom_bit_index(x: u64, k: u64, total_bits: u64) -> u64 {
     z = (z ^ (z >> 30)).wrapping_mul(0xBF58476D1CE4E5B9);
     z = (z ^ (z >> 27)).wrapping_mul(0x94D049BB133111EB);
     z ^= z >> 31;
-    if total_bits == 0 { 0 }
-    else if total_bits.is_power_of_two() { z & (total_bits - 1) }
-    else { z % total_bits }
+    if total_bits == 0 {
+        0
+    } else if total_bits.is_power_of_two() {
+        z & (total_bits - 1)
+    } else {
+        z % total_bits
+    }
 }
 
 /// Bloom `contains`: all `num_hashes` positions derived from `x` must be set.
@@ -428,12 +437,16 @@ pub fn bloom_bit_index(x: u64, k: u64, total_bits: u64) -> u64 {
 #[inline]
 pub fn bloom_contains(bits: &[u64], x: u64, num_hashes: usize) -> bool {
     let total = (bits.len() as u64) * 64;
-    if total == 0 { return false; }
+    if total == 0 {
+        return false;
+    }
     for k in 0..num_hashes as u64 {
         let bit = bloom_bit_index(x, k, total) as usize;
         let w = bit >> 6;
         let m = 1u64 << (bit & 63);
-        if (bits[w] & m) == 0 { return false; }
+        if (bits[w] & m) == 0 {
+            return false;
+        }
     }
     true
 }
@@ -442,7 +455,9 @@ pub fn bloom_contains(bits: &[u64], x: u64, num_hashes: usize) -> bool {
 #[inline]
 pub fn bloom_insert(bits: &mut [u64], x: u64, num_hashes: usize) {
     let total = (bits.len() as u64) * 64;
-    if total == 0 { return; }
+    if total == 0 {
+        return;
+    }
     for k in 0..num_hashes as u64 {
         let bit = bloom_bit_index(x, k, total) as usize;
         let w = bit >> 6;
@@ -464,12 +479,7 @@ pub enum MeshDecision {
     /// — a zero-copy view. This replaces the old dual-Vec `ProcessAndForward`
     /// variant which allocated twice (once for inner copy, once for wrapped
     /// forward). Single owning Vec keeps memory footprint minimal.
-    Arrived {
-        envelope: Vec<u8>,
-        msg_id: u64,
-        hops_seen: u16,
-        forward: bool,
-    },
+    Arrived { envelope: Vec<u8>, msg_id: u64, hops_seen: u16, forward: bool },
 }
 
 /// Zero-copy inner-payload slice from an envelope buffer.
@@ -478,18 +488,33 @@ pub enum MeshDecision {
 /// Returns `&[]` for unknown magic or truncated buffer.
 #[inline]
 pub fn inner_slice(envelope: &[u8]) -> &[u8] {
-    if envelope.len() < 6 { return &[]; }
+    if envelope.len() < 6 {
+        return &[];
+    }
     let m = &envelope[..6];
     #[cfg(feature = "mesh_v10")]
-    let header_len = if m == SPORE_V10_MAGIC { MESH_V10_HEADER_LEN }
-                     else if m == SPORE_V9_MAGIC { MESH_V9_HEADER_LEN }
-                     else if m == SPORE_V8_MAGIC { MESH_HEADER_LEN }
-                     else { return &[]; };
+    let header_len = if m == SPORE_V10_MAGIC {
+        MESH_V10_HEADER_LEN
+    } else if m == SPORE_V9_MAGIC {
+        MESH_V9_HEADER_LEN
+    } else if m == SPORE_V8_MAGIC {
+        MESH_HEADER_LEN
+    } else {
+        return &[];
+    };
     #[cfg(not(feature = "mesh_v10"))]
-    let header_len = if m == SPORE_V9_MAGIC { MESH_V9_HEADER_LEN }
-                     else if m == SPORE_V8_MAGIC { MESH_HEADER_LEN }
-                     else { return &[]; };
-    if envelope.len() <= header_len { &[] } else { &envelope[header_len..] }
+    let header_len = if m == SPORE_V9_MAGIC {
+        MESH_V9_HEADER_LEN
+    } else if m == SPORE_V8_MAGIC {
+        MESH_HEADER_LEN
+    } else {
+        return &[];
+    };
+    if envelope.len() <= header_len {
+        &[]
+    } else {
+        &envelope[header_len..]
+    }
 }
 
 pub struct MeshRouter {
@@ -593,7 +618,9 @@ impl MeshRouter {
         r
     }
 
-    pub fn is_signed(&self) -> bool { self.signing_key.is_some() }
+    pub fn is_signed(&self) -> bool {
+        self.signing_key.is_some()
+    }
 
     /// v0A Ed25519-signed mode constructor. Emits SPORE\x0A envelopes,
     /// rejects v8/v9 as untrusted, verifies the per-envelope Ed25519
@@ -610,13 +637,8 @@ impl MeshRouter {
     /// Use only for low-frequency authority broadcasts. v9 HMAC stays
     /// the right choice for high-frequency intra-swarm traffic.
     #[cfg(feature = "mesh_v10")]
-    pub fn new_ed25519_signed(
-        my_fp: [u8; FP_LEN],
-        seed: MeshEdSeed,
-        registry: MeshPubRegistry,
-    ) -> Self {
-        let s = ed25519_compact::Seed::from_slice(&seed.0)
-            .expect("bad ed25519 seed in new_ed25519_signed — 32 bytes required");
+    pub fn new_ed25519_signed(my_fp: [u8; FP_LEN], seed: MeshEdSeed, registry: MeshPubRegistry) -> Self {
+        let s = ed25519_compact::Seed::from_slice(&seed.0).expect("bad ed25519 seed in new_ed25519_signed — 32 bytes required");
         let kp = ed25519_compact::KeyPair::from_seed(s);
         let mut r = Self::new(my_fp);
         r.ed_keypair = Some(kp);
@@ -625,7 +647,9 @@ impl MeshRouter {
     }
 
     #[cfg(feature = "mesh_v10")]
-    pub fn is_ed25519_signed(&self) -> bool { self.ed_keypair.is_some() }
+    pub fn is_ed25519_signed(&self) -> bool {
+        self.ed_keypair.is_some()
+    }
 
     #[cfg(feature = "mesh_v10")]
     pub fn ed_registry_insert(&mut self, fp: [u8; FP_LEN], pubkey: MeshEdPub) {
@@ -636,13 +660,17 @@ impl MeshRouter {
         self.ed_registry.remove(fp).is_some()
     }
     #[cfg(feature = "mesh_v10")]
-    pub fn ed_registry_len(&self) -> usize { self.ed_registry.len() }
+    pub fn ed_registry_len(&self) -> usize {
+        self.ed_registry.len()
+    }
 
     /// Current tx counter value. Callers should snapshot this periodically
     /// (e.g., to disk) and restore it with `set_tx_counter()` on the next
     /// boot. Without persistence, a reboot resets the counter to 0 and
     /// risks msg_id collisions with in-flight messages from the prior run.
-    pub fn tx_counter(&self) -> u64 { self.tx_counter }
+    pub fn tx_counter(&self) -> u64 {
+        self.tx_counter
+    }
 
     /// Restore the tx counter from persisted state. Use on boot, BEFORE
     /// the first `origin_wrap`. The next emitted envelope will use
@@ -663,7 +691,9 @@ impl MeshRouter {
     /// it a true monotonic counter (AB3 Kani proof now holds). Per-cycle
     /// state lives in `bloom_inserts_since_reset` which IS cleared here.
     pub fn bloom_reset(&mut self) {
-        for w in self.long_memory.iter_mut() { *w = 0; }
+        for w in self.long_memory.iter_mut() {
+            *w = 0;
+        }
         // bloom_inserts is now the lifetime total — monotonic, no reset.
         self.bloom_inserts_since_reset = 0;
         self.bloom_reset_count = self.bloom_reset_count.saturating_add(1);
@@ -671,7 +701,9 @@ impl MeshRouter {
 
     /// Current number of Bloom inserts. Consumers can use this to decide
     /// when to call `bloom_reset()`.
-    pub fn bloom_inserts(&self) -> u64 { self.bloom_inserts }
+    pub fn bloom_inserts(&self) -> u64 {
+        self.bloom_inserts
+    }
 
     /// Configure auto-reset of the Bloom long-memory layer (AC round,
     /// 2026-05-11). When `Some(n)`, the next `remember()` call after
@@ -702,12 +734,16 @@ impl MeshRouter {
 
     /// Number of times the Bloom has been reset (manual + auto). Telemetry
     /// for operators monitoring long-uptime nodes.
-    pub fn bloom_reset_count(&self) -> u64 { self.bloom_reset_count }
+    pub fn bloom_reset_count(&self) -> u64 {
+        self.bloom_reset_count
+    }
 
     /// Bloom inserts since the last reset (manual or auto). Differs from
     /// `bloom_inserts()` only after at least one reset has fired. With
     /// auto-reset configured, this stays bounded by the threshold +1.
-    pub fn bloom_inserts_since_reset(&self) -> u64 { self.bloom_inserts_since_reset }
+    pub fn bloom_inserts_since_reset(&self) -> u64 {
+        self.bloom_inserts_since_reset
+    }
 
     /// Single-call snapshot of all 4 Bloom-layer telemetry fields (AE
     /// round, 2026-05-12). Convenient for operator dashboards that
@@ -734,7 +770,9 @@ impl MeshRouter {
     /// Pre-seed the dedup cache with our next-to-emit msg_id so we don't
     /// echo our own broadcast back through a neighbour.
     fn remember(&mut self, msg_id: u64) {
-        if self.seen_set.contains(&msg_id) { return; }
+        if self.seen_set.contains(&msg_id) {
+            return;
+        }
         if self.seen.len() >= self.dedup_cap {
             if let Some(old) = self.seen.pop_front() {
                 self.seen_set.remove(&old);
@@ -756,13 +794,14 @@ impl MeshRouter {
         // unless auto-reset configured.
         bloom_insert(&mut self.long_memory, msg_id, BLOOM_HASHES);
         self.bloom_inserts = self.bloom_inserts.saturating_add(1);
-        self.bloom_inserts_since_reset =
-            self.bloom_inserts_since_reset.saturating_add(1);
+        self.bloom_inserts_since_reset = self.bloom_inserts_since_reset.saturating_add(1);
     }
 
     fn has_seen(&self, msg_id: u64) -> bool {
         // Fast path: exact recent cache.
-        if self.seen_set.contains(&msg_id) { return true; }
+        if self.seen_set.contains(&msg_id) {
+            return true;
+        }
         // Long path: Bloom. Small FPR; caller treats positive as "probably seen".
         bloom_contains(&self.long_memory, msg_id, BLOOM_HASHES)
     }
@@ -777,7 +816,7 @@ impl MeshRouter {
         self.tx_counter = self.tx_counter.wrapping_add(1);
         let msg_id = origin_msg_id(self.my_fp, self.tx_counter);
         self.remember(msg_id); // don't re-process our own broadcast on echo
-        // Dispatch on configured signing mode. v0A takes priority over v9.
+                               // Dispatch on configured signing mode. v0A takes priority over v9.
         #[cfg(feature = "mesh_v10")]
         if let Some(kp) = &self.ed_keypair {
             let sig = mesh_v10_sign_with_kp(kp, msg_id, self.my_fp);
@@ -785,7 +824,7 @@ impl MeshRouter {
         }
         match &self.signing_key {
             Some(key) => build_v9_envelope(msg_id, self.my_fp, ttl, 0, inner, key),
-            None      => build_envelope(msg_id, self.my_fp, ttl, 0, inner),
+            None => build_envelope(msg_id, self.my_fp, ttl, 0, inner),
         }
     }
 
@@ -849,29 +888,23 @@ impl MeshRouter {
             Ok(p) => p,
             Err(e) => return MeshDecision::Drop(e),
         };
-        if parsed.origin_fp == self.my_fp { return MeshDecision::Drop("own echo"); }
-        if self.has_seen(parsed.msg_id)    { return MeshDecision::Drop("duplicate"); }
+        if parsed.origin_fp == self.my_fp {
+            return MeshDecision::Drop("own echo");
+        }
+        if self.has_seen(parsed.msg_id) {
+            return MeshDecision::Drop("duplicate");
+        }
         self.remember(parsed.msg_id);
 
         if parsed.ttl == 0 {
-            return MeshDecision::Arrived {
-                envelope: envelope.to_vec(),
-                msg_id: parsed.msg_id,
-                hops_seen: parsed.hops_so_far,
-                forward: false,
-            };
+            return MeshDecision::Arrived { envelope: envelope.to_vec(), msg_id: parsed.msg_id, hops_seen: parsed.hops_so_far, forward: false };
         }
         let mut out = envelope.to_vec();
         out[22] = parsed.ttl - 1;
         let new_hops = parsed.hops_so_far.saturating_add(1);
         out[23..25].copy_from_slice(&new_hops.to_le_bytes());
         // MAC covers only magic||msg_id||origin_fp — TTL/hops mutation preserves it.
-        MeshDecision::Arrived {
-            envelope: out,
-            msg_id: parsed.msg_id,
-            hops_seen: parsed.hops_so_far,
-            forward: true,
-        }
+        MeshDecision::Arrived { envelope: out, msg_id: parsed.msg_id, hops_seen: parsed.hops_so_far, forward: true }
     }
 
     /// Zero-copy variant: caller owns envelope bytes (e.g., the UDP recv buffer
@@ -887,30 +920,26 @@ impl MeshRouter {
             Ok(p) => p,
             Err(e) => return MeshDecision::Drop(e),
         };
-        if parsed.origin_fp == self.my_fp { return MeshDecision::Drop("own echo"); }
-        if self.has_seen(parsed.msg_id)    { return MeshDecision::Drop("duplicate"); }
+        if parsed.origin_fp == self.my_fp {
+            return MeshDecision::Drop("own echo");
+        }
+        if self.has_seen(parsed.msg_id) {
+            return MeshDecision::Drop("duplicate");
+        }
         self.remember(parsed.msg_id);
 
         if parsed.ttl == 0 {
-            return MeshDecision::Arrived {
-                envelope,
-                msg_id: parsed.msg_id,
-                hops_seen: parsed.hops_so_far,
-                forward: false,
-            };
+            return MeshDecision::Arrived { envelope, msg_id: parsed.msg_id, hops_seen: parsed.hops_so_far, forward: false };
         }
         envelope[22] = parsed.ttl - 1;
         let new_hops = parsed.hops_so_far.saturating_add(1);
         envelope[23..25].copy_from_slice(&new_hops.to_le_bytes());
-        MeshDecision::Arrived {
-            envelope,
-            msg_id: parsed.msg_id,
-            hops_seen: parsed.hops_so_far,
-            forward: true,
-        }
+        MeshDecision::Arrived { envelope, msg_id: parsed.msg_id, hops_seen: parsed.hops_so_far, forward: true }
     }
 
-    pub fn dedup_cache_size(&self) -> usize { self.seen.len() }
+    pub fn dedup_cache_size(&self) -> usize {
+        self.seen.len()
+    }
 }
 
 /// Compute a deterministic-but-unique msg_id from (fp, counter).
@@ -929,7 +958,11 @@ pub fn origin_msg_id(fp: [u8; FP_LEN], counter: u64) -> u64 {
 /// Proves bounded-hops invariant: after ≤ initial_ttl forwards, TTL reaches 0.
 #[inline]
 pub fn ttl_after_forward(ttl: u8) -> u8 {
-    if ttl == 0 { 0 } else { ttl - 1 }
+    if ttl == 0 {
+        0
+    } else {
+        ttl - 1
+    }
 }
 
 /// Pure predicate: given ttl, should this hop forward the envelope?
@@ -938,8 +971,7 @@ pub fn should_forward(ttl: u8) -> bool {
     ttl > 0
 }
 
-fn build_envelope(msg_id: u64, origin_fp: [u8; FP_LEN], ttl: u8,
-                  hops_so_far: u16, inner: &[u8]) -> Vec<u8> {
+fn build_envelope(msg_id: u64, origin_fp: [u8; FP_LEN], ttl: u8, hops_so_far: u16, inner: &[u8]) -> Vec<u8> {
     let mut out = Vec::with_capacity(MESH_HEADER_LEN + inner.len());
     out.extend_from_slice(SPORE_V8_MAGIC);
     out.extend_from_slice(&msg_id.to_le_bytes());
@@ -950,8 +982,7 @@ fn build_envelope(msg_id: u64, origin_fp: [u8; FP_LEN], ttl: u8,
     out
 }
 
-fn build_v9_envelope(msg_id: u64, origin_fp: [u8; FP_LEN], ttl: u8,
-                     hops_so_far: u16, inner: &[u8], key: &MeshMacKey) -> Vec<u8> {
+fn build_v9_envelope(msg_id: u64, origin_fp: [u8; FP_LEN], ttl: u8, hops_so_far: u16, inner: &[u8], key: &MeshMacKey) -> Vec<u8> {
     let tag = mesh_v9_tag(key, msg_id, origin_fp);
     let mut out = Vec::with_capacity(MESH_V9_HEADER_LEN + inner.len());
     out.extend_from_slice(SPORE_V9_MAGIC);
@@ -965,9 +996,7 @@ fn build_v9_envelope(msg_id: u64, origin_fp: [u8; FP_LEN], ttl: u8,
 }
 
 #[cfg(feature = "mesh_v10")]
-fn build_v10_envelope(msg_id: u64, origin_fp: [u8; FP_LEN], ttl: u8,
-                      hops_so_far: u16, inner: &[u8],
-                      sig: &[u8; MESH_ED_SIG_LEN]) -> Vec<u8> {
+fn build_v10_envelope(msg_id: u64, origin_fp: [u8; FP_LEN], ttl: u8, hops_so_far: u16, inner: &[u8], sig: &[u8; MESH_ED_SIG_LEN]) -> Vec<u8> {
     let mut out = Vec::with_capacity(MESH_V10_HEADER_LEN + inner.len());
     out.extend_from_slice(SPORE_V10_MAGIC);
     out.extend_from_slice(&msg_id.to_le_bytes());
@@ -991,13 +1020,10 @@ struct ParsedHeader {
 ///   unsigned router:    accepts v8, rejects v9/v0A
 ///   v9 MAC router:      accepts v9, rejects v8/v0A
 ///   v0A Ed25519 router: accepts v0A (verified vs registry), rejects v8/v9
-fn parse_and_verify(
-    envelope: &[u8],
-    mac_key: Option<&MeshMacKey>,
-    #[cfg(feature = "mesh_v10")]
-    ed_registry: Option<&MeshPubRegistry>,
-) -> Result<ParsedHeader, &'static str> {
-    if envelope.len() < 6 { return Err("mesh envelope too short"); }
+fn parse_and_verify(envelope: &[u8], mac_key: Option<&MeshMacKey>, #[cfg(feature = "mesh_v10")] ed_registry: Option<&MeshPubRegistry>) -> Result<ParsedHeader, &'static str> {
+    if envelope.len() < 6 {
+        return Err("mesh envelope too short");
+    }
     let magic = &envelope[..6];
     let is_v9 = magic == SPORE_V9_MAGIC;
     let is_v8 = magic == SPORE_V8_MAGIC;
@@ -1005,15 +1031,23 @@ fn parse_and_verify(
     let is_v10 = magic == SPORE_V10_MAGIC;
     #[cfg(not(feature = "mesh_v10"))]
     let is_v10 = false;
-    if !is_v8 && !is_v9 && !is_v10 { return Err("bad mesh magic"); }
+    if !is_v8 && !is_v9 && !is_v10 {
+        return Err("bad mesh magic");
+    }
 
     #[cfg(feature = "mesh_v10")]
-    let header_len = if is_v10 { MESH_V10_HEADER_LEN }
-                     else if is_v9 { MESH_V9_HEADER_LEN }
-                     else { MESH_HEADER_LEN };
+    let header_len = if is_v10 {
+        MESH_V10_HEADER_LEN
+    } else if is_v9 {
+        MESH_V9_HEADER_LEN
+    } else {
+        MESH_HEADER_LEN
+    };
     #[cfg(not(feature = "mesh_v10"))]
     let header_len = if is_v9 { MESH_V9_HEADER_LEN } else { MESH_HEADER_LEN };
-    if envelope.len() < header_len { return Err("mesh envelope too short"); }
+    if envelope.len() < header_len {
+        return Err("mesh envelope too short");
+    }
 
     // Policy enforcement (mode mismatch).
     #[cfg(feature = "mesh_v10")]
@@ -1022,12 +1056,12 @@ fn parse_and_verify(
     let in_v10_mode = false;
     let in_v9_mode = mac_key.is_some();
     match (is_v8, is_v9, is_v10, in_v9_mode, in_v10_mode) {
-        (true,  _, _, true,  false) => return Err("unsigned v8 rejected by signed router"),
-        (true,  _, _, false, true)  => return Err("unsigned v8 rejected by signed router"),
-        (_, true,  _, false, true)  => return Err("v9 rejected by v0A-only router"),
-        (_, true,  _, false, false) => return Err("v9 received but router has no key"),
-        (_, _, true,  true,  false) => return Err("v0A rejected by v9-only router"),
-        (_, _, true,  false, false) => return Err("v0A received but router has no registry"),
+        (true, _, _, true, false) => return Err("unsigned v8 rejected by signed router"),
+        (true, _, _, false, true) => return Err("unsigned v8 rejected by signed router"),
+        (_, true, _, false, true) => return Err("v9 rejected by v0A-only router"),
+        (_, true, _, false, false) => return Err("v9 received but router has no key"),
+        (_, _, true, true, false) => return Err("v0A rejected by v9-only router"),
+        (_, _, true, false, false) => return Err("v0A received but router has no registry"),
         _ => {}
     }
 
@@ -1047,8 +1081,7 @@ fn parse_and_verify(
     if is_v10 {
         let registry = ed_registry.unwrap();
         let pubkey = registry.get(&origin_fp).ok_or("unknown sender")?;
-        let got: [u8; MESH_ED_SIG_LEN] =
-            envelope[25..25 + MESH_ED_SIG_LEN].try_into().unwrap();
+        let got: [u8; MESH_ED_SIG_LEN] = envelope[25..25 + MESH_ED_SIG_LEN].try_into().unwrap();
         if !mesh_v10_verify(pubkey, msg_id, origin_fp, &got) {
             return Err("bad mesh signature");
         }
@@ -1065,29 +1098,36 @@ pub struct MeshHeader<'a> {
 }
 
 pub fn parse_envelope(envelope: &[u8]) -> Result<MeshHeader<'_>, &'static str> {
-    if envelope.len() < 6 { return Err("mesh envelope too short"); }
+    if envelope.len() < 6 {
+        return Err("mesh envelope too short");
+    }
     let magic = &envelope[..6];
     #[cfg(feature = "mesh_v10")]
-    let header_len = if magic == SPORE_V10_MAGIC { MESH_V10_HEADER_LEN }
-                     else if magic == SPORE_V9_MAGIC { MESH_V9_HEADER_LEN }
-                     else if magic == SPORE_V8_MAGIC { MESH_HEADER_LEN }
-                     else { return Err("bad mesh magic"); };
+    let header_len = if magic == SPORE_V10_MAGIC {
+        MESH_V10_HEADER_LEN
+    } else if magic == SPORE_V9_MAGIC {
+        MESH_V9_HEADER_LEN
+    } else if magic == SPORE_V8_MAGIC {
+        MESH_HEADER_LEN
+    } else {
+        return Err("bad mesh magic");
+    };
     #[cfg(not(feature = "mesh_v10"))]
-    let header_len = if magic == SPORE_V9_MAGIC { MESH_V9_HEADER_LEN }
-                     else if magic == SPORE_V8_MAGIC { MESH_HEADER_LEN }
-                     else { return Err("bad mesh magic"); };
-    if envelope.len() < header_len { return Err("mesh envelope too short"); }
+    let header_len = if magic == SPORE_V9_MAGIC {
+        MESH_V9_HEADER_LEN
+    } else if magic == SPORE_V8_MAGIC {
+        MESH_HEADER_LEN
+    } else {
+        return Err("bad mesh magic");
+    };
+    if envelope.len() < header_len {
+        return Err("mesh envelope too short");
+    }
     let msg_id = u64::from_le_bytes(envelope[6..14].try_into().unwrap());
     let origin_fp: [u8; FP_LEN] = envelope[14..22].try_into().unwrap();
     let ttl = envelope[22];
     let hops = u16::from_le_bytes(envelope[23..25].try_into().unwrap());
-    Ok(MeshHeader {
-        msg_id,
-        origin_fp,
-        ttl,
-        hops_so_far: hops,
-        inner: &envelope[header_len..],
-    })
+    Ok(MeshHeader { msg_id, origin_fp, ttl, hops_so_far: hops, inner: &envelope[header_len..] })
 }
 
 // Tests and Kani proofs live in sibling files to keep this module focused on

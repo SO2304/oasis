@@ -9,13 +9,17 @@
 //!
 //! This probe is purely a diagnostic and does not need realistic envelopes.
 
-use std::collections::{BTreeSet, HashMap};
 use oasis_rt::mesh::{
-    bloom_bit_index, bloom_contains, bloom_insert, origin_msg_id,
-    BLOOM_BITS, BLOOM_HASHES, BLOOM_WORDS,
+    bloom_bit_index, bloom_contains, bloom_insert, origin_msg_id, BLOOM_BITS, BLOOM_HASHES,
+    BLOOM_WORDS,
 };
+use std::collections::{BTreeSet, HashMap};
 
-fn fp(b: u8) -> [u8; 8] { let mut f = [0u8; 8]; f[0] = b; f }
+fn fp(b: u8) -> [u8; 8] {
+    let mut f = [0u8; 8];
+    f[0] = b;
+    f
+}
 
 fn main() {
     println!();
@@ -33,8 +37,11 @@ fn main() {
         msg_ids.insert(origin_msg_id(fpa, ctr));
     }
     println!("H1 — msg_id uniqueness:");
-    println!("  produced {} msg_ids from {} unique counters",
-        msg_ids.len(), n_probes);
+    println!(
+        "  produced {} msg_ids from {} unique counters",
+        msg_ids.len(),
+        n_probes
+    );
     println!("  collisions: {}", n_probes - msg_ids.len() as u64);
     println!();
 
@@ -52,10 +59,15 @@ fn main() {
     let max_collisions = bit_positions.values().max().copied().unwrap_or(0);
     let mean_collisions = total_inserts_attempted as f64 / unique_positions as f64;
     println!("H2 — bloom_bit_index image:");
-    println!("  total bit-positions attempted: {}", total_inserts_attempted);
+    println!(
+        "  total bit-positions attempted: {}",
+        total_inserts_attempted
+    );
     println!("  unique positions hit:          {}", unique_positions);
-    println!("  expected uniform (n*k/m):      ~{}",
-        total_inserts_attempted.min(BLOOM_BITS));
+    println!(
+        "  expected uniform (n*k/m):      ~{}",
+        total_inserts_attempted.min(BLOOM_BITS)
+    );
     println!("  mean collisions per bit:       {:.2}", mean_collisions);
     println!("  max collisions on one bit:     {}", max_collisions);
     println!();
@@ -97,15 +109,23 @@ fn main() {
         }
         if ctr - last_status_at >= 5_000 {
             let set: usize = bloom2.iter().map(|w| w.count_ones() as usize).sum();
-            println!("  ctr={:>6}: accepted={} rejected={} bits_set={} ({:.4}%)",
-                ctr, accepted, rejected, set,
-                set as f64 * 100.0 / BLOOM_BITS as f64);
+            println!(
+                "  ctr={:>6}: accepted={} rejected={} bits_set={} ({:.4}%)",
+                ctr,
+                accepted,
+                rejected,
+                set,
+                set as f64 * 100.0 / BLOOM_BITS as f64
+            );
             last_status_at = ctr;
         }
     }
     println!();
     println!("  Final: accepted={} rejected={}", accepted, rejected);
-    println!("  Acceptance ratio: {:.6}", accepted as f64 / n_probes as f64);
+    println!(
+        "  Acceptance ratio: {:.6}",
+        accepted as f64 / n_probes as f64
+    );
     if accepted < 50_000 && rejected > 50_000 {
         println!("  ⚠️  Bloom froze well below theoretical capacity.");
     } else {

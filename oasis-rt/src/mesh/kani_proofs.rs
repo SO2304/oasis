@@ -19,7 +19,11 @@ fn proof_mesh_ttl_monotonic_decrement() {
 fn proof_mesh_forward_decision() {
     let ttl: u8 = kani::any();
     let decision = should_forward(ttl);
-    if ttl == 0 { assert!(!decision); } else { assert!(decision); }
+    if ttl == 0 {
+        assert!(!decision);
+    } else {
+        assert!(decision);
+    }
 }
 
 /// PROVE: after N iterations of ttl_after_forward, TTL reaches 0 from any
@@ -230,8 +234,7 @@ fn proof_ac_bloom_inserts_since_reset_bounded() {
     // msg_id, then bumps to 1. So the maximum observable value is
     // threshold + 1 (the call where >= triggers, but +1 for the
     // current insert).
-    assert!(inserts_since_reset <= threshold + 1,
-        "inserts_since_reset MUST stay bounded by threshold + 1");
+    assert!(inserts_since_reset <= threshold + 1, "inserts_since_reset MUST stay bounded by threshold + 1");
 }
 
 /// PROVE (AC2): bloom_reset_count is monotonically non-decreasing.
@@ -244,14 +247,12 @@ fn proof_ac_bloom_reset_count_monotonic() {
     let resets_to_apply: u64 = kani::any();
     kani::assume(resets_to_apply <= 1000);
     let count_after = count_before.saturating_add(resets_to_apply);
-    assert!(count_after >= count_before,
-        "bloom_reset_count MUST never decrease");
+    assert!(count_after >= count_before, "bloom_reset_count MUST never decrease");
     // saturation handled correctly
     if count_before < u64::MAX - resets_to_apply {
         assert_eq!(count_after, count_before + resets_to_apply);
     } else {
-        assert_eq!(count_after, u64::MAX,
-            "saturating_add caps at u64::MAX");
+        assert_eq!(count_after, u64::MAX, "saturating_add caps at u64::MAX");
     }
 }
 
@@ -276,8 +277,7 @@ fn proof_ac_auto_reset_preserves_seen_set() {
         // bloom_reset cannot affect this because remember()
         // doesn't touch self.seen_set.
         let _ = bloom_was_reset;
-        assert!(still_in_seen_set,
-            "seen_set unchanged by bloom_reset → 4096 msg_id replay window preserved");
+        assert!(still_in_seen_set, "seen_set unchanged by bloom_reset → 4096 msg_id replay window preserved");
     }
 }
 
@@ -298,8 +298,7 @@ fn proof_ac_throughput_flat_with_auto_reset() {
     kani::assume(inserts_since_reset <= threshold + 1);
     // Operating point invariant: we're always at or below the
     // calibrated 1% FPR working zone.
-    assert!(inserts_since_reset <= fpr_1pct_capacity + 1,
-        "auto-reset keeps operating point within 1% FPR zone");
+    assert!(inserts_since_reset <= fpr_1pct_capacity + 1, "auto-reset keeps operating point within 1% FPR zone");
 }
 
 // ── AD round (threshold scaling + reset count predictability) ──
@@ -336,13 +335,8 @@ fn proof_ad_reset_count_predictable() {
     let actual_resets: u64 = kani::any();
     kani::assume(actual_resets <= predicted_resets + 1);
     kani::assume(actual_resets + 1 >= predicted_resets || actual_resets == 0);
-    let diff = if actual_resets >= predicted_resets {
-        actual_resets - predicted_resets
-    } else {
-        predicted_resets - actual_resets
-    };
-    assert!(diff <= 1,
-        "actual reset count must be within 1 of predicted floor(N / (T+1))");
+    let diff = if actual_resets >= predicted_resets { actual_resets - predicted_resets } else { predicted_resets - actual_resets };
+    assert!(diff <= 1, "actual reset count must be within 1 of predicted floor(N / (T+1))");
 }
 
 /// PROVE (AD2): cycle period (in ticks) is bounded by threshold
@@ -360,8 +354,7 @@ fn proof_ad_reset_period_bounded_by_threshold() {
     // most threshold + 1 ticks (+1 for the inserting call that
     // tips the threshold).
     kani::assume(ticks_between_resets <= threshold + 1);
-    assert!(ticks_between_resets <= threshold + 1,
-        "with 1 insert/tick, next reset MUST fire within threshold+1 ticks");
+    assert!(ticks_between_resets <= threshold + 1, "with 1 insert/tick, next reset MUST fire within threshold+1 ticks");
 }
 
 /// PROVE (AD3): scaling — for fixed total inserts N, the reset
@@ -376,17 +369,16 @@ fn proof_ad_threshold_inverse_scaling() {
     let t1: u64 = kani::any();
     let t2: u64 = kani::any();
     kani::assume(t1 >= 100 && t1 < (1u64 << 30));
-    kani::assume(t2 == t1 * 2);                    // t2 is 2× t1
+    kani::assume(t2 == t1 * 2); // t2 is 2× t1
     kani::assume(t2 < (1u64 << 31));
     kani::assume(n >= t2 * 2 && n < (1u64 << 31)); // enough inserts to reset multiple times
-    let r1 = n / (t1 + 1);                         // resets at threshold t1
-    let r2 = n / (t2 + 1);                         // resets at threshold t2
-    // Halving threshold should at least double reset count
-    // (within rounding: r1 ≥ 2*r2 - some_small_constant).
-    // Strict bound: r1 ≥ r2 (more resets at smaller threshold) —
-    // formalizes the inverse-scaling law without rounding fuss.
-    assert!(r1 >= r2,
-        "smaller threshold → more frequent resets (monotonic inverse)");
+    let r1 = n / (t1 + 1); // resets at threshold t1
+    let r2 = n / (t2 + 1); // resets at threshold t2
+                           // Halving threshold should at least double reset count
+                           // (within rounding: r1 ≥ 2*r2 - some_small_constant).
+                           // Strict bound: r1 ≥ r2 (more resets at smaller threshold) —
+                           // formalizes the inverse-scaling law without rounding fuss.
+    assert!(r1 >= r2, "smaller threshold → more frequent resets (monotonic inverse)");
 }
 
 // ── AE round (BloomHealthSnapshot observability) — 4 invariants ──
@@ -411,8 +403,7 @@ fn proof_ae_capacity_consumed_monotonic() {
     kani::assume(inserts_b < (1u64 << 32));
     let consumed_a = inserts_a.saturating_mul(1000) / capacity;
     let consumed_b = inserts_b.saturating_mul(1000) / capacity;
-    assert!(consumed_a <= consumed_b,
-        "capacity-consumed metric must be monotonic in inserts");
+    assert!(consumed_a <= consumed_b, "capacity-consumed metric must be monotonic in inserts");
 }
 
 /// PROVE (AE2): the capacity_alert() predicate is correctly tied
@@ -430,13 +421,11 @@ fn proof_ae_alert_threshold_correctness() {
     // inserts × 1000 / capacity ≥ 800   ⟺  inserts ≥ capacity × 800 / 1000
     // ⟺ inserts ≥ capacity × 4 / 5
     if alert {
-        assert!(inserts * 5 >= capacity * 4,
-            "alert ⇒ inserts ≥ 80% capacity (lower bound)");
+        assert!(inserts * 5 >= capacity * 4, "alert ⇒ inserts ≥ 80% capacity (lower bound)");
     } else {
         // inserts × 1000 < 800 × capacity (strict)
         // ⟹ inserts × 5 < 4 × capacity
-        assert!(inserts * 5 < capacity * 4 + 5,
-            "no alert ⇒ inserts < 80% capacity (with rounding)");
+        assert!(inserts * 5 < capacity * 4 + 5, "no alert ⇒ inserts < 80% capacity (with rounding)");
     }
 }
 
@@ -454,8 +443,7 @@ fn proof_ae_lifetime_inserts_monotonic_across_resets() {
     // Even with resets between snapshots, lifetime inserts grow
     // (or stay same). Resets only clear per-cycle, not lifetime.
     let _ = resets_between;
-    assert!(inserts_t2 >= inserts_t1,
-        "lifetime bloom_inserts is monotonic regardless of resets");
+    assert!(inserts_t2 >= inserts_t1, "lifetime bloom_inserts is monotonic regardless of resets");
 }
 
 // ── AF round (serialize wire format + combined deployment) ────
@@ -508,17 +496,15 @@ fn proof_af_serialize_roundtrip() {
         bloom_inserts_since_reset,
         bloom_reset_count,
         auto_reset_threshold,
-        bloom_capacity_estimate_1pct_fpr: 0,  // ignored on serialize
+        bloom_capacity_estimate_1pct_fpr: 0, // ignored on serialize
     };
     let wire = snap.serialize_topic_v1();
-    let restored = BloomHealthSnapshot::deserialize_topic_v1(&wire, local_capacity)
-        .expect("self-serialized wire MUST roundtrip");
+    let restored = BloomHealthSnapshot::deserialize_topic_v1(&wire, local_capacity).expect("self-serialized wire MUST roundtrip");
     assert_eq!(restored.bloom_inserts_total, snap.bloom_inserts_total);
     assert_eq!(restored.bloom_inserts_since_reset, snap.bloom_inserts_since_reset);
     assert_eq!(restored.bloom_reset_count, snap.bloom_reset_count);
     assert_eq!(restored.auto_reset_threshold, snap.auto_reset_threshold);
-    assert_eq!(restored.bloom_capacity_estimate_1pct_fpr, local_capacity,
-        "capacity_estimate restored from caller-supplied local value");
+    assert_eq!(restored.bloom_capacity_estimate_1pct_fpr, local_capacity, "capacity_estimate restored from caller-supplied local value");
 }
 
 /// PROVE (AF3): deserialize REJECTS malformed records — wrong
@@ -540,8 +526,7 @@ fn proof_af_deserialize_rejects_bad_input() {
     // Result MUST be Some only if all 4 header bytes are correct.
     let valid_header = magic == b'B' && version == 1 && reserved_0 == 0 && reserved_1 == 0;
     if !valid_header {
-        assert!(result.is_none(),
-            "deserialize MUST reject any header byte mismatch");
+        assert!(result.is_none(), "deserialize MUST reject any header byte mismatch");
     }
 }
 
@@ -570,8 +555,7 @@ fn proof_af_combined_pattern_no_dashboard_alert() {
     // Then the dashboard's consumed_milli ≤ (threshold + 1) × 1000 / capacity
     let consumed_milli = inserts_since_reset.saturating_mul(1000) / capacity;
     // Bound: consumed_milli ≤ 770 + small overshoot from the +1
-    assert!(consumed_milli < 800,
-        "with threshold ≤ 77% of capacity, dashboard alert (≥ 80%) NEVER fires");
+    assert!(consumed_milli < 800, "with threshold ≤ 77% of capacity, dashboard alert (≥ 80%) NEVER fires");
 }
 
 // ── AG round (meta-audit calibration proofs) — 4 invariants ────
@@ -594,15 +578,14 @@ fn proof_ag_bloom_capacity_calibration() {
     let published: u32 = bloom_capacity_estimate_1pct_fpr();
     // The published constant covers either 64 KiB or 2 KiB Bloom.
     // Both are within ±5% of their theoretical values.
-    let precise_64k_lo: u32 = 50_500;     // 53234 - 5%
-    let precise_64k_hi: u32 = 55_900;     // 53234 + 5%
-    let precise_2k_lo: u32  = 1_580;      // 1664 - 5%
-    let precise_2k_hi: u32  = 1_750;      // 1664 + 5%
-    // Either bracket must contain `published`. Kani branches on it.
+    let precise_64k_lo: u32 = 50_500; // 53234 - 5%
+    let precise_64k_hi: u32 = 55_900; // 53234 + 5%
+    let precise_2k_lo: u32 = 1_580; // 1664 - 5%
+    let precise_2k_hi: u32 = 1_750; // 1664 + 5%
+                                    // Either bracket must contain `published`. Kani branches on it.
     let in_64k_band = published >= precise_64k_lo && published <= precise_64k_hi;
-    let in_2k_band  = published >= precise_2k_lo  && published <= precise_2k_hi;
-    assert!(in_64k_band || in_2k_band,
-        "bloom_capacity_estimate_1pct_fpr() MUST be within ±5% of theory");
+    let in_2k_band = published >= precise_2k_lo && published <= precise_2k_hi;
+    assert!(in_64k_band || in_2k_band, "bloom_capacity_estimate_1pct_fpr() MUST be within ±5% of theory");
 }
 
 /// PROVE (AG2): linear extrapolation of reset count from soak
@@ -624,16 +607,14 @@ fn proof_ag_reset_count_extrapolation() {
     let resets_2_predicted = resets_1.saturating_mul(days_2) / days_1;
     // Property: if days_2 > days_1, then resets_2_predicted ≥ resets_1.
     if days_2 >= days_1 && resets_1 > 0 {
-        assert!(resets_2_predicted >= resets_1,
-            "longer soak ⇒ at least as many resets");
+        assert!(resets_2_predicted >= resets_1, "longer soak ⇒ at least as many resets");
     }
     // Property: doubling days doubles resets (within rounding).
     if days_2 == days_1 * 2 {
         let expected_min = resets_1 * 2;
         if resets_2_predicted < expected_min {
             // Allowed tolerance: ±1 from integer rounding.
-            assert!(expected_min - resets_2_predicted <= 1,
-                "2× days ⇒ 2× resets (±1 rounding)");
+            assert!(expected_min - resets_2_predicted <= 1, "2× days ⇒ 2× resets (±1 rounding)");
         }
     }
 }
@@ -656,13 +637,12 @@ fn proof_ag_fpr_geometric_growth_bound() {
     //   n= 239 500: FPR ≈ 5844 (58.4%)
     //   n= 300 000: FPR ≈ 7449 (74.5%)
     //   n= 600 000: FPR ≈ 9837 (98.4%)
-    let n_low_fpr: u32 = 3;        // tabulated for n=40k
-    let n_high_fpr: u32 = 557;     // tabulated for n=86k
-    let n_higher_fpr: u32 = 3434;  // tabulated for n=173k
+    let n_low_fpr: u32 = 3; // tabulated for n=40k
+    let n_high_fpr: u32 = 557; // tabulated for n=86k
+    let n_higher_fpr: u32 = 3434; // tabulated for n=173k
     let n_highest_fpr: u32 = 9837; // tabulated for n=600k
-    // Monotonic property.
-    assert!(n_low_fpr < n_high_fpr,
-        "FPR strictly increases with n");
+                                   // Monotonic property.
+    assert!(n_low_fpr < n_high_fpr, "FPR strictly increases with n");
     assert!(n_high_fpr < n_higher_fpr);
     assert!(n_higher_fpr < n_highest_fpr);
     // Super-linear: each doubling of n more than doubles FPR
@@ -670,8 +650,7 @@ fn proof_ag_fpr_geometric_growth_bound() {
     // 86k → 173k: 557 → 3434, ratio ≈ 6.2 ≫ 2.
     // 173k → 600k: 3434 → 9837, ratio ≈ 2.9 > 2 (and 600k is 3.5×).
     let doubling_ratio_in_super_region = n_higher_fpr / n_high_fpr;
-    assert!(doubling_ratio_in_super_region >= 2,
-        "in post-1pct region, doubling n more than doubles FPR");
+    assert!(doubling_ratio_in_super_region >= 2, "in post-1pct region, doubling n more than doubles FPR");
 }
 
 // ── AH round (audit-lint arithmetic verifier) — 4 invariants ──
@@ -699,16 +678,14 @@ fn proof_ah_arithmetic_tolerance_symmetric() {
     // Compute error_milli (in milli-percent = ×10) to avoid floats.
     let error_milli = (abs_diff as u64 * 100_000) / larger as u64;
     if c == v {
-        assert_eq!(error_milli, 0,
-            "exact match has zero error");
+        assert_eq!(error_milli, 0, "exact match has zero error");
     }
     // Symmetry: error(c,v) == error(v,c) by construction (|c-v| symmetric).
     let error_milli_swapped = ({
         let d = if v >= c { v - c } else { c - v };
         (d as u64 * 100_000) / larger as u64
     });
-    assert_eq!(error_milli, error_milli_swapped,
-        "tolerance is symmetric in claimed/computed");
+    assert_eq!(error_milli, error_milli_swapped, "tolerance is symmetric in claimed/computed");
     let _ = tolerance_pct;
 }
 
@@ -730,9 +707,8 @@ fn proof_ah_unit_suffix_skipped() {
     // the linter calls looks_like_continuation BEFORE flagging,
     // so any line ending in "= R UNIT" is filtered out.
     let line_has_unit_after_result = true; // post-filter condition
-    let flagged = !line_has_unit_after_result;  // linter logic
-    assert!(!flagged,
-        "lines with unit suffix after result must NOT be flagged");
+    let flagged = !line_has_unit_after_result; // linter logic
+    assert!(!flagged, "lines with unit suffix after result must NOT be flagged");
 }
 
 /// PROVE (AH3): fragment-detection is sound. The linter's
@@ -750,8 +726,7 @@ fn proof_ah_fragment_detection_sound() {
     let would_be_flagged_if_not_fragment: bool = kani::any();
     let actually_flagged = !is_fragment && would_be_flagged_if_not_fragment;
     if is_fragment {
-        assert!(!actually_flagged,
-            "fragment context MUST prevent flagging");
+        assert!(!actually_flagged, "fragment context MUST prevent flagging");
     }
 }
 
@@ -831,8 +806,7 @@ fn proof_ai_multi_operand_known_gap() {
         // OK: documented limitation. Future linter version (AJ?)
         // would extend to N-operand parsing.
         let documented_limitation: bool = true;
-        assert!(documented_limitation,
-            "3-operand recall gap is documented in AI shadow audit");
+        assert!(documented_limitation, "3-operand recall gap is documented in AI shadow audit");
     }
 }
 
@@ -854,10 +828,9 @@ fn proof_ai_multi_operand_known_gap() {
 /// Encoded as a length-of-preimage invariant.
 #[kani::proof]
 fn proof_aj_v10_sig_preimage_bounded() {
-    const SIG_PREIMAGE_BYTES: usize = 22;     // magic(6) + msg_id(8) + fp(8)
+    const SIG_PREIMAGE_BYTES: usize = 22; // magic(6) + msg_id(8) + fp(8)
     let actual: usize = 22;
-    assert_eq!(actual, SIG_PREIMAGE_BYTES,
-        "v10 signature preimage is fixed at 22 bytes by design");
+    assert_eq!(actual, SIG_PREIMAGE_BYTES, "v10 signature preimage is fixed at 22 bytes by design");
 }
 
 /// PROVE (AJ2): EMI bit-flip rejection rate matches the
@@ -878,8 +851,7 @@ fn proof_aj_emi_rejection_rate_matches_byte_ratio() {
     let false_accept_milli = (unsigned_bytes as u64 * 1000) / total_bytes as u64;
     // Property: false_accept_rate < 100% (always SOME rejection).
     if unsigned_bytes < total_bytes {
-        assert!(false_accept_milli < 1000,
-            "false-accept rate strictly less than 100% if any byte is signed");
+        assert!(false_accept_milli < 1000, "false-accept rate strictly less than 100% if any byte is signed");
     }
 }
 
@@ -892,15 +864,14 @@ fn proof_aj_emi_rejection_rate_matches_byte_ratio() {
 fn proof_aj_tamp0_false_alarm_rate_bounded() {
     let rate_per_million: u32 = kani::any();
     let ticks: u32 = kani::any();
-    kani::assume(rate_per_million < 1000);          // < 0.1% per tick
+    kani::assume(rate_per_million < 1000); // < 0.1% per tick
     kani::assume(ticks <= 100_000);
     // Expected events = rate × ticks / 1_000_000
     let expected_events = (rate_per_million as u64 * ticks as u64) / 1_000_000;
     // For rate = 5 (= 1/200_000) and ticks = 86_400:
     //   expected = 5 × 86_400 / 1_000_000 = 0.432 → rounds to 0
     // The point: low-rate Poisson events are bounded.
-    assert!(expected_events <= (rate_per_million as u64 * ticks as u64) / 1_000_000 + 1,
-        "expected event count is a bounded statistic");
+    assert!(expected_events <= (rate_per_million as u64 * ticks as u64) / 1_000_000 + 1, "expected event count is a bounded statistic");
 }
 
 /// PROVE (AJ4): the harness's hardware-stress finding (AJ3 verdict)
@@ -910,12 +881,10 @@ fn proof_aj_tamp0_false_alarm_rate_bounded() {
 #[kani::proof]
 fn proof_aj_stress_soak_degradation_in_band() {
     // Observed: realistic 0.55% degradation, harsh 6.36%
-    let realistic_degradation_pct: u32 = 1;     // floor(0.55)
-    let harsh_degradation_pct: u32 = 6;         // floor(6.36)
-    assert!(realistic_degradation_pct < 10,
-        "realistic_drone degradation MUST be < 10%");
-    assert!(harsh_degradation_pct >= 5 && harsh_degradation_pct <= 25,
-        "harsh_environment degradation MUST be in [5%, 25%]");
+    let realistic_degradation_pct: u32 = 1; // floor(0.55)
+    let harsh_degradation_pct: u32 = 6; // floor(6.36)
+    assert!(realistic_degradation_pct < 10, "realistic_drone degradation MUST be < 10%");
+    assert!(harsh_degradation_pct >= 5 && harsh_degradation_pct <= 25, "harsh_environment degradation MUST be in [5%, 25%]");
 }
 
 /// PROVE (AI4): aggregate recall lower bound. Across the AI
@@ -924,20 +893,17 @@ fn proof_aj_stress_soak_degradation_in_band() {
 /// Encoded as numeric bounds on the observed counts.
 #[kani::proof]
 fn proof_ai_corpus_recall_precision_pass() {
-    let measured_tp: u32 = 23;     // observed: 23 wrong caught
-    let measured_fn: u32 = 3;      // observed: 3 wrong missed (all multi-operand)
-    let measured_fp: u32 = 0;      // observed: 0 false positives
-    let _measured_tn: u32 = 33;    // observed: 33 right correctly silent
+    let measured_tp: u32 = 23; // observed: 23 wrong caught
+    let measured_fn: u32 = 3; // observed: 3 wrong missed (all multi-operand)
+    let measured_fp: u32 = 0; // observed: 0 false positives
+    let _measured_tn: u32 = 33; // observed: 33 right correctly silent
     let recall_milli = (measured_tp as u64 * 1000) / (measured_tp + measured_fn) as u64;
-    let precision_milli = if measured_tp + measured_fp == 0 { 1000 }
-                          else { (measured_tp as u64 * 1000) / (measured_tp + measured_fp) as u64 };
+    let precision_milli = if measured_tp + measured_fp == 0 { 1000 } else { (measured_tp as u64 * 1000) / (measured_tp + measured_fp) as u64 };
     // Pass thresholds.
-    let recall_threshold_milli: u64 = 750;     // 75%
-    let precision_threshold_milli: u64 = 950;  // 95%
-    assert!(recall_milli >= recall_threshold_milli,
-        "AI recall MUST be ≥ 75% on the corpus");
-    assert!(precision_milli >= precision_threshold_milli,
-        "AI precision MUST be ≥ 95% on the corpus");
+    let recall_threshold_milli: u64 = 750; // 75%
+    let precision_threshold_milli: u64 = 950; // 95%
+    assert!(recall_milli >= recall_threshold_milli, "AI recall MUST be ≥ 75% on the corpus");
+    assert!(precision_milli >= precision_threshold_milli, "AI precision MUST be ≥ 95% on the corpus");
 }
 
 /// PROVE (AH4): the audit-lint's tolerance (5%) is strictly
@@ -953,14 +919,12 @@ fn proof_ai_corpus_recall_precision_pass() {
 #[kani::proof]
 fn proof_ah_tolerance_covers_observed_errors() {
     let tolerance: u32 = 5;
-    let observed_smallest_real_error: u32 = 20;   // AC mid-cycle 25%
-    let observed_largest_real_error: u32 = 76;    // AE straw-man
-    // Tolerance must be BELOW the smallest real error (so all
-    // real errors are caught) and ABOVE any acceptable rounding.
-    assert!(tolerance < observed_smallest_real_error,
-        "5% tolerance catches the AC-class errors (≥ 25%)");
-    assert!(tolerance < observed_largest_real_error,
-        "5% tolerance catches the AE straw-man (~76%)");
+    let observed_smallest_real_error: u32 = 20; // AC mid-cycle 25%
+    let observed_largest_real_error: u32 = 76; // AE straw-man
+                                               // Tolerance must be BELOW the smallest real error (so all
+                                               // real errors are caught) and ABOVE any acceptable rounding.
+    assert!(tolerance < observed_smallest_real_error, "5% tolerance catches the AC-class errors (≥ 25%)");
+    assert!(tolerance < observed_largest_real_error, "5% tolerance catches the AE straw-man (~76%)");
 }
 
 /// PROVE (AG4): when projecting a measurement from scale S1 to
@@ -998,8 +962,7 @@ fn proof_ag_extrapolation_ratio_consistency() {
     // Rounding bound: diff < source_scale (because target_correct
     // = floor(x / source_scale) and recovered = target_correct × source_scale
     // = x − x mod source_scale, so diff < source_scale).
-    assert!(diff < source_scale,
-        "extrapolation must be self-consistent within integer rounding");
+    assert!(diff < source_scale, "extrapolation must be self-consistent within integer rounding");
 }
 
 /// PROVE (AE4): the snapshot is internally consistent. Specifically:
@@ -1013,8 +976,7 @@ fn proof_ae_snapshot_internal_consistency() {
     // The per-cycle counter can never exceed the lifetime total —
     // every insert in the current cycle also counts in lifetime.
     kani::assume(since_reset <= lifetime);
-    assert!(since_reset <= lifetime,
-        "since_reset ≤ lifetime invariant");
+    assert!(since_reset <= lifetime, "since_reset ≤ lifetime invariant");
     // Corollary: capacity-consumed computed from since_reset is
     // also bounded if we use lifetime as a sanity upper bound.
     let capacity: u64 = kani::any();
@@ -1022,8 +984,7 @@ fn proof_ae_snapshot_internal_consistency() {
     kani::assume(lifetime < (1u64 << 32));
     let consumed_since = since_reset.saturating_mul(1000) / capacity;
     let consumed_lifetime = lifetime.saturating_mul(1000) / capacity;
-    assert!(consumed_since <= consumed_lifetime,
-        "per-cycle capacity-consumed ≤ lifetime-equivalent");
+    assert!(consumed_since <= consumed_lifetime, "per-cycle capacity-consumed ≤ lifetime-equivalent");
 }
 
 /// PROVE (AD4): the auto-reset overhead is at most a constant
@@ -1041,15 +1002,13 @@ fn proof_ad_per_call_overhead_constant() {
     // Per-call work units (modeling): is_some branch + comparison.
     // Reset adds bloom_words u64 writes BUT only when threshold
     // crossed (amortized over T inserts).
-    let per_call_branches: u64 = 2;          // is_some + comparison
+    let per_call_branches: u64 = 2; // is_some + comparison
     let amortized_reset_work_per_insert = bloom_words / threshold;
     // For threshold ≥ bloom_words (always true with sane config),
     // the amortized reset cost is ≤ 1 word-write per insert.
     if threshold >= bloom_words {
-        assert!(amortized_reset_work_per_insert <= 1,
-            "with threshold ≥ bloom_words, reset cost amortizes ≤ 1 word/insert");
+        assert!(amortized_reset_work_per_insert <= 1, "with threshold ≥ bloom_words, reset cost amortizes ≤ 1 word/insert");
     }
     let _ = per_call_branches; // O(1) regardless of threshold
-    assert!(per_call_branches < 100,
-        "per-call overhead is constant (O(1)), independent of threshold");
+    assert!(per_call_branches < 100, "per-call overhead is constant (O(1)), independent of threshold");
 }

@@ -10,12 +10,8 @@
 //!
 //! Caveat: single-laptop, release mode, unloaded. No A/B vs ROS 2 rig.
 
-use oasis_rt::mesh::{
-    MeshRouter, MeshDecision, MeshMacKey,
-    MeshEdSeed, MeshPubRegistry, mesh_v10_pubkey_from_seed,
-    SPORE_V8_MAGIC, SPORE_V9_MAGIC, SPORE_V10_MAGIC,
-};
-use oasis_rt::{topics, spore_crypto};
+use oasis_rt::mesh::{mesh_v10_pubkey_from_seed, MeshDecision, MeshEdSeed, MeshMacKey, MeshPubRegistry, MeshRouter, SPORE_V10_MAGIC, SPORE_V8_MAGIC, SPORE_V9_MAGIC};
+use oasis_rt::{spore_crypto, topics};
 use std::time::Instant;
 
 const K_REPEATS: usize = 10;
@@ -31,10 +27,7 @@ fn median_min_max(samples: &mut [f64]) -> (f64, f64, f64) {
 fn report(label: &str, samples: &mut [f64]) {
     let (median, min, max) = median_min_max(samples);
     let half = (max - min) / (2.0 * median) * 100.0;
-    println!(
-        "  {:<48} {:>8.0} ns/op  ({:>8.0}-{:>8.0})  ±{:>4.1}%  {:>10.0} ops/s",
-        label, median, min, max, half, 1e9 / median
-    );
+    println!("  {:<48} {:>8.0} ns/op  ({:>8.0}-{:>8.0})  ±{:>4.1}%  {:>10.0} ops/s", label, median, min, max, half, 1e9 / median);
 }
 
 fn bench<F: FnMut() -> f64>(mut op: F) -> Vec<f64> {
@@ -43,7 +36,9 @@ fn bench<F: FnMut() -> f64>(mut op: F) -> Vec<f64> {
 
 fn mac_key() -> MeshMacKey {
     let mut k = [0u8; 32];
-    for i in 0..32 { k[i] = (i as u8).wrapping_mul(17); }
+    for i in 0..32 {
+        k[i] = (i as u8).wrapping_mul(17);
+    }
     MeshMacKey(k)
 }
 
@@ -185,7 +180,9 @@ fn main() {
     for &n in &[5_000u32, 13_000, 20_000, 40_000, 52_000, 80_000] {
         let mut origin = MeshRouter::new([1u8; 8]);
         let mut hop = MeshRouter::new([2u8; 8]);
-        for _ in 0..n { let _ = hop.process(&origin.origin_wrap(b"x")); }
+        for _ in 0..n {
+            let _ = hop.process(&origin.origin_wrap(b"x"));
+        }
         let mut probe_origin = MeshRouter::new([9u8; 8]);
         let probes: Vec<Vec<u8>> = (0..5_000).map(|_| probe_origin.origin_wrap(b"x")).collect();
         let mut fp_count = 0u32;
@@ -197,9 +194,7 @@ fn main() {
         let observed = fp_count as f64 / 5_000.0;
         let m = (oasis_rt::mesh::BLOOM_WORDS as f64) * 64.0;
         let theory = (1.0 - (-5.0 * n as f64 / m).exp()).powf(5.0);
-        println!("  {:>8} {:>9.2}% {:>9.2}% {:>+9.2}%",
-            n, observed * 100.0, theory * 100.0,
-            (observed - theory) * 100.0);
+        println!("  {:>8} {:>9.2}% {:>9.2}% {:>+9.2}%", n, observed * 100.0, theory * 100.0, (observed - theory) * 100.0);
     }
 
     let _ = spore_crypto::parse_key_hex;

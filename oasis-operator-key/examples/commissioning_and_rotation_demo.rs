@@ -30,16 +30,18 @@
 //!     new 3-of-5 set excluding the compromised seed.
 
 use oasis_operator_key::{
-    OperatorAuthority, Transition, apply_transition, sign_with_seed,
-    AuthorityError, Pub, Sig,
+    apply_transition, sign_with_seed, AuthorityError, OperatorAuthority, Pub, Sig, Transition,
 };
 
-fn seed(b: u8) -> [u8; 32] { [b; 32] }
+fn seed(b: u8) -> [u8; 32] {
+    [b; 32]
+}
 
 fn pub_from(s: &[u8; 32]) -> Pub {
-    let kp = ed25519_compact::KeyPair::from_seed(
-        ed25519_compact::Seed::from_slice(s).unwrap());
-    let mut p = [0u8; 32]; p.copy_from_slice(kp.pk.as_ref()); p
+    let kp = ed25519_compact::KeyPair::from_seed(ed25519_compact::Seed::from_slice(s).unwrap());
+    let mut p = [0u8; 32];
+    p.copy_from_slice(kp.pk.as_ref());
+    p
 }
 
 fn h(s: &str) {
@@ -49,9 +51,15 @@ fn h(s: &str) {
     println!("──────────────────────────────────────────────────────────────────");
 }
 
-fn ok(msg: &str) { println!("  [OK]  {}", msg); }
-fn fail(msg: &str) { println!("  [FAIL] {}", msg); }
-fn info(msg: &str) { println!("  [..]  {}", msg); }
+fn ok(msg: &str) {
+    println!("  [OK]  {}", msg);
+}
+fn fail(msg: &str) {
+    println!("  [FAIL] {}", msg);
+}
+fn info(msg: &str) {
+    println!("  [..]  {}", msg);
+}
 
 fn main() {
     println!();
@@ -72,10 +80,10 @@ fn main() {
     let s3 = seed(0xA3);
     let s4 = seed(0xA4);
     let s5 = seed(0xA5);
-    let initial_auth = OperatorAuthority::multisig_from_seeds(
-        &[s1, s2, s3, s4, s5], 3
-    ).unwrap();
-    info(&format!("       authority: 3-of-5 multisig with 5 distinct pubkeys"));
+    let initial_auth = OperatorAuthority::multisig_from_seeds(&[s1, s2, s3, s4, s5], 3).unwrap();
+    info(&format!(
+        "       authority: 3-of-5 multisig with 5 distinct pubkeys"
+    ));
 
     info("Day 1: each node firmware build embeds initial_auth as op_pub_at_commissioning.");
     info("       In production: OTP fuse / signed boot ROM / SE protected zone.");
@@ -93,11 +101,14 @@ fn main() {
     let sigs_3of5: Vec<(Pub, Sig)> = vec![
         (pub_from(&s1), sign_with_seed(&s1, revocation_msg)),
         (pub_from(&s2), sign_with_seed(&s2, revocation_msg)),
-        (pub_from(&s4), sign_with_seed(&s4, revocation_msg)),  // 1, 2, 4 (skip 3)
+        (pub_from(&s4), sign_with_seed(&s4, revocation_msg)), // 1, 2, 4 (skip 3)
     ];
     total += 1;
     match node_trust_root.verify_authorization(revocation_msg, &sigs_3of5) {
-        Ok(_) => { ok("revocation accepted (3-of-5 quorum met)"); score += 1; }
+        Ok(_) => {
+            ok("revocation accepted (3-of-5 quorum met)");
+            score += 1;
+        }
         Err(e) => fail(&format!("unexpected reject: {:?}", e)),
     }
 
@@ -108,8 +119,12 @@ fn main() {
     ];
     total += 1;
     match node_trust_root.verify_authorization(revocation_msg, &sigs_2of5) {
-        Err(AuthorityError::QuorumNotMet { provided: 2, required: 3 }) => {
-            ok("2-of-5 REJECTED (quorum not met)"); score += 1;
+        Err(AuthorityError::QuorumNotMet {
+            provided: 2,
+            required: 3,
+        }) => {
+            ok("2-of-5 REJECTED (quorum not met)");
+            score += 1;
         }
         other => fail(&format!("expected QuorumNotMet, got: {:?}", other)),
     }
@@ -118,13 +133,14 @@ fn main() {
     let sig_s1 = sign_with_seed(&s1, revocation_msg);
     let sigs_dup: Vec<(Pub, Sig)> = vec![
         (pub_from(&s1), sig_s1),
-        (pub_from(&s1), sig_s1),                                     // SAME signer twice
+        (pub_from(&s1), sig_s1), // SAME signer twice
         (pub_from(&s2), sign_with_seed(&s2, revocation_msg)),
     ];
     total += 1;
     match node_trust_root.verify_authorization(revocation_msg, &sigs_dup) {
         Err(AuthorityError::DuplicateSigner) => {
-            ok("duplicate-signer attack REJECTED"); score += 1;
+            ok("duplicate-signer attack REJECTED");
+            score += 1;
         }
         other => fail(&format!("expected DuplicateSigner, got: {:?}", other)),
     }
@@ -134,7 +150,10 @@ fn main() {
     let sigs_outside: Vec<(Pub, Sig)> = vec![
         (pub_from(&s1), sign_with_seed(&s1, revocation_msg)),
         (pub_from(&s2), sign_with_seed(&s2, revocation_msg)),
-        (pub_from(&s_outside), sign_with_seed(&s_outside, revocation_msg)),
+        (
+            pub_from(&s_outside),
+            sign_with_seed(&s_outside, revocation_msg),
+        ),
     ];
     total += 1;
     match node_trust_root.verify_authorization(revocation_msg, &sigs_outside) {
@@ -152,9 +171,7 @@ fn main() {
     info("must sign the Transition envelope.");
 
     let s5_new = seed(0xB5);
-    let new_auth = OperatorAuthority::multisig_from_seeds(
-        &[s1, s2, s3, s4, s5_new], 3
-    ).unwrap();
+    let new_auth = OperatorAuthority::multisig_from_seeds(&[s1, s2, s3, s4, s5_new], 3).unwrap();
     let transition = Transition {
         retire_at_unix: 1746883200,
         new_authority: new_auth.clone(),
@@ -163,7 +180,7 @@ fn main() {
     let trans_sigs: Vec<(Pub, Sig)> = vec![
         (pub_from(&s1), sign_with_seed(&s1, &trans_msg)),
         (pub_from(&s3), sign_with_seed(&s3, &trans_msg)),
-        (pub_from(&s5), sign_with_seed(&s5, &trans_msg)),  // s5 signs its own retirement
+        (pub_from(&s5), sign_with_seed(&s5, &trans_msg)), // s5 signs its own retirement
     ];
     info("Transition signed by s1, s3, s5 (3-of-5 of CURRENT authority).");
     total += 1;
@@ -174,19 +191,21 @@ fn main() {
         }
         Err(e) => fail(&format!("rotation failed: {:?}", e)),
     }
-    info(&format!("post-rotation authority: {:?}",
+    info(&format!(
+        "post-rotation authority: {:?}",
         match &node_trust_root {
             OperatorAuthority::Multisig { k, pub_keys } =>
                 format!("Multisig k={} n={}", k, pub_keys.len()),
             _ => "??".into(),
-        }));
+        }
+    ));
 
     h("Phase C — Old s5 tries to authorize POST-rotation: must FAIL");
     let post_rotation_action = b"REVOKE_BATCH_002: fp_Q";
     let sigs_with_old_s5: Vec<(Pub, Sig)> = vec![
         (pub_from(&s1), sign_with_seed(&s1, post_rotation_action)),
         (pub_from(&s2), sign_with_seed(&s2, post_rotation_action)),
-        (pub_from(&s5), sign_with_seed(&s5, post_rotation_action)),  // OLD s5
+        (pub_from(&s5), sign_with_seed(&s5, post_rotation_action)), // OLD s5
     ];
     total += 1;
     match node_trust_root.verify_authorization(post_rotation_action, &sigs_with_old_s5) {
@@ -194,14 +213,20 @@ fn main() {
             ok("retired s5 REJECTED post-rotation (forward-secrecy of authorization)");
             score += 1;
         }
-        other => fail(&format!("expected UnknownSigner for retired s5, got: {:?}", other)),
+        other => fail(&format!(
+            "expected UnknownSigner for retired s5, got: {:?}",
+            other
+        )),
     }
 
     h("Phase C — New s5_new + s1 + s2 sign post-rotation: must SUCCEED");
     let sigs_with_new_s5: Vec<(Pub, Sig)> = vec![
         (pub_from(&s1), sign_with_seed(&s1, post_rotation_action)),
         (pub_from(&s2), sign_with_seed(&s2, post_rotation_action)),
-        (pub_from(&s5_new), sign_with_seed(&s5_new, post_rotation_action)),
+        (
+            pub_from(&s5_new),
+            sign_with_seed(&s5_new, post_rotation_action),
+        ),
     ];
     total += 1;
     match node_trust_root.verify_authorization(post_rotation_action, &sigs_with_new_s5) {
@@ -216,12 +241,13 @@ fn main() {
     h("Phase D — Compromise of one quorum member (s2 stolen)");
     info("Attacker has s2's seed. Tries to forge a revocation alone:");
     let attack_msg = b"REVOKE_BATCH_003: fp_OPERATOR_OWN (attempted DoS)";
-    let attacker_sigs: Vec<(Pub, Sig)> = vec![
-        (pub_from(&s2), sign_with_seed(&s2, attack_msg)),
-    ];
+    let attacker_sigs: Vec<(Pub, Sig)> = vec![(pub_from(&s2), sign_with_seed(&s2, attack_msg))];
     total += 1;
     match node_trust_root.verify_authorization(attack_msg, &attacker_sigs) {
-        Err(AuthorityError::QuorumNotMet { provided: 1, required: 3 }) => {
+        Err(AuthorityError::QuorumNotMet {
+            provided: 1,
+            required: 3,
+        }) => {
             ok("1-seed compromise INSUFFICIENT for any action (k-of-n threshold)");
             score += 1;
         }
@@ -230,9 +256,8 @@ fn main() {
 
     info("Operator response: rotate again, EXCLUDE compromised s2.");
     let s2_replacement = seed(0xC2);
-    let post_compromise_auth = OperatorAuthority::multisig_from_seeds(
-        &[s1, s2_replacement, s3, s4, s5_new], 3
-    ).unwrap();
+    let post_compromise_auth =
+        OperatorAuthority::multisig_from_seeds(&[s1, s2_replacement, s3, s4, s5_new], 3).unwrap();
     let t3 = Transition {
         retire_at_unix: 1746883300,
         new_authority: post_compromise_auth.clone(),
@@ -255,7 +280,7 @@ fn main() {
     info("Attacker (still holding old s2) tries again — but s2 not in current authority:");
     let post_recovery_attack: Vec<(Pub, Sig)> = vec![
         (pub_from(&s1), sign_with_seed(&s1, attack_msg)),
-        (pub_from(&s2), sign_with_seed(&s2, attack_msg)),       // stolen, but retired
+        (pub_from(&s2), sign_with_seed(&s2, attack_msg)), // stolen, but retired
         (pub_from(&s3), sign_with_seed(&s3, attack_msg)),
     ];
     total += 1;

@@ -31,6 +31,7 @@ use core::fmt::Write;
 use cortex_m_rt::entry;
 use embedded_alloc::LlffHeap as Heap;
 use fugit::RateExtU32;
+use panic_halt as _;
 use rp_pico::hal::{
     clocks::init_clocks_and_plls,
     pac,
@@ -41,7 +42,6 @@ use rp_pico::hal::{
     Clock,
 };
 use rp_pico::{hal, XOSC_CRYSTAL_FREQ};
-use panic_halt as _;
 
 use oasis_rt::mesh::bloom_bit_index;
 
@@ -65,7 +65,11 @@ struct BloomLocal {
 }
 
 impl BloomLocal {
-    fn new() -> Self { Self { bits: [0; BLOOM_BYTES] } }
+    fn new() -> Self {
+        Self {
+            bits: [0; BLOOM_BYTES],
+        }
+    }
 
     fn fp_to_u64(fp: &[u8; FP_LEN]) -> u64 {
         u64::from_le_bytes(*fp)
@@ -103,35 +107,75 @@ fn make_fp(i: u32) -> [u8; FP_LEN] {
 
 #[entry]
 fn main() -> ! {
-    unsafe { HEAP.init(HEAP_MEM.as_mut_ptr() as usize, HEAP_SIZE); }
+    unsafe {
+        HEAP.init(HEAP_MEM.as_mut_ptr() as usize, HEAP_SIZE);
+    }
 
     let mut pac = pac::Peripherals::take().unwrap();
     let _core = pac::CorePeripherals::take().unwrap();
     let mut watchdog = Watchdog::new(pac.WATCHDOG);
-    let clocks = init_clocks_and_plls(XOSC_CRYSTAL_FREQ, pac.XOSC, pac.CLOCKS,
-        pac.PLL_SYS, pac.PLL_USB, &mut pac.RESETS, &mut watchdog).ok().unwrap();
+    let clocks = init_clocks_and_plls(
+        XOSC_CRYSTAL_FREQ,
+        pac.XOSC,
+        pac.CLOCKS,
+        pac.PLL_SYS,
+        pac.PLL_USB,
+        &mut pac.RESETS,
+        &mut watchdog,
+    )
+    .ok()
+    .unwrap();
     let sio = Sio::new(pac.SIO);
-    let pins = rp_pico::Pins::new(pac.IO_BANK0, pac.PADS_BANK0,
-        sio.gpio_bank0, &mut pac.RESETS);
+    let pins = rp_pico::Pins::new(
+        pac.IO_BANK0,
+        pac.PADS_BANK0,
+        sio.gpio_bank0,
+        &mut pac.RESETS,
+    );
     let uart_pins = (
         pins.gpio0.into_function::<hal::gpio::FunctionUart>(),
         pins.gpio1.into_function::<hal::gpio::FunctionUart>(),
     );
     let mut uart = UartPeripheral::new(pac.UART0, uart_pins, &mut pac.RESETS)
-        .enable(UartConfig::new(115200.Hz(), DataBits::Eight, None, StopBits::One),
-            clocks.peripheral_clock.freq()).unwrap();
+        .enable(
+            UartConfig::new(115200.Hz(), DataBits::Eight, None, StopBits::One),
+            clocks.peripheral_clock.freq(),
+        )
+        .unwrap();
     let timer = Timer::new(pac.TIMER, &mut pac.RESETS, &clocks);
 
     writeln!(uart, "").ok();
-    writeln!(uart, "╔══════════════════════════════════════════════════════════════════╗").ok();
-    writeln!(uart, "║  L2 — Bloom vs BTreeSet local set, per-check cost + FP rate     ║").ok();
-    writeln!(uart, "╚══════════════════════════════════════════════════════════════════╝").ok();
+    writeln!(
+        uart,
+        "╔══════════════════════════════════════════════════════════════════╗"
+    )
+    .ok();
+    writeln!(
+        uart,
+        "║  L2 — Bloom vs BTreeSet local set, per-check cost + FP rate     ║"
+    )
+    .ok();
+    writeln!(
+        uart,
+        "╚══════════════════════════════════════════════════════════════════╝"
+    )
+    .ok();
     writeln!(uart, "").ok();
-    writeln!(uart, "  Bloom: {} bits ({} KiB), k={} hashes via oasis-rt SplitMix64",
-             BLOOM_BITS, BLOOM_BYTES / 1024, BLOOM_K).ok();
+    writeln!(
+        uart,
+        "  Bloom: {} bits ({} KiB), k={} hashes via oasis-rt SplitMix64",
+        BLOOM_BITS,
+        BLOOM_BYTES / 1024,
+        BLOOM_K
+    )
+    .ok();
     writeln!(uart, "  BTreeSet: dynamic alloc on heap, O(log M) lookup").ok();
-    writeln!(uart, "  Method: build once, loop {} contains() calls × K={} trials",
-             N_CHECKS, K_TRIALS).ok();
+    writeln!(
+        uart,
+        "  Method: build once, loop {} contains() calls × K={} trials",
+        N_CHECKS, K_TRIALS
+    )
+    .ok();
     writeln!(uart, "").ok();
 
     for &m in &[100u32, 1000, 4000] {
@@ -139,35 +183,79 @@ fn main() -> ! {
     }
 
     // Hit/miss decomposition (L3) at M=1000 — using BTreeSet as reference
-    writeln!(uart, "──────────────────────────────────────────────────────────────────").ok();
-    writeln!(uart, "  L3 — hit-only vs miss-only path asymmetry (BTreeSet, M=1000)").ok();
-    writeln!(uart, "──────────────────────────────────────────────────────────────────").ok();
+    writeln!(
+        uart,
+        "──────────────────────────────────────────────────────────────────"
+    )
+    .ok();
+    writeln!(
+        uart,
+        "  L3 — hit-only vs miss-only path asymmetry (BTreeSet, M=1000)"
+    )
+    .ok();
+    writeln!(
+        uart,
+        "──────────────────────────────────────────────────────────────────"
+    )
+    .ok();
     bench_hit_miss_decomposition(&mut uart, &timer, 1000);
 
-    writeln!(uart, "──────────────────────────────────────────────────────────────────").ok();
+    writeln!(
+        uart,
+        "──────────────────────────────────────────────────────────────────"
+    )
+    .ok();
     writeln!(uart, "  bench complete.").ok();
-    loop { cortex_m::asm::wfi(); }
+    loop {
+        cortex_m::asm::wfi();
+    }
 }
 
 fn bench_tier<U: core::fmt::Write>(uart: &mut U, timer: &Timer, m: u32) {
-    writeln!(uart, "──────────────────────────────────────────────────────────────────").ok();
+    writeln!(
+        uart,
+        "──────────────────────────────────────────────────────────────────"
+    )
+    .ok();
     writeln!(uart, "  Tier: M = {}", m).ok();
-    writeln!(uart, "──────────────────────────────────────────────────────────────────").ok();
+    writeln!(
+        uart,
+        "──────────────────────────────────────────────────────────────────"
+    )
+    .ok();
 
     // ── Build BTreeSet ────────────────────────────────────────
     let mut bset: BTreeSet<[u8; FP_LEN]> = BTreeSet::new();
-    for i in 0..m { bset.insert(make_fp(i)); }
+    for i in 0..m {
+        bset.insert(make_fp(i));
+    }
     let bset_bytes_est = (m as usize) * core::mem::size_of::<([u8; FP_LEN], usize, usize, usize)>();
 
     // ── Build Bloom ───────────────────────────────────────────
     let mut bloom = BloomLocal::new();
-    for i in 0..m { bloom.insert(&make_fp(i)); }
+    for i in 0..m {
+        bloom.insert(&make_fp(i));
+    }
 
-    writeln!(uart, "  BTreeSet memory ≈ {} bytes ({} per entry)",
-             bset_bytes_est, bset_bytes_est / m.max(1) as usize).ok();
+    writeln!(
+        uart,
+        "  BTreeSet memory ≈ {} bytes ({} per entry)",
+        bset_bytes_est,
+        bset_bytes_est / m.max(1) as usize
+    )
+    .ok();
     writeln!(uart, "  Bloom memory     = {} bytes (fixed)", BLOOM_BYTES).ok();
-    let mem_ratio = if BLOOM_BYTES > 0 { bset_bytes_est / BLOOM_BYTES } else { 0 };
-    writeln!(uart, "  memory ratio BTreeSet/Bloom = {}× at M={}", mem_ratio, m).ok();
+    let mem_ratio = if BLOOM_BYTES > 0 {
+        bset_bytes_est / BLOOM_BYTES
+    } else {
+        0
+    };
+    writeln!(
+        uart,
+        "  memory ratio BTreeSet/Bloom = {}× at M={}",
+        mem_ratio, m
+    )
+    .ok();
 
     // ── Per-check cost: BTreeSet ─────────────────────────────
     let mut bset_samples = [0u64; 5];
@@ -176,7 +264,9 @@ fn bench_tier<U: core::fmt::Write>(uart: &mut U, timer: &Timer, m: u32) {
         let mut hits = 0u32;
         for i in 0..N_CHECKS {
             let probe_id = if i % 10 == 0 { i % m } else { m + (i % 1000) };
-            if bset.contains(&make_fp(probe_id)) { hits += 1; }
+            if bset.contains(&make_fp(probe_id)) {
+                hits += 1;
+            }
         }
         let t1 = timer.get_counter().ticks();
         bset_samples[trial] = ((t1 - t0) * 1000) / N_CHECKS as u64;
@@ -184,7 +274,12 @@ fn bench_tier<U: core::fmt::Write>(uart: &mut U, timer: &Timer, m: u32) {
     }
     bset_samples.sort();
     let bset_med = bset_samples[2];
-    writeln!(uart, "  BTreeSet:  K={} median = {} ns/check", K_TRIALS, bset_med).ok();
+    writeln!(
+        uart,
+        "  BTreeSet:  K={} median = {} ns/check",
+        K_TRIALS, bset_med
+    )
+    .ok();
 
     // ── Per-check cost: Bloom ────────────────────────────────
     let mut bloom_samples = [0u64; 5];
@@ -193,7 +288,9 @@ fn bench_tier<U: core::fmt::Write>(uart: &mut U, timer: &Timer, m: u32) {
         let mut hits = 0u32;
         for i in 0..N_CHECKS {
             let probe_id = if i % 10 == 0 { i % m } else { m + (i % 1000) };
-            if bloom.contains(&make_fp(probe_id)) { hits += 1; }
+            if bloom.contains(&make_fp(probe_id)) {
+                hits += 1;
+            }
         }
         let t1 = timer.get_counter().ticks();
         bloom_samples[trial] = ((t1 - t0) * 1000) / N_CHECKS as u64;
@@ -201,45 +298,68 @@ fn bench_tier<U: core::fmt::Write>(uart: &mut U, timer: &Timer, m: u32) {
     }
     bloom_samples.sort();
     let bloom_med = bloom_samples[2];
-    writeln!(uart, "  Bloom:     K={} median = {} ns/check", K_TRIALS, bloom_med).ok();
+    writeln!(
+        uart,
+        "  Bloom:     K={} median = {} ns/check",
+        K_TRIALS, bloom_med
+    )
+    .ok();
 
     if bloom_med > 0 {
         let speedup_x100 = (bset_med * 100) / bloom_med;
-        writeln!(uart, "  ratio BTreeSet/Bloom = {}.{:02}× ({} ns / {} ns)",
-                 speedup_x100 / 100, speedup_x100 % 100, bset_med, bloom_med).ok();
+        writeln!(
+            uart,
+            "  ratio BTreeSet/Bloom = {}.{:02}× ({} ns / {} ns)",
+            speedup_x100 / 100,
+            speedup_x100 % 100,
+            bset_med,
+            bloom_med
+        )
+        .ok();
     }
 
     // ── False-positive rate measurement (Bloom only) ─────────
     // Probe N_CHECKS fps that were NOT inserted; count how many Bloom
     // says "yes" to. That's the empirical FP rate.
     let mut fp_count = 0u32;
-    let probe_start = m + 100_000;     // far outside inserted range
+    let probe_start = m + 100_000; // far outside inserted range
     for i in 0..N_CHECKS {
         if bloom.contains(&make_fp(probe_start + i)) {
             fp_count += 1;
         }
     }
     let fp_per_million = (fp_count as u64 * 1_000_000) / N_CHECKS as u64;
-    writeln!(uart, "  Bloom FP measured: {}/{} = {} per million ({}.{:03}%)",
-             fp_count, N_CHECKS, fp_per_million,
-             fp_per_million / 10000, (fp_per_million % 10000) / 10).ok();
+    writeln!(
+        uart,
+        "  Bloom FP measured: {}/{} = {} per million ({}.{:03}%)",
+        fp_count,
+        N_CHECKS,
+        fp_per_million,
+        fp_per_million / 10000,
+        (fp_per_million % 10000) / 10
+    )
+    .ok();
 
     // R20 verdict
     let r20_ns: u64 = 1_000_000;
     if bloom_med <= r20_ns && bset_med <= r20_ns {
-        writeln!(uart, "  [R20 OK] both fit (BTreeSet {} ns, Bloom {} ns ≤ {} ns)",
-                 bset_med, bloom_med, r20_ns).ok();
+        writeln!(
+            uart,
+            "  [R20 OK] both fit (BTreeSet {} ns, Bloom {} ns ≤ {} ns)",
+            bset_med, bloom_med, r20_ns
+        )
+        .ok();
     } else {
         writeln!(uart, "  [R20 FAIL] one or both exceed budget").ok();
     }
     writeln!(uart, "").ok();
 }
 
-fn bench_hit_miss_decomposition<U: core::fmt::Write>(
-    uart: &mut U, timer: &Timer, m: u32
-) {
+fn bench_hit_miss_decomposition<U: core::fmt::Write>(uart: &mut U, timer: &Timer, m: u32) {
     let mut bset: BTreeSet<[u8; FP_LEN]> = BTreeSet::new();
-    for i in 0..m { bset.insert(make_fp(i)); }
+    for i in 0..m {
+        bset.insert(make_fp(i));
+    }
 
     // Hit-only loop
     let t0 = timer.get_counter().ticks();
@@ -264,8 +384,18 @@ fn bench_hit_miss_decomposition<U: core::fmt::Write>(
     } else {
         ((miss_ns - hit_ns) * 100) / miss_ns.max(1)
     };
-    let direction = if hit_ns > miss_ns { "miss path faster" } else { "hit path faster" };
-    writeln!(uart, "  asymmetry:  {}.{:02}% ({})",
-             asym_x100, ((((hit_ns as i64 - miss_ns as i64).unsigned_abs() * 10000) / hit_ns.max(miss_ns)) % 100), direction).ok();
+    let direction = if hit_ns > miss_ns {
+        "miss path faster"
+    } else {
+        "hit path faster"
+    };
+    writeln!(
+        uart,
+        "  asymmetry:  {}.{:02}% ({})",
+        asym_x100,
+        ((((hit_ns as i64 - miss_ns as i64).unsigned_abs() * 10000) / hit_ns.max(miss_ns)) % 100),
+        direction
+    )
+    .ok();
     writeln!(uart, "").ok();
 }

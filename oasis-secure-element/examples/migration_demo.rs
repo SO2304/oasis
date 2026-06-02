@@ -30,8 +30,7 @@
 use std::time::Instant;
 
 use oasis_rt::mesh::{
-    MeshDecision, MeshEdSeed, MeshPubRegistry, MeshRouter,
-    mesh_v10_pubkey_from_seed,
+    mesh_v10_pubkey_from_seed, MeshDecision, MeshEdSeed, MeshPubRegistry, MeshRouter,
 };
 use oasis_secure_element::sim::SimSecureElement;
 use oasis_secure_element::{sign_v10_envelope_via_se, SecureElement};
@@ -39,15 +38,19 @@ use oasis_secure_element::{sign_v10_envelope_via_se, SecureElement};
 const SEEDS: [[u8; 32]; 4] = [[0xA0; 32], [0xB0; 32], [0xC0; 32], [0xD0; 32]];
 const NAMES: [&str; 4] = ["A", "B", "C", "D"];
 
-fn fp(b: u8) -> [u8; 8] { [b, 0, 0, 0, 0, 0, 0, 0] }
-fn fps() -> [[u8; 8]; 4] { [fp(0xA0), fp(0xB0), fp(0xC0), fp(0xD0)] }
+fn fp(b: u8) -> [u8; 8] {
+    [b, 0, 0, 0, 0, 0, 0, 0]
+}
+fn fps() -> [[u8; 8]; 4] {
+    [fp(0xA0), fp(0xB0), fp(0xC0), fp(0xD0)]
+}
 
 /// Signer for one node. In-process holds the seed in a MeshRouter;
 /// SE-backed delegates the sign step to a SimSecureElement (with the
 /// realistic 60 ms ATECC608B latency).
 enum Signer {
     InProcess(MeshRouter),
-    Se(SimSecureElement, MeshRouter),  // SE for sig, MeshRouter for envelope framing
+    Se(SimSecureElement, MeshRouter), // SE for sig, MeshRouter for envelope framing
 }
 
 impl Signer {
@@ -86,7 +89,7 @@ fn make_signer(idx: usize, use_se: bool) -> Signer {
     let seed = MeshEdSeed(SEEDS[idx]);
     let router = MeshRouter::new_ed25519_signed(fps()[idx], seed.clone(), MeshPubRegistry::new());
     if use_se {
-        let mut se = SimSecureElement::new();   // realistic 60 ms latency
+        let mut se = SimSecureElement::new(); // realistic 60 ms latency
         se.provision(&SEEDS[idx]).unwrap();
         Signer::Se(se, router)
     } else {
@@ -105,12 +108,15 @@ fn full_registry() -> MeshPubRegistry {
 }
 
 fn run_phase(phase: u8, se_mask: [bool; 4]) -> (u32, u32, u128) {
-    let modes: Vec<&str> = (0..4).map(|i|
-        if se_mask[i] { "SE" } else { "in-proc" }
-    ).collect();
+    let modes: Vec<&str> = (0..4)
+        .map(|i| if se_mask[i] { "SE" } else { "in-proc" })
+        .collect();
     println!();
     println!("──────────────────────────────────────────────────────────────────");
-    println!("  Phase {} — A:{}  B:{}  C:{}  D:{}", phase, modes[0], modes[1], modes[2], modes[3]);
+    println!(
+        "  Phase {} — A:{}  B:{}  C:{}  D:{}",
+        phase, modes[0], modes[1], modes[2], modes[3]
+    );
     println!("──────────────────────────────────────────────────────────────────");
 
     let mut signers: Vec<Signer> = (0..4).map(|i| make_signer(i, se_mask[i])).collect();
@@ -125,30 +131,38 @@ fn run_phase(phase: u8, se_mask: [bool; 4]) -> (u32, u32, u128) {
         total_sign_us += sign_us;
 
         for receiver_idx in 0..4 {
-            if receiver_idx == sender_idx { continue; }
+            if receiver_idx == sender_idx {
+                continue;
+            }
             // Each receiver has the full fleet registry — production setup.
             let mut receiver = MeshRouter::new_ed25519_signed(
                 fps()[receiver_idx],
-                MeshEdSeed([0xFF; 32]),  // receiver's own seed, not used for verify
+                MeshEdSeed([0xFF; 32]), // receiver's own seed, not used for verify
                 full_registry(),
             );
             total += 1;
             match receiver.process(&env) {
                 MeshDecision::Arrived { .. } => accepted += 1,
                 MeshDecision::Drop(reason) => {
-                    println!("  [FAIL] {} → {}: Drop({:?})",
-                             NAMES[sender_idx], NAMES[receiver_idx], reason);
+                    println!(
+                        "  [FAIL] {} → {}: Drop({:?})",
+                        NAMES[sender_idx], NAMES[receiver_idx], reason
+                    );
                 }
             }
         }
     }
 
-    let mean_sign_us = total_sign_us / 4;  // 4 sends per phase
+    let mean_sign_us = total_sign_us / 4; // 4 sends per phase
     println!("  cross-verifications: {} / {} accepted", accepted, total);
-    println!("  mean sign latency:   {} µs   (dominated by SE sleep when applicable)",
-             mean_sign_us);
-    println!("  fleet sign rate:     {:.1} sign/s sustained per node",
-             1_000_000.0 / mean_sign_us as f64);
+    println!(
+        "  mean sign latency:   {} µs   (dominated by SE sleep when applicable)",
+        mean_sign_us
+    );
+    println!(
+        "  fleet sign rate:     {:.1} sign/s sustained per node",
+        1_000_000.0 / mean_sign_us as f64
+    );
 
     (accepted, total, total_sign_us)
 }
@@ -166,10 +180,10 @@ fn main() {
 
     for (phase, mask) in [
         (0u8, [false, false, false, false]),
-        (1,   [true,  false, false, false]),
-        (2,   [true,  true,  false, false]),
-        (3,   [true,  true,  true,  false]),
-        (4,   [true,  true,  true,  true]),
+        (1, [true, false, false, false]),
+        (2, [true, true, false, false]),
+        (3, [true, true, true, false]),
+        (4, [true, true, true, true]),
     ] {
         let (acc, tot, sign_us) = run_phase(phase, mask);
         total_accepted += acc;
@@ -183,14 +197,20 @@ fn main() {
     println!("══════════════════════════════════════════════════════════════════");
     println!("  Migration summary");
     println!("──────────────────────────────────────────────────────────────────");
-    println!("  Cross-verifications:   {} / {} ACCEPTED",
-             total_accepted, total_attempted);
+    println!(
+        "  Cross-verifications:   {} / {} ACCEPTED",
+        total_accepted, total_attempted
+    );
     println!();
     println!("  Phase   Mode breakdown        Sign throughput");
     println!("  ─────   ───────────────────   ────────────────");
     for (phase, tps) in phase_throughputs.iter().enumerate() {
         let n_se = match phase {
-            0 => 0, 1 => 1, 2 => 2, 3 => 3, _ => 4
+            0 => 0,
+            1 => 1,
+            2 => 2,
+            3 => 3,
+            _ => 4,
         };
         let label = format!("{}/4 SE-backed", n_se);
         println!("  {}        {:<20}  {:>8.1} sign/s/node", phase, label, tps);
@@ -216,8 +236,10 @@ fn main() {
         println!("coordinated upgrade window.");
         std::process::exit(0);
     } else {
-        eprintln!("FAILURE: {} cross-verifications failed.",
-                  total_attempted - total_accepted);
+        eprintln!(
+            "FAILURE: {} cross-verifications failed.",
+            total_attempted - total_accepted
+        );
         eprintln!("Wire-format compatibility is broken — investigate.");
         std::process::exit(1);
     }

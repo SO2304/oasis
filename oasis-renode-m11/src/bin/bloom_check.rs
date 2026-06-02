@@ -12,10 +12,15 @@ use core::fmt::Write;
 use cortex_m_rt::entry;
 use embedded_alloc::LlffHeap as Heap;
 use panic_halt as _;
-use stm32f4xx_hal::{pac, prelude::*, serial::{Config, Serial}};
+use stm32f4xx_hal::{
+    pac,
+    prelude::*,
+    serial::{Config, Serial},
+};
 
-use oasis_rt::mesh::{MeshDecision, MeshEdSeed, MeshRouter, MeshPubRegistry,
-                     mesh_v10_pubkey_from_seed};
+use oasis_rt::mesh::{
+    mesh_v10_pubkey_from_seed, MeshDecision, MeshEdSeed, MeshPubRegistry, MeshRouter,
+};
 
 #[global_allocator]
 static HEAP: Heap = Heap::empty();
@@ -29,7 +34,9 @@ const FP_B: [u8; 8] = [0xBB, 0, 0, 0, 0, 0, 0, 0];
 
 #[entry]
 fn main() -> ! {
-    unsafe { HEAP.init(HEAP_MEM.as_mut_ptr() as usize, HEAP_SIZE); }
+    unsafe {
+        HEAP.init(HEAP_MEM.as_mut_ptr() as usize, HEAP_SIZE);
+    }
 
     let dp = pac::Peripherals::take().unwrap();
     let rcc = dp.RCC.constrain();
@@ -37,12 +44,22 @@ fn main() -> ! {
     let gpioa = dp.GPIOA.split();
 
     let log_pins = (gpioa.pa9.into_alternate(), gpioa.pa10.into_alternate());
-    let mut log = Serial::new(dp.USART1, log_pins,
-        Config::default().baudrate(115200.bps()), &clocks).unwrap();
+    let mut log = Serial::new(
+        dp.USART1,
+        log_pins,
+        Config::default().baudrate(115200.bps()),
+        &clocks,
+    )
+    .unwrap();
 
     let bus_pins = (gpioa.pa2.into_alternate(), gpioa.pa3.into_alternate());
-    let bus = Serial::new(dp.USART2, bus_pins,
-        Config::default().baudrate(115200.bps()), &clocks).unwrap();
+    let bus = Serial::new(
+        dp.USART2,
+        bus_pins,
+        Config::default().baudrate(115200.bps()),
+        &clocks,
+    )
+    .unwrap();
     let (_bus_tx, mut bus_rx) = bus.split();
 
     writeln!(log, "[Node B / Bloom-check] dedup demo").ok();
@@ -57,15 +74,29 @@ fn main() -> ! {
         let mut sync = 0u8;
         loop {
             let b: u8 = nb::block!(bus_rx.read()).unwrap();
-            let want = match sync { 0 => 0xFA, 1 => 0xCE, 2 => 0xBE, 3 => 0xEF, _ => 0 };
-            if b == want { sync += 1; } else { sync = 0; }
-            if sync == 4 { break; }
+            let want = match sync {
+                0 => 0xFA,
+                1 => 0xCE,
+                2 => 0xBE,
+                3 => 0xEF,
+                _ => 0,
+            };
+            if b == want {
+                sync += 1;
+            } else {
+                sync = 0;
+            }
+            if sync == 4 {
+                break;
+            }
         }
         let lh: u8 = nb::block!(bus_rx.read()).unwrap();
         let ll: u8 = nb::block!(bus_rx.read()).unwrap();
         let len = ((lh as u16) << 8) | (ll as u16);
         let mut env: Vec<u8> = Vec::with_capacity(len as usize);
-        for _ in 0..len { env.push(nb::block!(bus_rx.read()).unwrap()); }
+        for _ in 0..len {
+            env.push(nb::block!(bus_rx.read()).unwrap());
+        }
 
         match router.process(&env) {
             MeshDecision::Arrived { msg_id, .. } => {
@@ -81,5 +112,7 @@ fn main() -> ! {
     read_one_frame("frame2", &mut log);
 
     writeln!(log, "[Node B] BLOOM DEDUP TEST COMPLETE").ok();
-    loop { cortex_m::asm::nop(); }
+    loop {
+        cortex_m::asm::nop();
+    }
 }

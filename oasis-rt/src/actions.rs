@@ -49,17 +49,17 @@
 
 use crate::topics::hash_topic;
 #[cfg(not(feature = "std"))]
-use alloc::{vec::Vec, string::String, vec, format};
+use alloc::{format, string::String, vec, vec::Vec};
 
 pub const SPORE_VC_MAGIC: &[u8] = b"SPORE\x0C"; // goal
 pub const SPORE_VD_MAGIC: &[u8] = b"SPORE\x0D"; // feedback
 pub const SPORE_VE_MAGIC: &[u8] = b"SPORE\x0E"; // result
 pub const SPORE_VF_MAGIC: &[u8] = b"SPORE\x0F"; // cancel
 
-pub const GOAL_HEADER_LEN: usize = 6 + 8 + 8 + 4;   // 26
-pub const FEEDBACK_HEADER_LEN: usize = 6 + 8 + 4;    // 18
-pub const RESULT_HEADER_LEN: usize = 6 + 8 + 1 + 4;  // 19
-pub const CANCEL_LEN: usize = 6 + 8;                  // 14
+pub const GOAL_HEADER_LEN: usize = 6 + 8 + 8 + 4; // 26
+pub const FEEDBACK_HEADER_LEN: usize = 6 + 8 + 4; // 18
+pub const RESULT_HEADER_LEN: usize = 6 + 8 + 1 + 4; // 19
+pub const CANCEL_LEN: usize = 6 + 8; // 14
 
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -97,12 +97,18 @@ pub fn wrap_goal_hash(action_hash: u64, action_id: u64, payload: &[u8]) -> Vec<u
 }
 
 pub fn parse_goal(envelope: &[u8]) -> Result<(u64, u64, &[u8]), &'static str> {
-    if envelope.len() < GOAL_HEADER_LEN { return Err("goal envelope too short"); }
-    if &envelope[..6] != SPORE_VC_MAGIC { return Err("bad goal magic"); }
+    if envelope.len() < GOAL_HEADER_LEN {
+        return Err("goal envelope too short");
+    }
+    if &envelope[..6] != SPORE_VC_MAGIC {
+        return Err("bad goal magic");
+    }
     let aid = u64::from_le_bytes(envelope[6..14].try_into().unwrap());
     let ah = u64::from_le_bytes(envelope[14..22].try_into().unwrap());
     let plen = u32::from_le_bytes(envelope[22..26].try_into().unwrap()) as usize;
-    if envelope.len() < GOAL_HEADER_LEN + plen { return Err("goal payload truncated"); }
+    if envelope.len() < GOAL_HEADER_LEN + plen {
+        return Err("goal payload truncated");
+    }
     Ok((aid, ah, &envelope[GOAL_HEADER_LEN..GOAL_HEADER_LEN + plen]))
 }
 
@@ -118,11 +124,17 @@ pub fn wrap_feedback(action_id: u64, payload: &[u8]) -> Vec<u8> {
 }
 
 pub fn parse_feedback(envelope: &[u8]) -> Result<(u64, &[u8]), &'static str> {
-    if envelope.len() < FEEDBACK_HEADER_LEN { return Err("feedback envelope too short"); }
-    if &envelope[..6] != SPORE_VD_MAGIC { return Err("bad feedback magic"); }
+    if envelope.len() < FEEDBACK_HEADER_LEN {
+        return Err("feedback envelope too short");
+    }
+    if &envelope[..6] != SPORE_VD_MAGIC {
+        return Err("bad feedback magic");
+    }
     let aid = u64::from_le_bytes(envelope[6..14].try_into().unwrap());
     let plen = u32::from_le_bytes(envelope[14..18].try_into().unwrap()) as usize;
-    if envelope.len() < FEEDBACK_HEADER_LEN + plen { return Err("feedback payload truncated"); }
+    if envelope.len() < FEEDBACK_HEADER_LEN + plen {
+        return Err("feedback payload truncated");
+    }
     Ok((aid, &envelope[FEEDBACK_HEADER_LEN..FEEDBACK_HEADER_LEN + plen]))
 }
 
@@ -139,12 +151,18 @@ pub fn wrap_result(action_id: u64, status: ActionStatus, payload: &[u8]) -> Vec<
 }
 
 pub fn parse_result(envelope: &[u8]) -> Result<(u64, ActionStatus, &[u8]), &'static str> {
-    if envelope.len() < RESULT_HEADER_LEN { return Err("result envelope too short"); }
-    if &envelope[..6] != SPORE_VE_MAGIC { return Err("bad result magic"); }
+    if envelope.len() < RESULT_HEADER_LEN {
+        return Err("result envelope too short");
+    }
+    if &envelope[..6] != SPORE_VE_MAGIC {
+        return Err("bad result magic");
+    }
     let aid = u64::from_le_bytes(envelope[6..14].try_into().unwrap());
     let status = ActionStatus::from_u8(envelope[14]);
     let plen = u32::from_le_bytes(envelope[15..19].try_into().unwrap()) as usize;
-    if envelope.len() < RESULT_HEADER_LEN + plen { return Err("result payload truncated"); }
+    if envelope.len() < RESULT_HEADER_LEN + plen {
+        return Err("result payload truncated");
+    }
     Ok((aid, status, &envelope[RESULT_HEADER_LEN..RESULT_HEADER_LEN + plen]))
 }
 
@@ -158,8 +176,12 @@ pub fn wrap_cancel(action_id: u64) -> Vec<u8> {
 }
 
 pub fn parse_cancel(envelope: &[u8]) -> Result<u64, &'static str> {
-    if envelope.len() < CANCEL_LEN { return Err("cancel envelope too short"); }
-    if &envelope[..6] != SPORE_VF_MAGIC { return Err("bad cancel magic"); }
+    if envelope.len() < CANCEL_LEN {
+        return Err("cancel envelope too short");
+    }
+    if &envelope[..6] != SPORE_VF_MAGIC {
+        return Err("bad cancel magic");
+    }
     Ok(u64::from_le_bytes(envelope[6..14].try_into().unwrap()))
 }
 

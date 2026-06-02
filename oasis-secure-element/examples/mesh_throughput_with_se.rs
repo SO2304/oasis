@@ -20,13 +20,14 @@
 use std::time::Instant;
 
 use oasis_rt::mesh::{
-    MeshDecision, MeshEdSeed, MeshPubRegistry, MeshRouter,
-    mesh_v10_pubkey_from_seed,
+    mesh_v10_pubkey_from_seed, MeshDecision, MeshEdSeed, MeshPubRegistry, MeshRouter,
 };
 use oasis_secure_element::sim::SimSecureElement;
 use oasis_secure_element::{sign_v10_envelope_via_se, SecureElement};
 
-fn fp(b: u8) -> [u8; 8] { [b, 0, 0, 0, 0, 0, 0, 0] }
+fn fp(b: u8) -> [u8; 8] {
+    [b, 0, 0, 0, 0, 0, 0, 0]
+}
 
 /// Throughput in ops/sec, computed across N envelopes.
 fn measure_throughput_baseline(n: u32) -> (f64, u128) {
@@ -81,10 +82,18 @@ fn banded(label: &str, latency_ms: u64, n: u32, k: u32) {
     let mx = throughputs[(k as usize) - 1];
     let mean: f64 = throughputs.iter().sum::<f64>() / k as f64;
     let spread = (mx - mn) / 2.0;
-    let halfspread_pct = if med > 0.0 { (spread / med) * 100.0 } else { 0.0 };
-    println!("  {:<48}  K={}  med = {:>10.1} sign/s   spread = ±{:.1}%",
-             label, k, med, halfspread_pct);
-    let _ = mean; let _ = mn; let _ = mx;
+    let halfspread_pct = if med > 0.0 {
+        (spread / med) * 100.0
+    } else {
+        0.0
+    };
+    println!(
+        "  {:<48}  K={}  med = {:>10.1} sign/s   spread = ±{:.1}%",
+        label, k, med, halfspread_pct
+    );
+    let _ = mean;
+    let _ = mn;
+    let _ = mx;
 }
 
 fn main() {
@@ -95,14 +104,14 @@ fn main() {
     println!();
 
     println!("Baseline (no SE — in-process Ed25519 via MeshRouter):");
-    banded("0 ms latency (in-process)",            0,   5000, 5);
+    banded("0 ms latency (in-process)", 0, 5000, 5);
 
     println!();
     println!("With SE on the signing path (smaller N because we sleep):");
-    banded("3 ms (hypothetical fast SE / FPGA)",   3,    100, 5);
-    banded("15 ms (OPTIGA Trust M class)",         15,   100, 5);
-    banded("60 ms (ATECC608B, datasheet typical)", 60,   50,  5);
-    banded("100 ms (ATECC608B, cold wakeup)",     100,   30,  5);
+    banded("3 ms (hypothetical fast SE / FPGA)", 3, 100, 5);
+    banded("15 ms (OPTIGA Trust M class)", 15, 100, 5);
+    banded("60 ms (ATECC608B, datasheet typical)", 60, 50, 5);
+    banded("100 ms (ATECC608B, cold wakeup)", 100, 30, 5);
 
     println!();
     println!("──────────────────────────────────────────────────────────────────");
@@ -113,13 +122,17 @@ fn main() {
         let pk_a = mesh_v10_pubkey_from_seed(&MeshEdSeed([0x33; 32])).unwrap();
         let mut reg_b = MeshPubRegistry::new();
         reg_b.insert(fp(0xAA), pk_a);
-        let mut router_b = MeshRouter::new_ed25519_signed(
-            fp(0xBB), MeshEdSeed([0x44; 32]), reg_b);
+        let mut router_b = MeshRouter::new_ed25519_signed(fp(0xBB), MeshEdSeed([0x44; 32]), reg_b);
         let mut router_a = MeshRouter::new_ed25519_signed(
-            fp(0xAA), MeshEdSeed([0x33; 32]), MeshPubRegistry::new());
+            fp(0xAA),
+            MeshEdSeed([0x33; 32]),
+            MeshPubRegistry::new(),
+        );
         let env = router_a.origin_wrap(b"se-bench");
         match router_b.process(&env) {
-            MeshDecision::Arrived { .. } => println!("  PASS — envelope accepts (wire-compat with SE path)"),
+            MeshDecision::Arrived { .. } => {
+                println!("  PASS — envelope accepts (wire-compat with SE path)")
+            }
             other => println!("  FAIL — got {:?}", other),
         }
     }

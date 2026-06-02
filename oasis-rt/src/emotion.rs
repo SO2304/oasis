@@ -3,11 +3,11 @@
 //! Five signals (curiosity, fear, satisfaction, frustration, urgency)
 //! act as gain multipliers on the tension field.
 
-use crate::vec::*;
-#[cfg(not(feature = "std"))]
-use alloc::{vec::Vec, string::String, vec, format};
 #[cfg(not(feature = "std"))]
 use crate::fmath::F64Ext;
+use crate::vec::*;
+#[cfg(not(feature = "std"))]
+use alloc::{format, string::String, vec, vec::Vec};
 
 const MAX_PAIN: usize = 128;
 
@@ -39,17 +39,19 @@ impl PainConfig {
     pub fn from_env() -> Self {
         let mut c = Self::new();
         if let Ok(s) = std::env::var("OASIS_PAIN_DECAY") {
-            if let Ok(v) = s.parse::<f64>() { c.decay_rate = v; }
+            if let Ok(v) = s.parse::<f64>() {
+                c.decay_rate = v;
+            }
         }
-        c.motor_dampening_enabled = std::env::var("OASIS_MOTOR_DAMPENING")
-            .ok().map(|s| s == "1").unwrap_or(false);
+        c.motor_dampening_enabled = std::env::var("OASIS_MOTOR_DAMPENING").ok().map(|s| s == "1").unwrap_or(false);
         if let Ok(s) = std::env::var("OASIS_PAIN_WORLD_ANCHOR") {
             let p: Vec<f64> = s.split(',').filter_map(|v| v.trim().parse().ok()).collect();
-            if p.len() == 4 { c.world_anchor = Some((p[0], p[1], p[2], p[3])); }
+            if p.len() == 4 {
+                c.world_anchor = Some((p[0], p[1], p[2], p[3]));
+            }
         }
         if c.world_anchor.is_none() {
-            c.reanchor_enabled = std::env::var("OASIS_PAIN_REANCHOR")
-                .ok().map(|s| s == "1").unwrap_or(false);
+            c.reanchor_enabled = std::env::var("OASIS_PAIN_REANCHOR").ok().map(|s| s == "1").unwrap_or(false);
             if c.reanchor_enabled {
                 if let Ok(s) = std::env::var("OASIS_PAIN_REANCHOR_BOUNDS") {
                     let p: Vec<f64> = s.split(',').filter_map(|v| v.trim().parse().ok()).collect();
@@ -64,7 +66,9 @@ impl PainConfig {
 }
 
 impl Default for PainConfig {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 pub struct EmotionalState {
@@ -100,7 +104,9 @@ impl EmotionalState {
                 // Init MAX_PAIN zero vectors on heap without any stack-resident
                 // temporary array (would be 131 KiB and blow the MCU stack).
                 let mut v = Vec::with_capacity(MAX_PAIN);
-                for _ in 0..MAX_PAIN { v.push(vz()); }
+                for _ in 0..MAX_PAIN {
+                    v.push(vz());
+                }
                 v
             },
             pain_intensity: [0.0; MAX_PAIN],
@@ -159,15 +165,20 @@ impl EmotionalState {
             let dist = vd(pos, &self.pain_pos[i]);
             if dist < 2.0 {
                 let fear = self.pain_intensity[i] * decay * (1.0 - dist / 2.0) * habituation;
-                if fear > max_fear { max_fear = fear; }
+                if fear > max_fear {
+                    max_fear = fear;
+                }
             }
         }
         self.fear = max_fear.min(5.0);
 
         if self.goal_count >= 3 {
             let (a, b, c) = (self.goal_dist[self.goal_count - 3], self.goal_dist[self.goal_count - 2], self.goal_dist[self.goal_count - 1]);
-            if c < b && b < a { self.satisfaction = (self.satisfaction + 0.15).min(1.0); }
-            else { self.satisfaction = (self.satisfaction - 0.05).max(0.0); }
+            if c < b && b < a {
+                self.satisfaction = (self.satisfaction + 0.15).min(1.0);
+            } else {
+                self.satisfaction = (self.satisfaction - 0.05).max(0.0);
+            }
         }
         self.curiosity *= 1.0 - self.fear * 0.7;
         self.frustration *= 1.0 - self.satisfaction * 0.8;
@@ -181,7 +192,9 @@ impl EmotionalState {
 
     /// no_std-friendly motor_dampening: takes config explicitly.
     pub fn motor_dampening_with_config(&self, cfg: &PainConfig) -> f64 {
-        if !cfg.motor_dampening_enabled { return 1.0; }
+        if !cfg.motor_dampening_enabled {
+            return 1.0;
+        }
         let n = self.pain_count as f64;
         (1.0 - (n * 0.003).min(0.4)).max(0.6)
     }
@@ -198,11 +211,10 @@ impl EmotionalState {
         // Fear: proximity to pain + habituation (O(n), not O(n²))
         // More pain memories = more familiar = less scary per memory
         let habituation = 1.0 / (1.0 + self.pain_count as f64 * 0.1); // 0→1.0, 10→0.5, 100→0.09
-        // Pain decay rate tunable via OASIS_PAIN_DECAY env var. Default 0.98 (aggressive ~34t halflife).
-        // Setting e.g. 0.9999 gives ~7000t halflife, biologically plausible.
+                                                                      // Pain decay rate tunable via OASIS_PAIN_DECAY env var. Default 0.98 (aggressive ~34t halflife).
+                                                                      // Setting e.g. 0.9999 gives ~7000t halflife, biologically plausible.
         #[cfg(feature = "std_env")]
-        let decay_rate: f64 = std::env::var("OASIS_PAIN_DECAY")
-            .ok().and_then(|s| s.parse().ok()).unwrap_or(0.98);
+        let decay_rate: f64 = std::env::var("OASIS_PAIN_DECAY").ok().and_then(|s| s.parse().ok()).unwrap_or(0.98);
         #[cfg(not(feature = "std_env"))]
         let decay_rate: f64 = 0.98;
         let mut max_fear = 0.0_f64;
@@ -282,20 +294,26 @@ impl EmotionalState {
     #[cfg(feature = "std")]
     pub fn load_pain(&mut self, path: &str) -> Result<u32, &'static str> {
         // World-frame anchor takes priority over random reanchor.
-        let world_anchor: Option<(f64, f64, f64, f64)> =
-            std::env::var("OASIS_PAIN_WORLD_ANCHOR").ok().and_then(|s| {
-                let p: Vec<f64> = s.split(',').filter_map(|v| v.trim().parse().ok()).collect();
-                if p.len() == 4 { Some((p[0], p[1], p[2], p[3])) } else { None }
-            });
-        let reanchor: bool = world_anchor.is_none() && std::env::var("OASIS_PAIN_REANCHOR")
-            .ok().map(|s| s == "1").unwrap_or(false);
+        let world_anchor: Option<(f64, f64, f64, f64)> = std::env::var("OASIS_PAIN_WORLD_ANCHOR").ok().and_then(|s| {
+            let p: Vec<f64> = s.split(',').filter_map(|v| v.trim().parse().ok()).collect();
+            if p.len() == 4 {
+                Some((p[0], p[1], p[2], p[3]))
+            } else {
+                None
+            }
+        });
+        let reanchor: bool = world_anchor.is_none() && std::env::var("OASIS_PAIN_REANCHOR").ok().map(|s| s == "1").unwrap_or(false);
         let (xmin, xmax, ymin, ymax, zmin, zmax) = if reanchor {
-            let bounds_str = std::env::var("OASIS_PAIN_REANCHOR_BOUNDS")
-                .unwrap_or_else(|_| "-4,4,-3,3,0.5,2.0".into());
+            let bounds_str = std::env::var("OASIS_PAIN_REANCHOR_BOUNDS").unwrap_or_else(|_| "-4,4,-3,3,0.5,2.0".into());
             let parts: Vec<f64> = bounds_str.split(',').filter_map(|s| s.trim().parse().ok()).collect();
-            if parts.len() == 6 { (parts[0], parts[1], parts[2], parts[3], parts[4], parts[5]) }
-            else { (-4.0, 4.0, -3.0, 3.0, 0.5, 2.0) }
-        } else { (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) };
+            if parts.len() == 6 {
+                (parts[0], parts[1], parts[2], parts[3], parts[4], parts[5])
+            } else {
+                (-4.0, 4.0, -3.0, 3.0, 0.5, 2.0)
+            }
+        } else {
+            (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
+        };
         // Deterministic LCG seeded from path hash for reproducibility across restarts
         let mut rng_state: u64 = path.bytes().map(|b| b as u64).sum::<u64>().wrapping_mul(2654435761);
         let mut next_rand = || -> f64 {
@@ -381,11 +399,12 @@ impl EmotionalState {
     /// With 128 pain memories → factor 0.616 (motor output at 62% of command).
     pub fn motor_dampening(&self) -> f64 {
         #[cfg(feature = "std_env")]
-        let enabled: bool = std::env::var("OASIS_MOTOR_DAMPENING")
-            .ok().map(|s| s == "1").unwrap_or(false);
+        let enabled: bool = std::env::var("OASIS_MOTOR_DAMPENING").ok().map(|s| s == "1").unwrap_or(false);
         #[cfg(not(feature = "std_env"))]
         let enabled = false;
-        if !enabled { return 1.0; }
+        if !enabled {
+            return 1.0;
+        }
         let n = self.pain_count as f64;
         (1.0 - (n * 0.003).min(0.4)).max(0.6)
     }
@@ -411,7 +430,9 @@ impl EmotionalState {
 /// Kani-verifiable. Mirrors the `.min(5.0)` semantics used by EmotionalState.
 #[inline]
 pub fn saturate_fear(raw: f64) -> f64 {
-    if raw.is_nan() { return 0.0; }
+    if raw.is_nan() {
+        return 0.0;
+    }
     raw.max(0.0).min(5.0)
 }
 

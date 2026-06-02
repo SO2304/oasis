@@ -12,9 +12,13 @@ use core::fmt::Write;
 use cortex_m_rt::entry;
 use embedded_alloc::LlffHeap as Heap;
 use panic_halt as _;
-use stm32f4xx_hal::{pac, prelude::*, serial::{Config, Serial}};
+use stm32f4xx_hal::{
+    pac,
+    prelude::*,
+    serial::{Config, Serial},
+};
 
-use oasis_rt::mesh::{MeshEdSeed, MeshRouter, MeshPubRegistry, mesh_v10_pubkey_from_seed};
+use oasis_rt::mesh::{mesh_v10_pubkey_from_seed, MeshEdSeed, MeshPubRegistry, MeshRouter};
 
 #[global_allocator]
 static HEAP: Heap = Heap::empty();
@@ -30,7 +34,9 @@ const FP_B: [u8; 8] = [0xBB, 0, 0, 0, 0, 0, 0, 0];
 
 #[entry]
 fn main() -> ! {
-    unsafe { HEAP.init(HEAP_MEM.as_mut_ptr() as usize, HEAP_SIZE); }
+    unsafe {
+        HEAP.init(HEAP_MEM.as_mut_ptr() as usize, HEAP_SIZE);
+    }
 
     let dp = pac::Peripherals::take().unwrap();
     let rcc = dp.RCC.constrain();
@@ -44,23 +50,31 @@ fn main() -> ! {
     // USART1 = host log (Renode analyzer captures this)
     let log_pins = (gpioa.pa9.into_alternate(), gpioa.pa10.into_alternate());
     let mut log = Serial::new(
-        dp.USART1, log_pins,
+        dp.USART1,
+        log_pins,
         Config::default().baudrate(115200.bps()),
         &clocks,
-    ).unwrap();
+    )
+    .unwrap();
 
     // USART2 = mesh bus, wired to Node B's USART2 RX by Renode .resc
     let bus_pins = (gpioa.pa2.into_alternate(), gpioa.pa3.into_alternate());
     let bus = Serial::new(
-        dp.USART2, bus_pins,
+        dp.USART2,
+        bus_pins,
         Config::default().baudrate(115200.bps()),
         &clocks,
-    ).unwrap();
+    )
+    .unwrap();
     let (mut bus_tx, _bus_rx) = bus.split();
 
     writeln!(log, "").ok();
     writeln!(log, "[Node A / Sender] OASIS M11 Federated Resonance demo").ok();
-    writeln!(log, "  target : thumbv7em-none-eabihf (Cortex-M4F, STM32F407)").ok();
+    writeln!(
+        log,
+        "  target : thumbv7em-none-eabihf (Cortex-M4F, STM32F407)"
+    )
+    .ok();
     writeln!(log, "  sim    : Renode (multi-node, UART bridged)").ok();
     writeln!(log, "  [dbg] before pubkey derivation").ok();
 
@@ -77,12 +91,26 @@ fn main() -> ! {
     let envelope = router.origin_wrap(payload);
     writeln!(log, "  [dbg] envelope signed, len={}", envelope.len()).ok();
 
-    writeln!(log, "  envelope: magic=SPORE\\x0A len={} payload='{}'",
-             envelope.len(),
-             core::str::from_utf8(payload).unwrap_or("<bytes>")).ok();
-    writeln!(log, "  sig_head: [{:02x} {:02x} {:02x} {:02x} {:02x} {:02x} {:02x} {:02x}]",
-             envelope[25], envelope[26], envelope[27], envelope[28],
-             envelope[29], envelope[30], envelope[31], envelope[32]).ok();
+    writeln!(
+        log,
+        "  envelope: magic=SPORE\\x0A len={} payload='{}'",
+        envelope.len(),
+        core::str::from_utf8(payload).unwrap_or("<bytes>")
+    )
+    .ok();
+    writeln!(
+        log,
+        "  sig_head: [{:02x} {:02x} {:02x} {:02x} {:02x} {:02x} {:02x} {:02x}]",
+        envelope[25],
+        envelope[26],
+        envelope[27],
+        envelope[28],
+        envelope[29],
+        envelope[30],
+        envelope[31],
+        envelope[32]
+    )
+    .ok();
 
     // Transmit a SYNC preamble (4 bytes) + 2-byte BE length + envelope,
     // so the receiver can frame the stream reliably.
@@ -96,8 +124,13 @@ fn main() -> ! {
     }
     nb::block!(bus_tx.flush()).ok();
 
-    writeln!(log, "  SENT {} bytes on USART2 (6-byte frame hdr + {}-byte envelope)",
-             frame_hdr.len() + envelope.len(), envelope.len()).ok();
+    writeln!(
+        log,
+        "  SENT {} bytes on USART2 (6-byte frame hdr + {}-byte envelope)",
+        frame_hdr.len() + envelope.len(),
+        envelope.len()
+    )
+    .ok();
     writeln!(log, "[Node A] M11 SEND COMPLETE").ok();
 
     loop {

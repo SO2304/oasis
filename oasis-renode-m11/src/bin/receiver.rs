@@ -11,10 +11,15 @@ use core::fmt::Write;
 use cortex_m_rt::entry;
 use embedded_alloc::LlffHeap as Heap;
 use panic_halt as _;
-use stm32f4xx_hal::{pac, prelude::*, serial::{Config, Serial}};
+use stm32f4xx_hal::{
+    pac,
+    prelude::*,
+    serial::{Config, Serial},
+};
 
-use oasis_rt::mesh::{MeshDecision, MeshEdSeed, MeshRouter, MeshPubRegistry,
-                     mesh_v10_pubkey_from_seed};
+use oasis_rt::mesh::{
+    mesh_v10_pubkey_from_seed, MeshDecision, MeshEdSeed, MeshPubRegistry, MeshRouter,
+};
 
 #[global_allocator]
 static HEAP: Heap = Heap::empty();
@@ -28,7 +33,9 @@ const FP_B: [u8; 8] = [0xBB, 0, 0, 0, 0, 0, 0, 0];
 
 #[entry]
 fn main() -> ! {
-    unsafe { HEAP.init(HEAP_MEM.as_mut_ptr() as usize, HEAP_SIZE); }
+    unsafe {
+        HEAP.init(HEAP_MEM.as_mut_ptr() as usize, HEAP_SIZE);
+    }
 
     let dp = pac::Peripherals::take().unwrap();
     let rcc = dp.RCC.constrain();
@@ -38,24 +45,40 @@ fn main() -> ! {
 
     let log_pins = (gpioa.pa9.into_alternate(), gpioa.pa10.into_alternate());
     let mut log = Serial::new(
-        dp.USART1, log_pins,
+        dp.USART1,
+        log_pins,
         Config::default().baudrate(115200.bps()),
         &clocks,
-    ).unwrap();
+    )
+    .unwrap();
 
     let bus_pins = (gpioa.pa2.into_alternate(), gpioa.pa3.into_alternate());
     let bus = Serial::new(
-        dp.USART2, bus_pins,
+        dp.USART2,
+        bus_pins,
         Config::default().baudrate(115200.bps()),
         &clocks,
-    ).unwrap();
+    )
+    .unwrap();
     let (_bus_tx, mut bus_rx) = bus.split();
 
     writeln!(log, "").ok();
-    writeln!(log, "[Node B / Receiver] OASIS M11 Federated Resonance demo").ok();
-    writeln!(log, "  target : thumbv7em-none-eabihf (Cortex-M4F, STM32F407)").ok();
+    writeln!(
+        log,
+        "[Node B / Receiver] OASIS M11 Federated Resonance demo"
+    )
+    .ok();
+    writeln!(
+        log,
+        "  target : thumbv7em-none-eabihf (Cortex-M4F, STM32F407)"
+    )
+    .ok();
     writeln!(log, "  sim    : Renode (multi-node, UART bridged)").ok();
-    writeln!(log, "  waiting for frame header FA CE BE EF + u16 length...").ok();
+    writeln!(
+        log,
+        "  waiting for frame header FA CE BE EF + u16 length..."
+    )
+    .ok();
 
     // Build receiver router with seed B, registry containing A's pubkey.
     let seed_b = MeshEdSeed(SEED_B);
@@ -69,10 +92,20 @@ fn main() -> ! {
     loop {
         let b: u8 = nb::block!(bus_rx.read()).unwrap();
         let expect = match sync_state {
-            0 => 0xFA, 1 => 0xCE, 2 => 0xBE, 3 => 0xEF, _ => 0,
+            0 => 0xFA,
+            1 => 0xCE,
+            2 => 0xBE,
+            3 => 0xEF,
+            _ => 0,
         };
-        if b == expect { sync_state += 1; } else { sync_state = 0; }
-        if sync_state == 4 { break; }
+        if b == expect {
+            sync_state += 1;
+        } else {
+            sync_state = 0;
+        }
+        if sync_state == 4 {
+            break;
+        }
     }
     writeln!(log, "  sync acquired").ok();
 
@@ -87,17 +120,35 @@ fn main() -> ! {
         envelope.push(b);
     }
     writeln!(log, "  RECEIVED {} bytes", envelope.len()).ok();
-    writeln!(log, "  magic    = {:02x} {:02x} {:02x} {:02x} {:02x} {:02x}",
-             envelope[0], envelope[1], envelope[2], envelope[3], envelope[4], envelope[5]).ok();
-    writeln!(log, "  sig_head = [{:02x} {:02x} {:02x} {:02x} {:02x} {:02x} {:02x} {:02x}]",
-             envelope[25], envelope[26], envelope[27], envelope[28],
-             envelope[29], envelope[30], envelope[31], envelope[32]).ok();
+    writeln!(
+        log,
+        "  magic    = {:02x} {:02x} {:02x} {:02x} {:02x} {:02x}",
+        envelope[0], envelope[1], envelope[2], envelope[3], envelope[4], envelope[5]
+    )
+    .ok();
+    writeln!(
+        log,
+        "  sig_head = [{:02x} {:02x} {:02x} {:02x} {:02x} {:02x} {:02x} {:02x}]",
+        envelope[25],
+        envelope[26],
+        envelope[27],
+        envelope[28],
+        envelope[29],
+        envelope[30],
+        envelope[31],
+        envelope[32]
+    )
+    .ok();
 
     // Feed to the mesh router. v0A verification uses SEED_A's derived
     // pubkey from our registry. Returns MeshDecision::Arrived on success.
     match router.process(&envelope) {
         MeshDecision::Arrived { envelope: _, .. } => {
-            writeln!(log, "  [M11] ED25519 SIGNATURE VERIFIED — federation attested").ok();
+            writeln!(
+                log,
+                "  [M11] ED25519 SIGNATURE VERIFIED — federation attested"
+            )
+            .ok();
             writeln!(log, "[Node B] M11 RECV COMPLETE — VERIFIED").ok();
         }
         MeshDecision::Drop(reason) => {

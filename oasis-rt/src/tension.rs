@@ -224,11 +224,11 @@ mod tests {
     fn tick_ttl_helper_matches_inline_logic() {
         // The pure helper must reproduce the inline tick() arithmetic:
         // saturating_sub(1) + deactivate-on-zero.
-        assert_eq!(tick_ttl(0),  (0, true));   // already expired
-        assert_eq!(tick_ttl(1),  (0, true));   // expires now
-        assert_eq!(tick_ttl(2),  (1, false));
+        assert_eq!(tick_ttl(0), (0, true)); // already expired
+        assert_eq!(tick_ttl(1), (0, true)); // expires now
+        assert_eq!(tick_ttl(2), (1, false));
         assert_eq!(tick_ttl(10), (9, false));
-        assert_eq!(tick_ttl(255),(254, false));
+        assert_eq!(tick_ttl(255), (254, false));
     }
 }
 

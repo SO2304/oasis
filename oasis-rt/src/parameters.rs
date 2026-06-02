@@ -27,10 +27,14 @@
 //! - Not persisted. Caller's responsibility to snapshot/restore on boot.
 //! - Not thread-safe by itself. Wrap in `Arc<Mutex<_>>` if shared.
 
+#[cfg(not(feature = "std"))]
+use alloc::{
+    collections::BTreeMap,
+    string::{String, ToString},
+    vec::Vec,
+};
 #[cfg(feature = "std")]
 use std::collections::BTreeMap;
-#[cfg(not(feature = "std"))]
-use alloc::{collections::BTreeMap, string::{String, ToString}, vec::Vec};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Parameter {
@@ -61,8 +65,16 @@ pub enum ParamError {
 #[inline]
 pub fn clamp_float(v: f64, min: Option<f64>, max: Option<f64>) -> f64 {
     let mut out = v;
-    if let Some(lo) = min { if out < lo { out = lo; } }
-    if let Some(hi) = max { if out > hi { out = hi; } }
+    if let Some(lo) = min {
+        if out < lo {
+            out = lo;
+        }
+    }
+    if let Some(hi) = max {
+        if out > hi {
+            out = hi;
+        }
+    }
     out
 }
 
@@ -72,27 +84,39 @@ pub fn clamp_float(v: f64, min: Option<f64>, max: Option<f64>) -> f64 {
 pub fn clamp_int(v: i64, min: Option<f64>, max: Option<f64>) -> i64 {
     let mut out = v;
     if let Some(lo) = min {
-        let lo_i = if lo < i64::MIN as f64 { i64::MIN }
-                   else if lo > i64::MAX as f64 { i64::MAX }
-                   else { lo as i64 };
-        if out < lo_i { out = lo_i; }
+        let lo_i = if lo < i64::MIN as f64 {
+            i64::MIN
+        } else if lo > i64::MAX as f64 {
+            i64::MAX
+        } else {
+            lo as i64
+        };
+        if out < lo_i {
+            out = lo_i;
+        }
     }
     if let Some(hi) = max {
-        let hi_i = if hi > i64::MAX as f64 { i64::MAX }
-                   else if hi < i64::MIN as f64 { i64::MIN }
-                   else { hi as i64 };
-        if out > hi_i { out = hi_i; }
+        let hi_i = if hi > i64::MAX as f64 {
+            i64::MAX
+        } else if hi < i64::MIN as f64 {
+            i64::MIN
+        } else {
+            hi as i64
+        };
+        if out > hi_i {
+            out = hi_i;
+        }
     }
     out
 }
 
 fn type_name(p: &Parameter) -> &'static str {
     match p {
-        Parameter::Bool(_)   => "Bool",
-        Parameter::Int(_)    => "Int",
-        Parameter::Float(_)  => "Float",
+        Parameter::Bool(_) => "Bool",
+        Parameter::Int(_) => "Int",
+        Parameter::Float(_) => "Float",
         Parameter::String(_) => "String",
-        Parameter::Bytes(_)  => "Bytes",
+        Parameter::Bytes(_) => "Bytes",
     }
 }
 
@@ -107,7 +131,9 @@ pub struct ParameterServer {
 }
 
 impl Default for ParameterServer {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl ParameterServer {
@@ -118,8 +144,7 @@ impl ParameterServer {
     /// Declare a parameter with an initial value and optional numeric
     /// descriptor. If the key already exists, returns Err (mirrors rclcpp's
     /// declare_parameter semantics).
-    pub fn declare(&mut self, key: &str, value: Parameter,
-                   descriptor: Option<NumericDescriptor>) -> Result<(), ParamError> {
+    pub fn declare(&mut self, key: &str, value: Parameter, descriptor: Option<NumericDescriptor>) -> Result<(), ParamError> {
         if self.entries.contains_key(key) {
             return Err(ParamError::InvalidValue("key already declared"));
         }
@@ -149,21 +174,43 @@ impl ParameterServer {
     }
 
     pub fn get_bool(&self, key: &str) -> Option<bool> {
-        if let Some(Parameter::Bool(b)) = self.get(key) { Some(*b) } else { None }
+        if let Some(Parameter::Bool(b)) = self.get(key) {
+            Some(*b)
+        } else {
+            None
+        }
     }
     pub fn get_int(&self, key: &str) -> Option<i64> {
-        if let Some(Parameter::Int(i)) = self.get(key) { Some(*i) } else { None }
+        if let Some(Parameter::Int(i)) = self.get(key) {
+            Some(*i)
+        } else {
+            None
+        }
     }
     pub fn get_float(&self, key: &str) -> Option<f64> {
-        if let Some(Parameter::Float(f)) = self.get(key) { Some(*f) } else { None }
+        if let Some(Parameter::Float(f)) = self.get(key) {
+            Some(*f)
+        } else {
+            None
+        }
     }
     pub fn get_string(&self, key: &str) -> Option<&str> {
-        if let Some(Parameter::String(s)) = self.get(key) { Some(s.as_str()) } else { None }
+        if let Some(Parameter::String(s)) = self.get(key) {
+            Some(s.as_str())
+        } else {
+            None
+        }
     }
 
-    pub fn version(&self) -> u64 { self.version }
-    pub fn len(&self) -> usize { self.entries.len() }
-    pub fn is_empty(&self) -> bool { self.entries.is_empty() }
+    pub fn version(&self) -> u64 {
+        self.version
+    }
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
 
     pub fn list_keys(&self) -> Vec<String> {
         self.entries.keys().cloned().collect()
@@ -173,7 +220,7 @@ impl ParameterServer {
 fn clamp_if_needed(value: Parameter, desc: &Option<NumericDescriptor>) -> Parameter {
     match (value, desc) {
         (Parameter::Float(f), Some(d)) => Parameter::Float(clamp_float(f, d.min, d.max)),
-        (Parameter::Int(i),   Some(d)) => Parameter::Int(clamp_int(i, d.min, d.max)),
+        (Parameter::Int(i), Some(d)) => Parameter::Int(clamp_int(i, d.min, d.max)),
         (v, _) => v,
     }
 }
@@ -265,13 +312,15 @@ mod tests {
     fn bool_and_string_and_bytes_roundtrip() {
         let mut p = ParameterServer::new();
         p.declare("enabled", Parameter::Bool(true), None).unwrap();
-        p.declare("name",    Parameter::String("drone-42".into()), None).unwrap();
-        p.declare("secret",  Parameter::Bytes(vec![1,2,3]), None).unwrap();
+        p.declare("name", Parameter::String("drone-42".into()), None).unwrap();
+        p.declare("secret", Parameter::Bytes(vec![1, 2, 3]), None).unwrap();
         assert_eq!(p.get_bool("enabled"), Some(true));
         assert_eq!(p.get_string("name"), Some("drone-42"));
         if let Some(Parameter::Bytes(b)) = p.get("secret") {
-            assert_eq!(b, &vec![1,2,3]);
-        } else { panic!(); }
+            assert_eq!(b, &vec![1, 2, 3]);
+        } else {
+            panic!();
+        }
     }
 
     #[test]
@@ -294,7 +343,9 @@ mod tests {
         let mut sum = 0.0;
         for i in 0..N {
             let k = format!("key_{}", i % 50);
-            if let Some(v) = p.get_float(&k) { sum += v; }
+            if let Some(v) = p.get_float(&k) {
+                sum += v;
+            }
         }
         let per_ns = start.elapsed().as_nanos() as f64 / N as f64;
         eprintln!("parameter get_float (50 keys): {:.0} ns/op (sum={})", per_ns, sum);
@@ -317,9 +368,9 @@ mod kani_proofs {
     /// PROVE: clamp_float with bounded inputs always produces output in [min, max].
     #[kani::proof]
     fn proof_params_clamp_float_respects_bounds() {
-        let v:   f64 = kani::any();
-        let lo:  f64 = kani::any();
-        let hi:  f64 = kani::any();
+        let v: f64 = kani::any();
+        let lo: f64 = kani::any();
+        let hi: f64 = kani::any();
         kani::assume(v.is_finite() && lo.is_finite() && hi.is_finite());
         kani::assume(lo <= hi);
         kani::assume(v.abs() < 1e9 && lo.abs() < 1e9 && hi.abs() < 1e9);
@@ -348,7 +399,7 @@ mod kani_proofs {
         kani::assume(lo <= hi);
         kani::assume(v.abs() < 1e9 && lo.abs() < 1e9 && hi.abs() < 1e9);
 
-        let once  = clamp_float(v,    Some(lo), Some(hi));
+        let once = clamp_float(v, Some(lo), Some(hi));
         let twice = clamp_float(once, Some(lo), Some(hi));
         assert_eq!(once, twice);
     }

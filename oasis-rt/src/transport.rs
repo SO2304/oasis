@@ -68,7 +68,9 @@ impl Transport for FileTransport {
             let fname = entry.file_name();
             let fname_str = fname.to_string_lossy();
             if let Some(stem) = fname_str.strip_suffix("_fed.bin") {
-                if stem != own { peers.push(stem.to_string()); }
+                if stem != own {
+                    peers.push(stem.to_string());
+                }
             }
         }
         Ok(peers)
@@ -77,8 +79,8 @@ impl Transport for FileTransport {
 
 // ───────── InMemoryTransport (for tests) ─────────
 
-use std::sync::Mutex;
 use std::collections::HashMap;
+use std::sync::Mutex;
 
 /// In-memory transport. All instances sharing the same `Box<Mutex<HashMap>>` see each other.
 pub struct InMemoryTransport {
@@ -95,7 +97,9 @@ impl InMemoryTransport {
 }
 
 impl Default for InMemoryTransport {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Transport for InMemoryTransport {
@@ -104,13 +108,10 @@ impl Transport for InMemoryTransport {
         Ok(())
     }
     fn recv(&self, peer: &str) -> io::Result<Vec<u8>> {
-        self.store.lock().unwrap().get(peer).cloned()
-            .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "peer not present"))
+        self.store.lock().unwrap().get(peer).cloned().ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "peer not present"))
     }
     fn list_peers(&self, own: &str) -> io::Result<Vec<String>> {
-        Ok(self.store.lock().unwrap().keys()
-            .filter(|k| k.as_str() != own)
-            .cloned().collect())
+        Ok(self.store.lock().unwrap().keys().filter(|k| k.as_str() != own).cloned().collect())
     }
 }
 
@@ -146,7 +147,11 @@ fn crc8(data: &[u8]) -> u8 {
     for &b in data {
         crc ^= b;
         for _ in 0..8 {
-            if crc & 0x80 != 0 { crc = (crc << 1) ^ 0x07; } else { crc <<= 1; }
+            if crc & 0x80 != 0 {
+                crc = (crc << 1) ^ 0x07;
+            } else {
+                crc <<= 1;
+            }
         }
     }
     crc
@@ -154,7 +159,9 @@ fn crc8(data: &[u8]) -> u8 {
 
 /// Build a LoRa frame ready to push out a serial port to a SX127x / E32 module.
 pub fn pack_lora_frame(payload: &[u8]) -> Result<Vec<u8>, &'static str> {
-    if payload.len() > MAX_LORA_PAYLOAD { return Err("payload exceeds MAX_LORA_PAYLOAD"); }
+    if payload.len() > MAX_LORA_PAYLOAD {
+        return Err("payload exceeds MAX_LORA_PAYLOAD");
+    }
     let mut frame = Vec::with_capacity(LORA_HEADER_LEN + payload.len());
     frame.extend_from_slice(LORA_MAGIC);
     frame.push(LORA_VER);
@@ -168,13 +175,23 @@ pub fn pack_lora_frame(payload: &[u8]) -> Result<Vec<u8>, &'static str> {
 
 /// Parse a LoRa frame. Returns the payload slice on success.
 pub fn parse_lora_frame(frame: &[u8]) -> Result<&[u8], &'static str> {
-    if frame.len() < LORA_HEADER_LEN { return Err("frame too short"); }
-    if &frame[..4] != LORA_MAGIC { return Err("bad magic"); }
-    if frame[4] != LORA_VER { return Err("unsupported version"); }
+    if frame.len() < LORA_HEADER_LEN {
+        return Err("frame too short");
+    }
+    if &frame[..4] != LORA_MAGIC {
+        return Err("bad magic");
+    }
+    if frame[4] != LORA_VER {
+        return Err("unsupported version");
+    }
     let len = u16::from_le_bytes([frame[5], frame[6]]) as usize;
     let expected_crc = crc8(&frame[..7]);
-    if frame[7] != expected_crc { return Err("header crc mismatch"); }
-    if frame.len() < LORA_HEADER_LEN + len { return Err("payload truncated"); }
+    if frame[7] != expected_crc {
+        return Err("header crc mismatch");
+    }
+    if frame.len() < LORA_HEADER_LEN + len {
+        return Err("payload truncated");
+    }
     Ok(&frame[LORA_HEADER_LEN..LORA_HEADER_LEN + len])
 }
 
@@ -186,12 +203,13 @@ pub struct LoRaTransport<W: io::Write> {
 }
 
 impl<W: io::Write> LoRaTransport<W> {
-    pub fn new(writer: W) -> Self { Self { writer: Mutex::new(writer) } }
+    pub fn new(writer: W) -> Self {
+        Self { writer: Mutex::new(writer) }
+    }
 
     /// Send a LoRa-framed blob. Errors if blob exceeds MAX_LORA_PAYLOAD.
     pub fn send_framed(&self, blob: &[u8]) -> io::Result<()> {
-        let frame = pack_lora_frame(blob)
-            .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
+        let frame = pack_lora_frame(blob).map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
         let mut w = self.writer.lock().unwrap();
         w.write_all(&frame)?;
         w.flush()
@@ -205,10 +223,11 @@ impl<W: io::Write + Send> Transport for LoRaTransport<W> {
     /// Read-side requires a paired Read transport — see `parse_lora_frame`
     /// which is exposed for receiver-side integration with serial RX.
     fn recv(&self, _peer: &str) -> io::Result<Vec<u8>> {
-        Err(io::Error::new(io::ErrorKind::Unsupported,
-            "LoRaTransport is write-side; read via parse_lora_frame on serial RX"))
+        Err(io::Error::new(io::ErrorKind::Unsupported, "LoRaTransport is write-side; read via parse_lora_frame on serial RX"))
     }
-    fn list_peers(&self, _own: &str) -> io::Result<Vec<String>> { Ok(Vec::new()) }
+    fn list_peers(&self, _own: &str) -> io::Result<Vec<String>> {
+        Ok(Vec::new())
+    }
 }
 
 #[cfg(test)]

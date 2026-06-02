@@ -32,17 +32,14 @@ fn main() {
     let payload = mesh.serialize_to_vec();
     println!("Payload: {} bytes serialized", payload.len());
 
-    let configs = [
-        ("v2 no-FEC,        repeat=1", false, 1u8),
-        ("v2 +XOR-parity,   repeat=1", true,  1u8),
-        ("v2 +XOR-parity,   repeat=2", true,  2u8),
-        ("v2 +XOR-parity,   repeat=3", true,  3u8),
-    ];
+    let configs = [("v2 no-FEC,        repeat=1", false, 1u8), ("v2 +XOR-parity,   repeat=1", true, 1u8), ("v2 +XOR-parity,   repeat=2", true, 2u8), ("v2 +XOR-parity,   repeat=3", true, 3u8)];
     let losses = [0.0, 0.10, 0.20, 0.30, 0.40, 0.50];
 
     println!();
     print!("{:32}", "config");
-    for l in &losses { print!(" {:>5.0}%", l * 100.0); }
+    for l in &losses {
+        print!(" {:>5.0}%", l * 100.0);
+    }
     println!();
     println!("{}", "-".repeat(32 + 6 * losses.len() + losses.len()));
 
@@ -60,8 +57,7 @@ fn main() {
     for (label, fec, repeat) in &configs {
         let chunks = fragment_v2(&payload, 0, *fec);
         let bytes_sent: usize = chunks.iter().map(|c| c.len()).sum::<usize>() * (*repeat as usize);
-        println!("  {:32} {:.2}x  ({} bytes for {} payload)",
-            label, bytes_sent as f64 / payload.len() as f64, bytes_sent, payload.len());
+        println!("  {:32} {:.2}x  ({} bytes for {} payload)", label, bytes_sent as f64 / payload.len() as f64, bytes_sent, payload.len());
     }
 }
 
@@ -77,13 +73,7 @@ fn trial(payload: &[u8], fec: bool, repeat: u8, loss_rate: f64) -> f64 {
     successes as f64 / TRIALS_PER_CELL as f64
 }
 
-fn reassemble_with_loss(
-    payload: &[u8],
-    fec: bool,
-    repeat: u8,
-    loss_rate: f64,
-    rng_state: &mut u32,
-) -> bool {
+fn reassemble_with_loss(payload: &[u8], fec: bool, repeat: u8, loss_rate: f64, rng_state: &mut u32) -> bool {
     let chunks = fragment_v2(payload, 1, fec);
     // Build reassembler from first chunk header.
     let (msg_id, total, _, flags, _) = parse_chunk_v2(&chunks[0]).unwrap();
@@ -95,7 +85,9 @@ fn reassemble_with_loss(
         for pkt in &chunks {
             *rng_state = rng_state.wrapping_mul(1103515245).wrapping_add(12345);
             let r = (*rng_state as f64) / (u32::MAX as f64);
-            if r < loss_rate { continue; }
+            if r < loss_rate {
+                continue;
+            }
             let (_, _, idx, _, payload_chunk) = parse_chunk_v2(pkt).unwrap();
             if let Some(recovered) = reass.feed(idx, payload_chunk) {
                 return recovered == payload;

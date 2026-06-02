@@ -33,19 +33,26 @@
 //! Suitable for human-memorable passphrases. For random 32-byte keys pass them
 //! as hex via `OASIS_SPORE_KEY_HEX`.
 
+#[cfg(not(feature = "std"))]
+use alloc::{
+    boxed::Box,
+    collections::{BTreeSet as HashSet, VecDeque},
+    format,
+    string::{String, ToString},
+    vec,
+    vec::Vec,
+};
 use chacha20poly1305::aead::{Aead, KeyInit, Payload};
 use chacha20poly1305::{ChaCha20Poly1305, Key, Nonce};
-use sha2::{Sha256, Digest};
+use sha2::{Digest, Sha256};
 #[cfg(feature = "std")]
-use std::collections::{VecDeque, HashSet};
-#[cfg(not(feature = "std"))]
-use alloc::{collections::{VecDeque, BTreeSet as HashSet}, vec::Vec, string::{String, ToString}, vec, format, boxed::Box};
+use std::collections::{HashSet, VecDeque};
 
 pub const SPORE_V3_MAGIC: &[u8] = b"SPORE\x03";
-pub const SPORE_V4_MAGIC: &[u8] = b"SPORE\x04";  // ECDH forward-secret envelope
-pub const SPORE_V5_MAGIC: &[u8] = b"SPORE\x05";  // ECDH + sender authentication (Noise-KK)
-pub const SPORE_V6_MAGIC: &[u8] = b"SPORE\x06";  // revocation-list broadcast envelope
-pub const SPORE_V7_MAGIC: &[u8] = b"SPORE\x07";  // v5 + monotonic counter (long-window replay resistance)
+pub const SPORE_V4_MAGIC: &[u8] = b"SPORE\x04"; // ECDH forward-secret envelope
+pub const SPORE_V5_MAGIC: &[u8] = b"SPORE\x05"; // ECDH + sender authentication (Noise-KK)
+pub const SPORE_V6_MAGIC: &[u8] = b"SPORE\x06"; // revocation-list broadcast envelope
+pub const SPORE_V7_MAGIC: &[u8] = b"SPORE\x07"; // v5 + monotonic counter (long-window replay resistance)
 pub const KEY_LEN: usize = 32;
 pub const NONCE_LEN: usize = 12;
 pub const TAG_LEN: usize = 16;
@@ -57,7 +64,7 @@ pub const SENDER_FP_LEN: usize = 8;
 const V5_HEADER_LEN: usize = 6 + SENDER_FP_LEN + X25519_PUBKEY_LEN + NONCE_LEN + 4;
 const V7_HEADER_LEN: usize = V5_HEADER_LEN + 8; // +8 bytes for u64 counter
 const DOMAIN_TAG: &[u8] = b"oasis-spore-v1"; // binds PSK derivation to protocol
-const ECDH_SALT: &[u8] = b"oasis-ecdh-v1";    // binds session-key derivation
+const ECDH_SALT: &[u8] = b"oasis-ecdh-v1"; // binds session-key derivation
 
 /// Derive a 32-byte key from an arbitrary passphrase via SHA-256.
 /// NOT a password hash (no salt, no iterations). Use only when the passphrase
@@ -75,11 +82,13 @@ pub fn derive_key_from_passphrase(passphrase: &[u8]) -> [u8; KEY_LEN] {
 
 /// Parse a 64-char hex string into a 32-byte key. Returns None on bad input.
 pub fn parse_key_hex(hex: &str) -> Option<[u8; KEY_LEN]> {
-    if hex.len() != KEY_LEN * 2 { return None; }
+    if hex.len() != KEY_LEN * 2 {
+        return None;
+    }
     let mut key = [0u8; KEY_LEN];
     for i in 0..KEY_LEN {
-        let hi = hex_digit(hex.as_bytes()[i*2])?;
-        let lo = hex_digit(hex.as_bytes()[i*2+1])?;
+        let hi = hex_digit(hex.as_bytes()[i * 2])?;
+        let lo = hex_digit(hex.as_bytes()[i * 2 + 1])?;
         key[i] = (hi << 4) | lo;
     }
     Some(key)
@@ -108,8 +117,7 @@ fn hex_digit(c: u8) -> Option<u8> {
 #[cfg(feature = "os_random")]
 fn random_nonce() -> [u8; NONCE_LEN] {
     let mut nonce = [0u8; NONCE_LEN];
-    getrandom::getrandom(&mut nonce)
-        .expect("OS CSPRNG unavailable — refusing to generate weak AEAD nonce");
+    getrandom::getrandom(&mut nonce).expect("OS CSPRNG unavailable — refusing to generate weak AEAD nonce");
     nonce
 }
 
@@ -126,16 +134,10 @@ fn random_nonce() -> [u8; NONCE_LEN] {
 ///
 /// This is the MCU-safe primitive. `encrypt_envelope` is a thin wrapper
 /// that calls this with `random_nonce()`.
-pub fn encrypt_envelope_with_nonce(
-    key: &[u8; KEY_LEN],
-    nonce_bytes: &[u8; NONCE_LEN],
-    plaintext: &[u8],
-    aad: &[u8],
-) -> Result<Vec<u8>, &'static str> {
+pub fn encrypt_envelope_with_nonce(key: &[u8; KEY_LEN], nonce_bytes: &[u8; NONCE_LEN], plaintext: &[u8], aad: &[u8]) -> Result<Vec<u8>, &'static str> {
     let cipher = ChaCha20Poly1305::new(Key::from_slice(key));
     let nonce = Nonce::from_slice(nonce_bytes);
-    let ct = cipher.encrypt(nonce, Payload { msg: plaintext, aad })
-        .map_err(|_| "encrypt failed")?;
+    let ct = cipher.encrypt(nonce, Payload { msg: plaintext, aad }).map_err(|_| "encrypt failed")?;
     // ct = ciphertext || tag (16 bytes) per RustCrypto convention
     let ct_len = ct.len().saturating_sub(TAG_LEN);
     let mut env = Vec::with_capacity(HEADER_LEN + ct.len());
@@ -154,9 +156,7 @@ pub fn encrypt_envelope_with_nonce(
 /// via `getrandom`. On MCU targets without `os_random`, call
 /// `encrypt_envelope_with_nonce` and supply your own 12-byte nonce.
 #[cfg(feature = "os_random")]
-pub fn encrypt_envelope(key: &[u8; KEY_LEN], plaintext: &[u8], aad: &[u8])
-    -> Result<Vec<u8>, &'static str>
-{
+pub fn encrypt_envelope(key: &[u8; KEY_LEN], plaintext: &[u8], aad: &[u8]) -> Result<Vec<u8>, &'static str> {
     let nonce_bytes = random_nonce();
     encrypt_envelope_with_nonce(key, &nonce_bytes, plaintext, aad)
 }
@@ -179,10 +179,7 @@ impl ReplayWindow {
     /// Create a new window of given capacity. 1024 is a reasonable default:
     /// ~12 KB RAM; covers typical message bursts.
     pub fn new(capacity: usize) -> Self {
-        Self {
-            seen: VecDeque::with_capacity(capacity),
-            capacity: capacity.max(1),
-        }
+        Self { seen: VecDeque::with_capacity(capacity), capacity: capacity.max(1) }
     }
 
     /// Check whether `nonce` was seen. If fresh, insert and return Ok.
@@ -198,8 +195,12 @@ impl ReplayWindow {
         Ok(())
     }
 
-    pub fn len(&self) -> usize { self.seen.len() }
-    pub fn is_empty(&self) -> bool { self.seen.is_empty() }
+    pub fn len(&self) -> usize {
+        self.seen.len()
+    }
+    pub fn is_empty(&self) -> bool {
+        self.seen.is_empty()
+    }
 
     /// Serialize the current window to bytes (no signature — file integrity is
     /// the filesystem's job). Format: magic(4) + ver(1) + cap(u32 LE) +
@@ -210,24 +211,34 @@ impl ReplayWindow {
         buf.push(0x01);
         buf.extend_from_slice(&(self.capacity as u32).to_le_bytes());
         buf.extend_from_slice(&(self.seen.len() as u32).to_le_bytes());
-        for n in &self.seen { buf.extend_from_slice(n); }
+        for n in &self.seen {
+            buf.extend_from_slice(n);
+        }
         buf
     }
 
     /// Deserialize a window from bytes produced by `to_bytes`. If the stored
     /// capacity exceeds the current one, entries are truncated FIFO.
     pub fn from_bytes(data: &[u8]) -> Result<Self, &'static str> {
-        if data.len() < 13 { return Err("too short"); }
-        if &data[..4] != b"RPLY" { return Err("bad magic"); }
-        if data[4] != 0x01 { return Err("bad version"); }
+        if data.len() < 13 {
+            return Err("too short");
+        }
+        if &data[..4] != b"RPLY" {
+            return Err("bad magic");
+        }
+        if data[4] != 0x01 {
+            return Err("bad version");
+        }
         let cap = u32::from_le_bytes(data[5..9].try_into().unwrap()) as usize;
         let count = u32::from_le_bytes(data[9..13].try_into().unwrap()) as usize;
         let expected_len = 13 + count * NONCE_LEN;
-        if data.len() < expected_len { return Err("truncated"); }
+        if data.len() < expected_len {
+            return Err("truncated");
+        }
         let mut rw = ReplayWindow::new(cap.max(1));
         for i in 0..count {
             let off = 13 + i * NONCE_LEN;
-            let n: [u8; NONCE_LEN] = data[off..off+NONCE_LEN].try_into().unwrap();
+            let n: [u8; NONCE_LEN] = data[off..off + NONCE_LEN].try_into().unwrap();
             // Ignore duplicate insert failures — persistence should be idempotent
             let _ = rw.check_and_insert(&n);
         }
@@ -251,33 +262,42 @@ impl ReplayWindow {
 }
 
 impl Default for ReplayWindow {
-    fn default() -> Self { Self::new(1024) }
+    fn default() -> Self {
+        Self::new(1024)
+    }
 }
 
 /// Extract the nonce from a SPORE\x03 envelope without decrypting.
 /// Useful for replay-checking before paying the cost of decryption.
 pub fn envelope_nonce(envelope: &[u8]) -> Result<[u8; NONCE_LEN], &'static str> {
-    if envelope.len() < 6 + NONCE_LEN { return Err("envelope too short"); }
-    if &envelope[..6] != SPORE_V3_MAGIC { return Err("bad magic"); }
-    Ok(envelope[6..6+NONCE_LEN].try_into().unwrap())
+    if envelope.len() < 6 + NONCE_LEN {
+        return Err("envelope too short");
+    }
+    if &envelope[..6] != SPORE_V3_MAGIC {
+        return Err("bad magic");
+    }
+    Ok(envelope[6..6 + NONCE_LEN].try_into().unwrap())
 }
 
 /// Decrypt a SPORE\x03 envelope. Returns the plaintext on success, Err on
 /// ANY misuse (wrong key, tampered ct, tampered tag, truncated, bad magic).
-pub fn decrypt_envelope(key: &[u8; KEY_LEN], envelope: &[u8], aad: &[u8])
-    -> Result<Vec<u8>, &'static str>
-{
-    if envelope.len() < HEADER_LEN + TAG_LEN { return Err("envelope too short"); }
-    if &envelope[..6] != SPORE_V3_MAGIC { return Err("bad magic"); }
+pub fn decrypt_envelope(key: &[u8; KEY_LEN], envelope: &[u8], aad: &[u8]) -> Result<Vec<u8>, &'static str> {
+    if envelope.len() < HEADER_LEN + TAG_LEN {
+        return Err("envelope too short");
+    }
+    if &envelope[..6] != SPORE_V3_MAGIC {
+        return Err("bad magic");
+    }
     let nonce_bytes: [u8; NONCE_LEN] = envelope[6..18].try_into().unwrap();
     let ct_len = u32::from_le_bytes(envelope[18..22].try_into().unwrap()) as usize;
     let expected_end = HEADER_LEN + ct_len + TAG_LEN;
-    if envelope.len() < expected_end { return Err("envelope truncated"); }
+    if envelope.len() < expected_end {
+        return Err("envelope truncated");
+    }
     let ct_and_tag = &envelope[HEADER_LEN..expected_end];
     let cipher = ChaCha20Poly1305::new(Key::from_slice(key));
     let nonce = Nonce::from_slice(&nonce_bytes);
-    cipher.decrypt(nonce, Payload { msg: ct_and_tag, aad })
-        .map_err(|_| "auth failed")
+    cipher.decrypt(nonce, Payload { msg: ct_and_tag, aad }).map_err(|_| "auth failed")
 }
 
 // ───────── ECDH (X25519) + HKDF-SHA256 for forward-secret envelopes ─────────
@@ -356,15 +376,12 @@ pub fn x25519_generate_keypair() -> ([u8; 32], [u8; 32]) {
 
 /// Compute the X25519 public key from a private key (for loading stored keys).
 pub fn x25519_pub_from_priv(priv_key: &[u8; 32]) -> Result<[u8; 32], &'static str> {
-    let sk = ed25519_compact::x25519::SecretKey::from_slice(priv_key)
-        .map_err(|_| "invalid priv key")?;
+    let sk = ed25519_compact::x25519::SecretKey::from_slice(priv_key).map_err(|_| "invalid priv key")?;
     let pk = sk.recover_public_key().map_err(|_| "pubkey recovery failed")?;
     slice_to_32(pk.as_ref())
 }
 
-fn derive_session_key(psk: &[u8; KEY_LEN], dh_shared: &[u8; 32], eph_pub: &[u8; 32])
-    -> [u8; KEY_LEN]
-{
+fn derive_session_key(psk: &[u8; KEY_LEN], dh_shared: &[u8; 32], eph_pub: &[u8; 32]) -> [u8; KEY_LEN] {
     let mut ikm = Vec::with_capacity(KEY_LEN + 32);
     ikm.extend_from_slice(psk);
     ikm.extend_from_slice(dh_shared);
@@ -399,19 +416,15 @@ pub fn encrypt_envelope_v4_with_material(
     // Recover eph_pub from eph_priv so the caller only supplies the secret.
     let eph_pub = x25519_pub_from_priv(eph_priv)?;
     // DH with recipient's long-term pub.
-    let rcp_pk = ed25519_compact::x25519::PublicKey::from_slice(recipient_pub)
-        .map_err(|_| "bad recipient pubkey")?;
-    let eph_sk = ed25519_compact::x25519::SecretKey::from_slice(eph_priv)
-        .map_err(|_| "eph sk malformed")?;
+    let rcp_pk = ed25519_compact::x25519::PublicKey::from_slice(recipient_pub).map_err(|_| "bad recipient pubkey")?;
+    let eph_sk = ed25519_compact::x25519::SecretKey::from_slice(eph_priv).map_err(|_| "eph sk malformed")?;
     let dh = rcp_pk.dh(&eph_sk).map_err(|_| "dh failed")?;
     let dh_bytes = slice_to_32(dh.as_ref())?;
     // HKDF → session key.
     let session_key = derive_session_key(psk, &dh_bytes, &eph_pub);
     // ChaCha20-Poly1305 with caller-supplied nonce.
     let cipher = ChaCha20Poly1305::new(Key::from_slice(&session_key));
-    let ct = cipher.encrypt(Nonce::from_slice(nonce_bytes),
-        Payload { msg: plaintext, aad })
-        .map_err(|_| "v4 encrypt failed")?;
+    let ct = cipher.encrypt(Nonce::from_slice(nonce_bytes), Payload { msg: plaintext, aad }).map_err(|_| "v4 encrypt failed")?;
     let ct_len = ct.len().saturating_sub(TAG_LEN);
     // Assemble envelope.
     let mut env = Vec::with_capacity(V4_HEADER_LEN + ct.len());
@@ -432,42 +445,35 @@ pub fn encrypt_envelope_v4_with_material(
 /// On MCU targets without `os_random`, use `encrypt_envelope_v4_with_material`
 /// and supply your own fresh ephemeral key + nonce.
 #[cfg(feature = "os_random")]
-pub fn encrypt_envelope_v4(
-    psk: &[u8; KEY_LEN],
-    recipient_pub: &[u8; 32],
-    plaintext: &[u8],
-    aad: &[u8],
-) -> Result<Vec<u8>, &'static str> {
+pub fn encrypt_envelope_v4(psk: &[u8; KEY_LEN], recipient_pub: &[u8; 32], plaintext: &[u8], aad: &[u8]) -> Result<Vec<u8>, &'static str> {
     let (eph_priv, _eph_pub) = x25519_generate_keypair();
     let nonce_bytes = random_nonce();
     encrypt_envelope_v4_with_material(psk, recipient_pub, &eph_priv, &nonce_bytes, plaintext, aad)
 }
 
 /// Decrypt a v4 envelope using PSK + receiver's long-term X25519 private key.
-pub fn decrypt_envelope_v4(
-    psk: &[u8; KEY_LEN],
-    recipient_priv: &[u8; 32],
-    envelope: &[u8],
-    aad: &[u8],
-) -> Result<Vec<u8>, &'static str> {
-    if envelope.len() < V4_HEADER_LEN + TAG_LEN { return Err("v4 envelope too short"); }
-    if &envelope[..6] != SPORE_V4_MAGIC { return Err("bad v4 magic"); }
+pub fn decrypt_envelope_v4(psk: &[u8; KEY_LEN], recipient_priv: &[u8; 32], envelope: &[u8], aad: &[u8]) -> Result<Vec<u8>, &'static str> {
+    if envelope.len() < V4_HEADER_LEN + TAG_LEN {
+        return Err("v4 envelope too short");
+    }
+    if &envelope[..6] != SPORE_V4_MAGIC {
+        return Err("bad v4 magic");
+    }
     let eph_pub: [u8; 32] = envelope[6..38].try_into().unwrap();
     let nonce_bytes: [u8; NONCE_LEN] = envelope[38..50].try_into().unwrap();
     let ct_len = u32::from_le_bytes(envelope[50..54].try_into().unwrap()) as usize;
     let end = V4_HEADER_LEN + ct_len + TAG_LEN;
-    if envelope.len() < end { return Err("v4 envelope truncated"); }
+    if envelope.len() < end {
+        return Err("v4 envelope truncated");
+    }
     let ct_and_tag = &envelope[V4_HEADER_LEN..end];
-    let rcp_sk = ed25519_compact::x25519::SecretKey::from_slice(recipient_priv)
-        .map_err(|_| "bad recipient privkey")?;
-    let eph_pk = ed25519_compact::x25519::PublicKey::from_slice(&eph_pub)
-        .map_err(|_| "bad eph pubkey")?;
+    let rcp_sk = ed25519_compact::x25519::SecretKey::from_slice(recipient_priv).map_err(|_| "bad recipient privkey")?;
+    let eph_pk = ed25519_compact::x25519::PublicKey::from_slice(&eph_pub).map_err(|_| "bad eph pubkey")?;
     let dh = eph_pk.dh(&rcp_sk).map_err(|_| "dh failed")?;
     let dh_bytes = slice_to_32(dh.as_ref())?;
     let session_key = derive_session_key(psk, &dh_bytes, &eph_pub);
     let cipher = ChaCha20Poly1305::new(Key::from_slice(&session_key));
-    cipher.decrypt(Nonce::from_slice(&nonce_bytes), Payload { msg: ct_and_tag, aad })
-        .map_err(|_| "v4 auth failed")
+    cipher.decrypt(Nonce::from_slice(&nonce_bytes), Payload { msg: ct_and_tag, aad }).map_err(|_| "v4 auth failed")
 }
 
 // ───────── Revocation list (operator-signed, Ed25519) ─────────
@@ -501,14 +507,16 @@ pub const REV_SIGNATURE_LEN: usize = 64; // Ed25519 signature
 #[derive(Debug, Clone, Default)]
 pub struct RevocationList {
     entries: Vec<(
-        [u8; SENDER_FP_LEN],  // fingerprint
-        u64,                   // revoked_at_unix_secs
+        [u8; SENDER_FP_LEN], // fingerprint
+        u64,                 // revoked_at_unix_secs
     )>,
     index: HashSet<[u8; SENDER_FP_LEN]>,
 }
 
 impl RevocationList {
-    pub fn new() -> Self { Self::default() }
+    pub fn new() -> Self {
+        Self::default()
+    }
 
     /// Add a revocation entry. Returns false if already revoked.
     pub fn revoke(&mut self, fp: [u8; SENDER_FP_LEN], revoked_at: u64) -> bool {
@@ -524,8 +532,12 @@ impl RevocationList {
         self.index.contains(fp)
     }
 
-    pub fn len(&self) -> usize { self.entries.len() }
-    pub fn is_empty(&self) -> bool { self.entries.is_empty() }
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
 
     /// Iterate every (fp, revoked_at_unix_secs) entry in insertion order.
     /// Added 2026-05-10 to fix the O(N²) access pattern flagged in the
@@ -560,8 +572,7 @@ impl RevocationList {
             buf.extend_from_slice(&ts.to_le_bytes());
         }
         // Sign
-        let seed = ed25519_compact::Seed::from_slice(op_ed25519_seed)
-            .map_err(|_| "bad op seed")?;
+        let seed = ed25519_compact::Seed::from_slice(op_ed25519_seed).map_err(|_| "bad op seed")?;
         let kp = ed25519_compact::KeyPair::from_seed(seed);
         let sig = kp.sk.sign(&buf, None);
         buf.extend_from_slice(sig.as_ref());
@@ -576,39 +587,43 @@ impl RevocationList {
     /// `RevocationList::parse_and_verify_with_cap`.
     pub const DEFAULT_MAX_ENTRIES: usize = 10_000;
 
-    pub fn parse_and_verify(data: &[u8], op_ed25519_pub: &[u8; 32])
-        -> Result<RevocationList, &'static str>
-    {
+    pub fn parse_and_verify(data: &[u8], op_ed25519_pub: &[u8; 32]) -> Result<RevocationList, &'static str> {
         Self::parse_and_verify_with_cap(data, op_ed25519_pub, Self::DEFAULT_MAX_ENTRIES)
     }
 
     /// As `parse_and_verify`, but with an explicit cap on entry count.
     /// Rejects oversized lists BEFORE signature verification (to avoid DoS
     /// where attacker forces thousands of HMAC rounds on oversized payload).
-    pub fn parse_and_verify_with_cap(data: &[u8], op_ed25519_pub: &[u8; 32], max_entries: usize)
-        -> Result<RevocationList, &'static str>
-    {
-        if data.len() < 6 + 1 + 2 + REV_SIGNATURE_LEN { return Err("too short"); }
-        if &data[..6] != REV_MAGIC { return Err("bad magic"); }
-        if data[6] != REV_VERSION { return Err("bad version"); }
+    pub fn parse_and_verify_with_cap(data: &[u8], op_ed25519_pub: &[u8; 32], max_entries: usize) -> Result<RevocationList, &'static str> {
+        if data.len() < 6 + 1 + 2 + REV_SIGNATURE_LEN {
+            return Err("too short");
+        }
+        if &data[..6] != REV_MAGIC {
+            return Err("bad magic");
+        }
+        if data[6] != REV_VERSION {
+            return Err("bad version");
+        }
         let count = u16::from_le_bytes([data[7], data[8]]) as usize;
-        if count > max_entries { return Err("revocation list exceeds max entries cap"); }
+        if count > max_entries {
+            return Err("revocation list exceeds max entries cap");
+        }
         let body_end = 9 + count * REV_ENTRY_LEN;
-        if data.len() < body_end + REV_SIGNATURE_LEN { return Err("truncated"); }
+        if data.len() < body_end + REV_SIGNATURE_LEN {
+            return Err("truncated");
+        }
         let body = &data[..body_end];
         let sig_bytes = &data[body_end..body_end + REV_SIGNATURE_LEN];
         // Verify
-        let pk = ed25519_compact::PublicKey::from_slice(op_ed25519_pub)
-            .map_err(|_| "bad op pubkey")?;
-        let sig = ed25519_compact::Signature::from_slice(sig_bytes)
-            .map_err(|_| "bad sig bytes")?;
+        let pk = ed25519_compact::PublicKey::from_slice(op_ed25519_pub).map_err(|_| "bad op pubkey")?;
+        let sig = ed25519_compact::Signature::from_slice(sig_bytes).map_err(|_| "bad sig bytes")?;
         pk.verify(body, &sig).map_err(|_| "signature invalid")?;
         // Parse entries
         let mut rl = RevocationList::new();
         for i in 0..count {
             let off = 9 + i * REV_ENTRY_LEN;
-            let fp: [u8; SENDER_FP_LEN] = data[off..off+SENDER_FP_LEN].try_into().unwrap();
-            let ts = u64::from_le_bytes(data[off+SENDER_FP_LEN..off+REV_ENTRY_LEN].try_into().unwrap());
+            let fp: [u8; SENDER_FP_LEN] = data[off..off + SENDER_FP_LEN].try_into().unwrap();
+            let ts = u64::from_le_bytes(data[off + SENDER_FP_LEN..off + REV_ENTRY_LEN].try_into().unwrap());
             rl.revoke(fp, ts);
         }
         Ok(rl)
@@ -650,19 +665,19 @@ pub fn wrap_revocation_envelope(signed_oasrev_blob: &[u8]) -> Vec<u8> {
 
 /// Extract the inner OASREV blob from a SPORE\x06 envelope.
 pub fn parse_revocation_envelope(envelope: &[u8]) -> Result<&[u8], &'static str> {
-    if envelope.len() < 6 + 9 { return Err("v6 envelope too short"); }
-    if &envelope[..6] != SPORE_V6_MAGIC { return Err("bad v6 magic"); }
+    if envelope.len() < 6 + 9 {
+        return Err("v6 envelope too short");
+    }
+    if &envelope[..6] != SPORE_V6_MAGIC {
+        return Err("bad v6 magic");
+    }
     Ok(&envelope[6..])
 }
 
 /// Merge an incoming signed revocation list into a local one.
 /// Verifies the inner signature with the operator's Ed25519 public key,
 /// then unions entries. Returns (total_after_merge, newly_added_count).
-pub fn merge_revocation_envelope(
-    local: &mut RevocationList,
-    envelope: &[u8],
-    op_ed25519_pub: &[u8; 32],
-) -> Result<(usize, usize), &'static str> {
+pub fn merge_revocation_envelope(local: &mut RevocationList, envelope: &[u8], op_ed25519_pub: &[u8; 32]) -> Result<(usize, usize), &'static str> {
     let blob = parse_revocation_envelope(envelope)?;
     let incoming = RevocationList::parse_and_verify(blob, op_ed25519_pub)?;
     let before = local.len();
@@ -676,20 +691,15 @@ pub fn merge_revocation_envelope(
 /// Save a revocation list to disk. On reboot, drones re-load it via
 /// `load_revocation_file` and merge any newly-received SPORE\x06 envelopes.
 #[cfg(feature = "std")]
-pub fn save_revocation_file(list: &RevocationList, path: &str, op_ed25519_seed: &[u8; 32])
-    -> std::io::Result<()>
-{
-    let signed = list.serialize_signed(op_ed25519_seed)
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))?;
+pub fn save_revocation_file(list: &RevocationList, path: &str, op_ed25519_seed: &[u8; 32]) -> std::io::Result<()> {
+    let signed = list.serialize_signed(op_ed25519_seed).map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))?;
     let tmp = format!("{}.tmp", path);
     std::fs::write(&tmp, &signed)?;
     std::fs::rename(&tmp, path)
 }
 
 #[cfg(feature = "std")]
-pub fn load_revocation_file(path: &str, op_ed25519_pub: &[u8; 32])
-    -> Result<RevocationList, &'static str>
-{
+pub fn load_revocation_file(path: &str, op_ed25519_pub: &[u8; 32]) -> Result<RevocationList, &'static str> {
     let data = std::fs::read(path).map_err(|_| "read failed")?;
     RevocationList::parse_and_verify(&data, op_ed25519_pub)
 }
@@ -735,13 +745,7 @@ pub fn sender_fingerprint(sender_static_pub: &[u8; 32]) -> [u8; SENDER_FP_LEN] {
     fp
 }
 
-fn derive_session_key_v5(
-    psk: &[u8; KEY_LEN],
-    dh_es: &[u8; 32],
-    dh_ss: &[u8; 32],
-    eph_pub: &[u8; 32],
-    sender_static_pub: &[u8; 32],
-) -> [u8; KEY_LEN] {
+fn derive_session_key_v5(psk: &[u8; KEY_LEN], dh_es: &[u8; 32], dh_ss: &[u8; 32], eph_pub: &[u8; 32], sender_static_pub: &[u8; 32]) -> [u8; KEY_LEN] {
     let mut ikm = Vec::with_capacity(KEY_LEN + 32 + 32);
     ikm.extend_from_slice(psk);
     ikm.extend_from_slice(dh_es);
@@ -754,10 +758,8 @@ fn derive_session_key_v5(
 }
 
 fn x25519_dh(own_priv: &[u8; 32], peer_pub: &[u8; 32]) -> Result<[u8; 32], &'static str> {
-    let sk = ed25519_compact::x25519::SecretKey::from_slice(own_priv)
-        .map_err(|_| "bad priv key")?;
-    let pk = ed25519_compact::x25519::PublicKey::from_slice(peer_pub)
-        .map_err(|_| "bad pub key")?;
+    let sk = ed25519_compact::x25519::SecretKey::from_slice(own_priv).map_err(|_| "bad priv key")?;
+    let pk = ed25519_compact::x25519::PublicKey::from_slice(peer_pub).map_err(|_| "bad pub key")?;
     let dh = pk.dh(&sk).map_err(|_| "dh failed")?;
     slice_to_32(dh.as_ref())
 }
@@ -792,9 +794,7 @@ pub fn encrypt_envelope_v5_with_material(
     let session_key = derive_session_key_v5(psk, &dh_es, &dh_ss, &eph_pub, sender_static_pub);
     let fp = sender_fingerprint(sender_static_pub);
     let cipher = ChaCha20Poly1305::new(Key::from_slice(&session_key));
-    let ct = cipher.encrypt(Nonce::from_slice(nonce_bytes),
-        Payload { msg: plaintext, aad })
-        .map_err(|_| "v5 encrypt failed")?;
+    let ct = cipher.encrypt(Nonce::from_slice(nonce_bytes), Payload { msg: plaintext, aad }).map_err(|_| "v5 encrypt failed")?;
     let ct_len = ct.len().saturating_sub(TAG_LEN);
     let mut env = Vec::with_capacity(V5_HEADER_LEN + ct.len());
     env.extend_from_slice(SPORE_V5_MAGIC);
@@ -821,31 +821,30 @@ pub fn encrypt_envelope_v5(
 ) -> Result<Vec<u8>, &'static str> {
     let (eph_priv, _eph_pub) = x25519_generate_keypair();
     let nonce_bytes = random_nonce();
-    encrypt_envelope_v5_with_material(
-        sender_static_priv, sender_static_pub, recipient_static_pub,
-        &eph_priv, &nonce_bytes, psk, plaintext, aad,
-    )
+    encrypt_envelope_v5_with_material(sender_static_priv, sender_static_pub, recipient_static_pub, &eph_priv, &nonce_bytes, psk, plaintext, aad)
 }
 
 /// Extract the 8-byte sender fingerprint from a v5 envelope (cheap, no crypto).
 /// Use this to look up the sender's pubkey before calling decrypt_envelope_v5.
 pub fn v5_envelope_sender_fp(envelope: &[u8]) -> Result<[u8; SENDER_FP_LEN], &'static str> {
-    if envelope.len() < 6 + SENDER_FP_LEN { return Err("v5 envelope too short"); }
-    if &envelope[..6] != SPORE_V5_MAGIC { return Err("bad v5 magic"); }
+    if envelope.len() < 6 + SENDER_FP_LEN {
+        return Err("v5 envelope too short");
+    }
+    if &envelope[..6] != SPORE_V5_MAGIC {
+        return Err("bad v5 magic");
+    }
     Ok(envelope[6..14].try_into().unwrap())
 }
 
 /// Decrypt a v5 envelope. Caller must first extract the sender fingerprint via
 /// `v5_envelope_sender_fp` and look up the corresponding sender_static_pub.
-pub fn decrypt_envelope_v5(
-    sender_static_pub: &[u8; 32],
-    recipient_static_priv: &[u8; 32],
-    psk: &[u8; KEY_LEN],
-    envelope: &[u8],
-    aad: &[u8],
-) -> Result<Vec<u8>, &'static str> {
-    if envelope.len() < V5_HEADER_LEN + TAG_LEN { return Err("v5 envelope too short"); }
-    if &envelope[..6] != SPORE_V5_MAGIC { return Err("bad v5 magic"); }
+pub fn decrypt_envelope_v5(sender_static_pub: &[u8; 32], recipient_static_priv: &[u8; 32], psk: &[u8; KEY_LEN], envelope: &[u8], aad: &[u8]) -> Result<Vec<u8>, &'static str> {
+    if envelope.len() < V5_HEADER_LEN + TAG_LEN {
+        return Err("v5 envelope too short");
+    }
+    if &envelope[..6] != SPORE_V5_MAGIC {
+        return Err("bad v5 magic");
+    }
     // Verify fingerprint matches the claimed sender_static_pub
     let expected_fp = sender_fingerprint(sender_static_pub);
     if envelope[6..14] != expected_fp {
@@ -855,14 +854,15 @@ pub fn decrypt_envelope_v5(
     let nonce_bytes: [u8; NONCE_LEN] = envelope[46..58].try_into().unwrap();
     let ct_len = u32::from_le_bytes(envelope[58..62].try_into().unwrap()) as usize;
     let end = V5_HEADER_LEN + ct_len + TAG_LEN;
-    if envelope.len() < end { return Err("v5 envelope truncated"); }
+    if envelope.len() < end {
+        return Err("v5 envelope truncated");
+    }
     let ct_and_tag = &envelope[V5_HEADER_LEN..end];
     let dh_es = x25519_dh(recipient_static_priv, &eph_pub)?;
     let dh_ss = x25519_dh(recipient_static_priv, sender_static_pub)?;
     let session_key = derive_session_key_v5(psk, &dh_es, &dh_ss, &eph_pub, sender_static_pub);
     let cipher = ChaCha20Poly1305::new(Key::from_slice(&session_key));
-    cipher.decrypt(Nonce::from_slice(&nonce_bytes), Payload { msg: ct_and_tag, aad })
-        .map_err(|_| "v5 auth failed")
+    cipher.decrypt(Nonce::from_slice(&nonce_bytes), Payload { msg: ct_and_tag, aad }).map_err(|_| "v5 auth failed")
 }
 
 // ───────── v7: v5 + Monotonic Sender Counter (long-window replay resistance) ─────────
@@ -929,8 +929,8 @@ pub fn encrypt_envelope_v7_with_material(
     full_aad.extend_from_slice(&counter.to_le_bytes());
     full_aad.extend_from_slice(aad);
     let cipher = ChaCha20Poly1305::new(Key::from_slice(&session_key));
-    let ct = cipher.encrypt(Nonce::from_slice(nonce_bytes),
-        Payload { msg: plaintext, aad: &full_aad })
+    let ct = cipher
+        .encrypt(Nonce::from_slice(nonce_bytes), Payload { msg: plaintext, aad: &full_aad })
         .map_err(|_| "v7 encrypt failed")?;
     let ct_len = ct.len().saturating_sub(TAG_LEN);
     let mut env = Vec::with_capacity(V7_HEADER_LEN + ct.len());
@@ -962,19 +962,18 @@ pub fn encrypt_envelope_v7(
 ) -> Result<Vec<u8>, &'static str> {
     let (eph_priv, _eph_pub) = x25519_generate_keypair();
     let nonce_bytes = random_nonce();
-    encrypt_envelope_v7_with_material(
-        sender_static_priv, sender_static_pub, recipient_static_pub,
-        &eph_priv, &nonce_bytes, psk, counter, plaintext, aad,
-    )
+    encrypt_envelope_v7_with_material(sender_static_priv, sender_static_pub, recipient_static_pub, &eph_priv, &nonce_bytes, psk, counter, plaintext, aad)
 }
 
 /// Extract (sender_fp, counter) from a v7 envelope without decrypting.
 /// Use this to consult the CounterTracker before paying the cost of decryption.
-pub fn v7_envelope_header(envelope: &[u8])
-    -> Result<([u8; SENDER_FP_LEN], u64), &'static str>
-{
-    if envelope.len() < V7_HEADER_LEN { return Err("v7 envelope too short"); }
-    if &envelope[..6] != SPORE_V7_MAGIC { return Err("bad v7 magic"); }
+pub fn v7_envelope_header(envelope: &[u8]) -> Result<([u8; SENDER_FP_LEN], u64), &'static str> {
+    if envelope.len() < V7_HEADER_LEN {
+        return Err("v7 envelope too short");
+    }
+    if &envelope[..6] != SPORE_V7_MAGIC {
+        return Err("bad v7 magic");
+    }
     let fp: [u8; SENDER_FP_LEN] = envelope[6..14].try_into().unwrap();
     let counter = u64::from_le_bytes(envelope[14..22].try_into().unwrap());
     Ok((fp, counter))
@@ -982,15 +981,13 @@ pub fn v7_envelope_header(envelope: &[u8])
 
 /// Decrypt a v7 envelope. Counter is included in AAD; receiver validates
 /// (counter > last_seen) via a separate CounterTracker call by the caller.
-pub fn decrypt_envelope_v7(
-    sender_static_pub: &[u8; 32],
-    recipient_static_priv: &[u8; 32],
-    psk: &[u8; KEY_LEN],
-    envelope: &[u8],
-    aad: &[u8],
-) -> Result<(u64, Vec<u8>), &'static str> {
-    if envelope.len() < V7_HEADER_LEN + TAG_LEN { return Err("v7 envelope too short"); }
-    if &envelope[..6] != SPORE_V7_MAGIC { return Err("bad v7 magic"); }
+pub fn decrypt_envelope_v7(sender_static_pub: &[u8; 32], recipient_static_priv: &[u8; 32], psk: &[u8; KEY_LEN], envelope: &[u8], aad: &[u8]) -> Result<(u64, Vec<u8>), &'static str> {
+    if envelope.len() < V7_HEADER_LEN + TAG_LEN {
+        return Err("v7 envelope too short");
+    }
+    if &envelope[..6] != SPORE_V7_MAGIC {
+        return Err("bad v7 magic");
+    }
     let expected_fp = sender_fingerprint(sender_static_pub);
     if envelope[6..14] != expected_fp {
         return Err("sender fp does not match claimed sender pub");
@@ -1000,7 +997,9 @@ pub fn decrypt_envelope_v7(
     let nonce_bytes: [u8; NONCE_LEN] = envelope[54..66].try_into().unwrap();
     let ct_len = u32::from_le_bytes(envelope[66..70].try_into().unwrap()) as usize;
     let end = V7_HEADER_LEN + ct_len + TAG_LEN;
-    if envelope.len() < end { return Err("v7 envelope truncated"); }
+    if envelope.len() < end {
+        return Err("v7 envelope truncated");
+    }
     let ct_and_tag = &envelope[V7_HEADER_LEN..end];
     let dh_es = x25519_dh(recipient_static_priv, &eph_pub)?;
     let dh_ss = x25519_dh(recipient_static_priv, sender_static_pub)?;
@@ -1009,8 +1008,8 @@ pub fn decrypt_envelope_v7(
     full_aad.extend_from_slice(&counter.to_le_bytes());
     full_aad.extend_from_slice(aad);
     let cipher = ChaCha20Poly1305::new(Key::from_slice(&session_key));
-    let pt = cipher.decrypt(Nonce::from_slice(&nonce_bytes),
-        Payload { msg: ct_and_tag, aad: &full_aad })
+    let pt = cipher
+        .decrypt(Nonce::from_slice(&nonce_bytes), Payload { msg: ct_and_tag, aad: &full_aad })
         .map_err(|_| "v7 auth failed")?;
     Ok((counter, pt))
 }
@@ -1096,8 +1095,7 @@ type BTreeMapForTracker<K, V> = alloc::collections::BTreeMap<K, V>;
 impl Default for CounterTracker {
     fn default() -> Self {
         #[cfg(feature = "std_env")]
-        let max = std::env::var("OASIS_COUNTER_TRACKER_MAX")
-            .ok().and_then(|s| s.parse().ok()).unwrap_or(10_000);
+        let max = std::env::var("OASIS_COUNTER_TRACKER_MAX").ok().and_then(|s| s.parse().ok()).unwrap_or(10_000);
         #[cfg(not(feature = "std_env"))]
         let max: usize = 10_000;
         Self::with_capacity(max)
@@ -1105,15 +1103,12 @@ impl Default for CounterTracker {
 }
 
 impl CounterTracker {
-    pub fn new() -> Self { Self::default() }
+    pub fn new() -> Self {
+        Self::default()
+    }
 
     pub fn with_capacity(max_senders: usize) -> Self {
-        Self {
-            senders: HashMapForTracker::new(),
-            lru: BTreeMapForTracker::new(),
-            max_senders: max_senders.max(2),
-            tick: 0,
-        }
+        Self { senders: HashMapForTracker::new(), lru: BTreeMapForTracker::new(), max_senders: max_senders.max(2), tick: 0 }
     }
 
     fn next_tick(&mut self) -> u64 {
@@ -1145,9 +1140,7 @@ impl CounterTracker {
     /// - bit already set in window → replay, reject
     /// - else → set bit, accept
     /// On `Err`, tracker state is NOT mutated.
-    pub fn check_and_update(&mut self, fp: [u8; SENDER_FP_LEN], counter: u64)
-        -> Result<(), &'static str>
-    {
+    pub fn check_and_update(&mut self, fp: [u8; SENDER_FP_LEN], counter: u64) -> Result<(), &'static str> {
         // First, do the pre-check WITHOUT mutating state. This way, an Err
         // return leaves the tracker unchanged — no LRU eviction triggered by
         // what turns out to be a replay.
@@ -1171,9 +1164,7 @@ impl CounterTracker {
         // Grab the old tick so we can remove it from the LRU index before re-inserting
         let old_tick = self.senders.get(&fp).map(|s| s.last_access_ticks);
         let new_tick = self.touch(fp, old_tick);
-        let s = self.senders.entry(fp).or_insert(SenderState {
-            highest: 0, bitmap: [0, 0], last_access_ticks: new_tick,
-        });
+        let s = self.senders.entry(fp).or_insert(SenderState { highest: 0, bitmap: [0, 0], last_access_ticks: new_tick });
         s.last_access_ticks = new_tick;
         if counter > s.highest {
             let shift = counter - s.highest;
@@ -1193,9 +1184,13 @@ impl CounterTracker {
     /// already set (= a replay of a previously seen counter). Read-only.
     pub fn is_stale(&self, fp: &[u8; SENDER_FP_LEN], counter: u64) -> bool {
         if let Some(s) = self.senders.get(fp) {
-            if counter > s.highest { return false; }
+            if counter > s.highest {
+                return false;
+            }
             let diff = s.highest - counter;
-            if diff >= COUNTER_WINDOW_SIZE as u64 { return true; }
+            if diff >= COUNTER_WINDOW_SIZE as u64 {
+                return true;
+            }
             return s.bit_set(diff as u32);
         }
         false
@@ -1206,7 +1201,9 @@ impl CounterTracker {
         self.senders.get(fp).map(|s| s.highest).unwrap_or(0)
     }
 
-    pub fn known_senders(&self) -> usize { self.senders.len() }
+    pub fn known_senders(&self) -> usize {
+        self.senders.len()
+    }
 
     /// Serialize for persistence. Format v3 (current):
     ///   "CTR\x03" + count(u32 LE) + N × (fp[8] + highest[8] + bitmap_lo[8] + bitmap_hi[8])
@@ -1230,8 +1227,12 @@ impl CounterTracker {
     ///   v2 (CTR\x02): fp + highest + bitmap[8] — high word zeroed
     ///   v3 (CTR\x03): fp + highest + bitmap[16] — 128-bit window (current)
     pub fn from_bytes(data: &[u8]) -> Result<Self, &'static str> {
-        if data.len() < 8 { return Err("too short"); }
-        if &data[..3] != b"CTR" { return Err("bad magic"); }
+        if data.len() < 8 {
+            return Err("too short");
+        }
+        if &data[..3] != b"CTR" {
+            return Err("bad magic");
+        }
         let version = data[3];
         let entry_len = match version {
             0x01 => 16, // fp(8) + counter(8)
@@ -1241,28 +1242,22 @@ impl CounterTracker {
         };
         let count = u32::from_le_bytes(data[4..8].try_into().unwrap()) as usize;
         let expected_len = 8 + count * entry_len;
-        if data.len() < expected_len { return Err("truncated"); }
+        if data.len() < expected_len {
+            return Err("truncated");
+        }
         let mut t = CounterTracker::new();
         for i in 0..count {
             let off = 8 + i * entry_len;
-            let fp: [u8; SENDER_FP_LEN] = data[off..off+SENDER_FP_LEN].try_into().unwrap();
-            let highest = u64::from_le_bytes(data[off+8..off+16].try_into().unwrap());
+            let fp: [u8; SENDER_FP_LEN] = data[off..off + SENDER_FP_LEN].try_into().unwrap();
+            let highest = u64::from_le_bytes(data[off + 8..off + 16].try_into().unwrap());
             let bitmap: [u64; 2] = match version {
                 0x01 => [1, 0], // bit 0 set = highest seen
-                0x02 => [
-                    u64::from_le_bytes(data[off+16..off+24].try_into().unwrap()),
-                    0,
-                ],
-                0x03 => [
-                    u64::from_le_bytes(data[off+16..off+24].try_into().unwrap()),
-                    u64::from_le_bytes(data[off+24..off+32].try_into().unwrap()),
-                ],
+                0x02 => [u64::from_le_bytes(data[off + 16..off + 24].try_into().unwrap()), 0],
+                0x03 => [u64::from_le_bytes(data[off + 16..off + 24].try_into().unwrap()), u64::from_le_bytes(data[off + 24..off + 32].try_into().unwrap())],
                 _ => unreachable!(),
             };
             let tick = t.next_tick();
-            t.senders.insert(fp, SenderState {
-                highest, bitmap, last_access_ticks: tick,
-            });
+            t.senders.insert(fp, SenderState { highest, bitmap, last_access_ticks: tick });
             t.lru.insert(tick, fp);
         }
         Ok(t)
@@ -1294,15 +1289,16 @@ pub fn decrypt_envelope_v7_checked(
     revocation: &RevocationList,
 ) -> Result<Vec<u8>, &'static str> {
     let (fp, counter) = v7_envelope_header(envelope)?;
-    if revocation.is_revoked(&fp) { return Err("revoked"); }
+    if revocation.is_revoked(&fp) {
+        return Err("revoked");
+    }
     // Pre-decrypt cheap reject: unambiguously stale counter (outside window
     // OR bit already set in window). Legitimate UDP reordering within the
     // 64-bit window still passes here.
     if tracker.is_stale(&fp, counter) {
         return Err("counter rejected by sliding window (stale or replay)");
     }
-    let (got_counter, pt) = decrypt_envelope_v7(
-        sender_static_pub, recipient_static_priv, psk, envelope, aad)?;
+    let (got_counter, pt) = decrypt_envelope_v7(sender_static_pub, recipient_static_priv, psk, envelope, aad)?;
     // Post-decrypt: the counter in AAD is authenticated, so got_counter == envelope_counter.
     // Commit to the tracker only AFTER decryption succeeds (avoid state updates on garbage).
     tracker.check_and_update(fp, got_counter)?;
@@ -1338,11 +1334,13 @@ mod tests {
         for _ in 0..100 {
             let n = random_nonce();
             assert!(seen.insert(n), "nonce collision in 100 calls — RNG broken");
-            for b in &n { min_byte = min_byte.min(*b); max_byte = max_byte.max(*b); }
+            for b in &n {
+                min_byte = min_byte.min(*b);
+                max_byte = max_byte.max(*b);
+            }
         }
         // With 1200 bytes from OS CSPRNG, essentially impossible to miss full byte range
-        assert!(max_byte - min_byte > 200,
-            "nonce distribution too narrow: min={} max={}", min_byte, max_byte);
+        assert!(max_byte - min_byte > 200, "nonce distribution too narrow: min={} max={}", min_byte, max_byte);
     }
 
     #[test]
@@ -1364,8 +1362,7 @@ mod tests {
         let mut wrong = known_key();
         wrong[0] ^= 0x01;
         let env = encrypt_envelope(&key, b"secret", b"").unwrap();
-        assert!(decrypt_envelope(&wrong, &env, b"").is_err(),
-            "decrypt with wrong key MUST fail");
+        assert!(decrypt_envelope(&wrong, &env, b"").is_err(), "decrypt with wrong key MUST fail");
     }
 
     #[test]
@@ -1458,8 +1455,7 @@ mod tests {
         let e_auto = encrypt_envelope(&key, pt, b"").unwrap();
         let nonce = envelope_nonce(&e_auto).unwrap();
         let e_manual = encrypt_envelope_with_nonce(&key, &nonce, pt, b"").unwrap();
-        assert_eq!(e_auto, e_manual,
-            "same (key, nonce, pt, aad) must yield identical envelopes via either API");
+        assert_eq!(e_auto, e_manual, "same (key, nonce, pt, aad) must yield identical envelopes via either API");
     }
 
     #[test]
@@ -1512,8 +1508,7 @@ mod tests {
         // 5th nonce evicts the oldest ([0;N])
         rw.check_and_insert(&[99; NONCE_LEN]).unwrap();
         // Old nonce now outside window — can be re-accepted
-        assert!(rw.check_and_insert(&[0; NONCE_LEN]).is_ok(),
-            "evicted nonce should be accepted again (documented limitation)");
+        assert!(rw.check_and_insert(&[0; NONCE_LEN]).is_ok(), "evicted nonce should be accepted again (documented limitation)");
     }
 
     #[test]
@@ -1539,8 +1534,7 @@ mod tests {
         // Clone-on-check to keep rw2 as source of truth; check_and_insert needs &mut
         for i in 0..5u8 {
             let mut probe = ReplayWindow::from_bytes(&bytes).unwrap();
-            assert!(probe.check_and_insert(&[i; NONCE_LEN]).is_err(),
-                "nonce {} must be recognized as seen after reload", i);
+            assert!(probe.check_and_insert(&[i; NONCE_LEN]).is_err(), "nonce {} must be recognized as seen after reload", i);
         }
         // Fresh nonce still accepted
         let mut probe = ReplayWindow::from_bytes(&bytes).unwrap();
@@ -1549,9 +1543,7 @@ mod tests {
 
     #[test]
     fn replay_window_file_persistence() {
-        let path = std::env::temp_dir().join(format!("oasis_replay_test_{}.bin",
-            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
-                .unwrap().as_nanos()));
+        let path = std::env::temp_dir().join(format!("oasis_replay_test_{}.bin", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
         let path_s = path.to_string_lossy().to_string();
 
         let mut rw = ReplayWindow::new(16);
@@ -1588,9 +1580,7 @@ mod tests {
     fn replay_persistence_survives_restart_attack() {
         // Scenario: drone receives msg with nonce N. Drone restarts. Attacker
         // replays msg. Without persistence: accepted. With persistence: rejected.
-        let path = std::env::temp_dir().join(format!("oasis_restart_test_{}.bin",
-            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
-                .unwrap().as_nanos()));
+        let path = std::env::temp_dir().join(format!("oasis_restart_test_{}.bin", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
         let path_s = path.to_string_lossy().to_string();
 
         // First run
@@ -1603,9 +1593,7 @@ mod tests {
         // Restart: load from disk
         let mut rw_after_restart = ReplayWindow::load_from_file(&path_s).unwrap();
         // Attacker replays
-        assert_eq!(rw_after_restart.check_and_insert(&attacker_nonce).unwrap_err(),
-            "replay detected",
-            "persistence must prevent restart-window replay");
+        assert_eq!(rw_after_restart.check_and_insert(&attacker_nonce).unwrap_err(), "replay detected", "persistence must prevent restart-window replay");
 
         let _ = std::fs::remove_file(&path_s);
     }
@@ -1624,8 +1612,7 @@ mod tests {
         assert_eq!(pt, b"sensor reading");
 
         // Replay: same bytes arrive again. Replay window rejects BEFORE decrypt.
-        assert!(rw.check_and_insert(&nonce).is_err(),
-            "replay must be detected");
+        assert!(rw.check_and_insert(&nonce).is_err(), "replay must be detected");
     }
 
     // ───── X25519 ECDH (v4) tests ────────────────────────────────
@@ -1681,8 +1668,7 @@ mod tests {
         let env = encrypt_envelope_v4(&psk, &rcp_pub, b"x", b"").unwrap();
         let mut wrong_psk = psk;
         wrong_psk[0] ^= 0x01;
-        assert!(decrypt_envelope_v4(&wrong_psk, &rcp_priv, &env, b"").is_err(),
-            "wrong PSK must fail (PSK is mixed into session key)");
+        assert!(decrypt_envelope_v4(&wrong_psk, &rcp_priv, &env, b"").is_err(), "wrong PSK must fail (PSK is mixed into session key)");
     }
 
     #[test]
@@ -1691,8 +1677,7 @@ mod tests {
         let (other_priv, _) = x25519_generate_keypair();
         let psk = known_key();
         let env = encrypt_envelope_v4(&psk, &rcp_pub, b"x", b"").unwrap();
-        assert!(decrypt_envelope_v4(&psk, &other_priv, &env, b"").is_err(),
-            "wrong recipient priv must fail");
+        assert!(decrypt_envelope_v4(&psk, &other_priv, &env, b"").is_err(), "wrong recipient priv must fail");
     }
 
     #[test]
@@ -1720,8 +1705,7 @@ mod tests {
 
         // Adversary has ONLY PSK (rcp_priv assumed kept offline). No decrypt.
         let (_wrong_priv, _) = x25519_generate_keypair();
-        assert!(decrypt_envelope_v4(&psk, &_wrong_priv, &old_ciphertext, b"").is_err(),
-            "PSK alone must not decrypt — forward secrecy property");
+        assert!(decrypt_envelope_v4(&psk, &_wrong_priv, &old_ciphertext, b"").is_err(), "PSK alone must not decrypt — forward secrecy property");
 
         // With recipient priv, can decrypt. This demonstrates that an attacker
         // who steals BOTH PSK + long-term priv reads ALL traffic for which they
@@ -1739,8 +1723,7 @@ mod tests {
         let (eph_priv, _) = x25519_generate_keypair();
         let nonce = [0x42u8; 12];
         let pt = b"payload from MCU without OS RNG";
-        let env = encrypt_envelope_v4_with_material(
-            &psk, &rcp_pub, &eph_priv, &nonce, pt, b"").unwrap();
+        let env = encrypt_envelope_v4_with_material(&psk, &rcp_pub, &eph_priv, &nonce, pt, b"").unwrap();
         let got = decrypt_envelope_v4(&psk, &rcp_priv, &env, b"").unwrap();
         assert_eq!(got, pt);
     }
@@ -1754,10 +1737,8 @@ mod tests {
         let (eph_priv, _) = x25519_generate_keypair();
         let nonce = [1u8; 12];
         let pt = b"deterministic";
-        let a = encrypt_envelope_v4_with_material(
-            &psk, &rcp_pub, &eph_priv, &nonce, pt, b"").unwrap();
-        let b = encrypt_envelope_v4_with_material(
-            &psk, &rcp_pub, &eph_priv, &nonce, pt, b"").unwrap();
+        let a = encrypt_envelope_v4_with_material(&psk, &rcp_pub, &eph_priv, &nonce, pt, b"").unwrap();
+        let b = encrypt_envelope_v4_with_material(&psk, &rcp_pub, &eph_priv, &nonce, pt, b"").unwrap();
         assert_eq!(a, b);
     }
 
@@ -1771,12 +1752,10 @@ mod tests {
         let (_, rcp_pub) = x25519_generate_keypair();
         let nonce = [7u8; 12];
         let pt = b"xyz";
-        let env_material = encrypt_envelope_v4_with_material(
-            &psk, &rcp_pub, &eph_priv, &nonce, pt, b"").unwrap();
+        let env_material = encrypt_envelope_v4_with_material(&psk, &rcp_pub, &eph_priv, &nonce, pt, b"").unwrap();
         // Envelope layout: magic(6) || eph_pub(32) || nonce(12) || len(4) || ct
         let eph_pub_from_env: [u8; 32] = env_material[6..38].try_into().unwrap();
-        assert_eq!(eph_pub_from_env, eph_pub_auto,
-            "eph_pub recovered from priv matches generator output");
+        assert_eq!(eph_pub_from_env, eph_pub_auto, "eph_pub recovered from priv matches generator output");
     }
 
     #[test]
@@ -1788,10 +1767,8 @@ mod tests {
         let (e2, _) = x25519_generate_keypair();
         let nonce = [0u8; 12];
         let pt = b"same plaintext";
-        let env1 = encrypt_envelope_v4_with_material(
-            &psk, &rcp_pub, &e1, &nonce, pt, b"").unwrap();
-        let env2 = encrypt_envelope_v4_with_material(
-            &psk, &rcp_pub, &e2, &nonce, pt, b"").unwrap();
+        let env1 = encrypt_envelope_v4_with_material(&psk, &rcp_pub, &e1, &nonce, pt, b"").unwrap();
+        let env2 = encrypt_envelope_v4_with_material(&psk, &rcp_pub, &e2, &nonce, pt, b"").unwrap();
         assert_ne!(env1, env2);
     }
 
@@ -1799,13 +1776,14 @@ mod tests {
 
     fn known_ed25519_seed() -> [u8; 32] {
         let mut seed = [0u8; 32];
-        for (i, b) in seed.iter_mut().enumerate() { *b = (i * 7 + 13) as u8; }
+        for (i, b) in seed.iter_mut().enumerate() {
+            *b = (i * 7 + 13) as u8;
+        }
         seed
     }
 
     fn ed25519_pub_from_seed(seed: &[u8; 32]) -> [u8; 32] {
-        let kp = ed25519_compact::KeyPair::from_seed(
-            ed25519_compact::Seed::from_slice(seed).unwrap());
+        let kp = ed25519_compact::KeyPair::from_seed(ed25519_compact::Seed::from_slice(seed).unwrap());
         let bytes: &[u8] = kp.pk.as_ref();
         bytes.try_into().unwrap()
     }
@@ -1845,8 +1823,7 @@ mod tests {
         let mut signed = rl.serialize_signed(&seed).unwrap();
         // Flip a bit in the fingerprint
         signed[9] ^= 0xFF;
-        assert!(RevocationList::parse_and_verify(&signed, &pub_key).is_err(),
-            "tampered revocation list must be rejected");
+        assert!(RevocationList::parse_and_verify(&signed, &pub_key).is_err(), "tampered revocation list must be rejected");
     }
 
     #[test]
@@ -1858,8 +1835,7 @@ mod tests {
         seed2[0] ^= 0x01;
         let wrong_pub = ed25519_pub_from_seed(&seed2);
         let signed = rl.serialize_signed(&seed1).unwrap();
-        assert!(RevocationList::parse_and_verify(&signed, &wrong_pub).is_err(),
-            "wrong operator pubkey must reject (no impersonation)");
+        assert!(RevocationList::parse_and_verify(&signed, &wrong_pub).is_err(), "wrong operator pubkey must reject (no impersonation)");
     }
 
     #[test]
@@ -1951,15 +1927,15 @@ mod tests {
     #[test]
     fn revocation_envelope_merge_rejects_wrong_operator() {
         let seed = known_ed25519_seed();
-        let mut seed2 = seed; seed2[0] ^= 0x01;
+        let mut seed2 = seed;
+        seed2[0] ^= 0x01;
         let wrong_pub = ed25519_pub_from_seed(&seed2);
         let mut rl = RevocationList::new();
         rl.revoke([0x77; SENDER_FP_LEN], 1700000000);
         let signed = rl.serialize_signed(&seed).unwrap();
         let env = wrap_revocation_envelope(&signed);
         let mut local = RevocationList::new();
-        assert!(merge_revocation_envelope(&mut local, &env, &wrong_pub).is_err(),
-            "revocation signed by wrong operator must be rejected");
+        assert!(merge_revocation_envelope(&mut local, &env, &wrong_pub).is_err(), "revocation signed by wrong operator must be rejected");
         assert_eq!(local.len(), 0, "failed merge must not mutate local list");
     }
 
@@ -1974,15 +1950,15 @@ mod tests {
         let mut local = RevocationList::new();
         let (t1, a1) = merge_revocation_envelope(&mut local, &env, &pub_key).unwrap();
         let (t2, a2) = merge_revocation_envelope(&mut local, &env, &pub_key).unwrap();
-        assert_eq!(t1, 1); assert_eq!(a1, 1);
-        assert_eq!(t2, 1); assert_eq!(a2, 0, "second merge is a no-op");
+        assert_eq!(t1, 1);
+        assert_eq!(a1, 1);
+        assert_eq!(t2, 1);
+        assert_eq!(a2, 0, "second merge is a no-op");
     }
 
     #[test]
     fn revocation_file_roundtrip() {
-        let path = std::env::temp_dir().join(format!("oasis_rev_test_{}.bin",
-            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
-                .unwrap().as_nanos()));
+        let path = std::env::temp_dir().join(format!("oasis_rev_test_{}.bin", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
         let path_s = path.to_string_lossy().to_string();
 
         let seed = known_ed25519_seed();
@@ -2056,8 +2032,7 @@ mod tests {
         let nonce = [0x77u8; 12];
         let counter: u64 = 4711;
         let pt = b"v7 material payload with monotonic counter";
-        let env = encrypt_envelope_v7_with_material(
-            &s_priv, &s_pub, &r_pub, &eph_priv, &nonce, &psk, counter, pt, b"").unwrap();
+        let env = encrypt_envelope_v7_with_material(&s_priv, &s_pub, &r_pub, &eph_priv, &nonce, &psk, counter, pt, b"").unwrap();
         assert!(env.starts_with(SPORE_V7_MAGIC));
         // Header extraction (no crypto) returns the same counter we supplied.
         let (fp, c_in_env) = v7_envelope_header(&env).unwrap();
@@ -2076,12 +2051,10 @@ mod tests {
         let (eph_priv, _) = x25519_generate_keypair();
         let psk = known_key();
         let nonce = [1u8; 12];
-        let mut env = encrypt_envelope_v7_with_material(
-            &s_priv, &s_pub, &r_pub, &eph_priv, &nonce, &psk, 100, b"x", b"").unwrap();
+        let mut env = encrypt_envelope_v7_with_material(&s_priv, &s_pub, &r_pub, &eph_priv, &nonce, &psk, 100, b"x", b"").unwrap();
         // Flip a bit in the counter range (bytes 14..22).
         env[14] ^= 0xFF;
-        assert!(decrypt_envelope_v7(&s_pub, &r_priv, &psk, &env, b"").is_err(),
-            "tampered counter must fail decrypt (AAD authenticated)");
+        assert!(decrypt_envelope_v7(&s_pub, &r_priv, &psk, &env, b"").is_err(), "tampered counter must fail decrypt (AAD authenticated)");
     }
 
     #[test]
@@ -2090,10 +2063,8 @@ mod tests {
         let (eph_priv, _) = x25519_generate_keypair();
         let psk = known_key();
         let nonce = [2u8; 12];
-        let a = encrypt_envelope_v7_with_material(
-            &s_priv, &s_pub, &r_pub, &eph_priv, &nonce, &psk, 7, b"det", b"").unwrap();
-        let b = encrypt_envelope_v7_with_material(
-            &s_priv, &s_pub, &r_pub, &eph_priv, &nonce, &psk, 7, b"det", b"").unwrap();
+        let a = encrypt_envelope_v7_with_material(&s_priv, &s_pub, &r_pub, &eph_priv, &nonce, &psk, 7, b"det", b"").unwrap();
+        let b = encrypt_envelope_v7_with_material(&s_priv, &s_pub, &r_pub, &eph_priv, &nonce, &psk, 7, b"det", b"").unwrap();
         assert_eq!(a, b);
     }
 
@@ -2105,10 +2076,8 @@ mod tests {
         let (eph_priv, _) = x25519_generate_keypair();
         let psk = known_key();
         let nonce = [3u8; 12];
-        let a = encrypt_envelope_v7_with_material(
-            &s_priv, &s_pub, &r_pub, &eph_priv, &nonce, &psk, 1, b"x", b"").unwrap();
-        let b = encrypt_envelope_v7_with_material(
-            &s_priv, &s_pub, &r_pub, &eph_priv, &nonce, &psk, 2, b"x", b"").unwrap();
+        let a = encrypt_envelope_v7_with_material(&s_priv, &s_pub, &r_pub, &eph_priv, &nonce, &psk, 1, b"x", b"").unwrap();
+        let b = encrypt_envelope_v7_with_material(&s_priv, &s_pub, &r_pub, &eph_priv, &nonce, &psk, 2, b"x", b"").unwrap();
         assert_ne!(a, b, "counter change must produce different envelope");
     }
 
@@ -2149,13 +2118,11 @@ mod tests {
         let fp = [0xCE; SENDER_FP_LEN];
         t.check_and_update(fp, 300).unwrap();
         // Counter 100 is 200 positions below highest — WAY outside 128-wide window
-        assert!(t.check_and_update(fp, 100).is_err(),
-            "counter outside 128-bit window must be rejected");
+        assert!(t.check_and_update(fp, 100).is_err(), "counter outside 128-bit window must be rejected");
         // Counter 300-127 = 173 is at window edge — still inside → accept
         assert!(t.check_and_update(fp, 173).is_ok());
         // Counter 300-128 = 172 is just outside
-        assert!(t.check_and_update(fp, 172).is_err(),
-            "counter at window+1 must be rejected");
+        assert!(t.check_and_update(fp, 172).is_err(), "counter at window+1 must be rejected");
     }
 
     #[test]
@@ -2179,11 +2146,11 @@ mod tests {
         assert!(!t.is_stale(&fp, 1), "unknown sender: never stale");
         t.check_and_update(fp, 200).unwrap();
         assert!(!t.is_stale(&fp, 201), "higher: not stale");
-        assert!(t.is_stale(&fp, 200),  "exact replay: stale (bit set)");
+        assert!(t.is_stale(&fp, 200), "exact replay: stale (bit set)");
         assert!(!t.is_stale(&fp, 199), "in-window unseen: NOT stale");
         // Window is 128-bit now. 200-128=72 is just outside.
-        assert!(t.is_stale(&fp, 72),   "outside 128-bit window (200-128): stale");
-        assert!(!t.is_stale(&fp, 73),  "inside 128-bit window (200-127): NOT stale");
+        assert!(t.is_stale(&fp, 72), "outside 128-bit window (200-128): stale");
+        assert!(!t.is_stale(&fp, 73), "inside 128-bit window (200-127): NOT stale");
     }
 
     #[test]
@@ -2194,18 +2161,15 @@ mod tests {
         let fp = [0xAA; SENDER_FP_LEN];
         t.check_and_update(fp, 200).unwrap();
         // Reorder 100 positions back — now accepted
-        assert!(t.check_and_update(fp, 100).is_ok(),
-            "100-position reorder must pass in 128-bit window");
+        assert!(t.check_and_update(fp, 100).is_ok(), "100-position reorder must pass in 128-bit window");
         // But beyond 127 positions still rejected
-        assert!(t.check_and_update(fp, 50).is_err(),
-            "150-position stale is outside window");
+        assert!(t.check_and_update(fp, 50).is_err(), "150-position stale is outside window");
     }
 
     #[test]
     fn counter_tracker_lru_eviction() {
         let mut t = CounterTracker::with_capacity(3);
-        let fps: Vec<[u8; SENDER_FP_LEN]> = (0..5u8)
-            .map(|i| [i; SENDER_FP_LEN]).collect();
+        let fps: Vec<[u8; SENDER_FP_LEN]> = (0..5u8).map(|i| [i; SENDER_FP_LEN]).collect();
         // Fill to capacity
         for i in 0..3 {
             t.check_and_update(fps[i], 1).unwrap();
@@ -2221,9 +2185,7 @@ mod tests {
 
     #[test]
     fn counter_tracker_persistence() {
-        let path = std::env::temp_dir().join(format!("oasis_ctr_test_{}.bin",
-            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
-                .unwrap().as_nanos()));
+        let path = std::env::temp_dir().join(format!("oasis_ctr_test_{}.bin", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
         let path_s = path.to_string_lossy().to_string();
 
         let mut t = CounterTracker::new();
@@ -2235,8 +2197,7 @@ mod tests {
         assert_eq!(loaded.last_seen(&fp), 9999);
         // Replay after restart — rejected
         let mut l2 = loaded;
-        assert!(l2.check_and_update(fp, 9999).is_err(),
-            "persistence must prevent post-restart replay");
+        assert!(l2.check_and_update(fp, 9999).is_err(), "persistence must prevent post-restart replay");
         assert!(l2.check_and_update(fp, 10000).is_ok());
 
         let _ = std::fs::remove_file(&path_s);
@@ -2265,8 +2226,7 @@ mod tests {
         // A window-based scheme would ACCEPT (1 is long past the window).
         // Counter-based v7 MUST reject (1 <= last_seen 9_999_999).
         let err = decrypt_envelope_v7_checked(&s_pub, &r_priv, &psk, &e1, b"", &mut tracker, &rl).unwrap_err();
-        assert!(err.contains("counter") || err.contains("replay"),
-            "ancient replay must be rejected unconditionally, got: {}", err);
+        assert!(err.contains("counter") || err.contains("replay"), "ancient replay must be rejected unconditionally, got: {}", err);
     }
 
     #[test]
@@ -2292,22 +2252,15 @@ mod tests {
         let rl = RevocationList::new();
 
         // Sender emits 1..=5. Receiver sees 1, 3, 5, 2, 4.
-        let envs: Vec<_> = (1u64..=5)
-            .map(|c| encrypt_envelope_v7(&s_priv, &s_pub, &r_pub, &psk, c, b"x", b"").unwrap())
-            .collect();
+        let envs: Vec<_> = (1u64..=5).map(|c| encrypt_envelope_v7(&s_priv, &s_pub, &r_pub, &psk, c, b"x", b"").unwrap()).collect();
         let order = [0usize, 2, 4, 1, 3]; // counter values: 1, 3, 5, 2, 4
         for &i in &order {
-            let _ = decrypt_envelope_v7_checked(
-                &s_pub, &r_priv, &psk, &envs[i], b"", &mut tracker, &rl
-            ).expect("in-window reorder must decrypt");
+            let _ = decrypt_envelope_v7_checked(&s_pub, &r_priv, &psk, &envs[i], b"", &mut tracker, &rl).expect("in-window reorder must decrypt");
         }
         // All 5 counters now marked seen — any exact replay rejected
         for i in 0..5 {
-            let err = decrypt_envelope_v7_checked(
-                &s_pub, &r_priv, &psk, &envs[i], b"", &mut tracker, &rl
-            ).unwrap_err();
-            assert!(err.contains("stale") || err.contains("replay"),
-                "replay of counter {} must fail, got: {}", i + 1, err);
+            let err = decrypt_envelope_v7_checked(&s_pub, &r_priv, &psk, &envs[i], b"", &mut tracker, &rl).unwrap_err();
+            assert!(err.contains("stale") || err.contains("replay"), "replay of counter {} must fail, got: {}", i + 1, err);
         }
     }
 
@@ -2316,19 +2269,19 @@ mod tests {
         // Wrong PSK → decrypt fails. Tracker state MUST remain unchanged.
         let ((s_priv, s_pub), (r_priv, r_pub)) = make_sender_recipient();
         let psk = known_key();
-        let mut wrong_psk = psk; wrong_psk[0] ^= 0xFF;
+        let mut wrong_psk = psk;
+        wrong_psk[0] ^= 0xFF;
         let rl = RevocationList::new();
         let mut tracker = CounterTracker::new();
         let env = encrypt_envelope_v7(&s_priv, &s_pub, &r_pub, &psk, 777, b"y", b"").unwrap();
         assert!(decrypt_envelope_v7_checked(&s_pub, &r_priv, &wrong_psk, &env, b"", &mut tracker, &rl).is_err());
         // Tracker must show last_seen == 0 still
-        assert_eq!(tracker.last_seen(&sender_fingerprint(&s_pub)), 0,
-            "failed decrypt must NOT update tracker (would DoS future messages)");
+        assert_eq!(tracker.last_seen(&sender_fingerprint(&s_pub)), 0, "failed decrypt must NOT update tracker (would DoS future messages)");
     }
 
     // ───── v5: Sender-authenticated envelope tests ─────────────
 
-    fn make_sender_recipient() -> (([u8;32],[u8;32]), ([u8;32],[u8;32])) {
+    fn make_sender_recipient() -> (([u8; 32], [u8; 32]), ([u8; 32], [u8; 32])) {
         let (s_priv, s_pub) = x25519_generate_keypair();
         let (r_priv, r_pub) = x25519_generate_keypair();
         ((s_priv, s_pub), (r_priv, r_pub))
@@ -2340,7 +2293,7 @@ mod tests {
         let (_, pub2) = x25519_generate_keypair();
         let fp1a = sender_fingerprint(&pub1);
         let fp1b = sender_fingerprint(&pub1);
-        let fp2  = sender_fingerprint(&pub2);
+        let fp2 = sender_fingerprint(&pub2);
         assert_eq!(fp1a, fp1b, "same pub → same fingerprint");
         assert_ne!(fp1a, fp2, "different pub → different fingerprint");
     }
@@ -2368,8 +2321,7 @@ mod tests {
         let psk = known_key();
         let nonce = [0x55u8; 12];
         let pt = b"MCU v5 payload with sender auth";
-        let env = encrypt_envelope_v5_with_material(
-            &s_priv, &s_pub, &r_pub, &eph_priv, &nonce, &psk, pt, b"").unwrap();
+        let env = encrypt_envelope_v5_with_material(&s_priv, &s_pub, &r_pub, &eph_priv, &nonce, &psk, pt, b"").unwrap();
         assert!(env.starts_with(SPORE_V5_MAGIC));
         let got = decrypt_envelope_v5(&s_pub, &r_priv, &psk, &env, b"").unwrap();
         assert_eq!(got, pt);
@@ -2387,19 +2339,16 @@ mod tests {
         let nonce = [1u8; 12];
 
         // Real envelope
-        let env_real = encrypt_envelope_v5_with_material(
-            &real_s_priv, &real_s_pub, &r_pub, &eph_priv, &nonce, &psk, b"x", b"").unwrap();
+        let env_real = encrypt_envelope_v5_with_material(&real_s_priv, &real_s_pub, &r_pub, &eph_priv, &nonce, &psk, b"x", b"").unwrap();
 
         // Attacker uses WRONG sender_priv (their own) but claims real_s_pub
-        let env_forged = encrypt_envelope_v5_with_material(
-            &attacker_priv, &real_s_pub, &r_pub, &eph_priv, &nonce, &psk, b"x", b"");
+        let env_forged = encrypt_envelope_v5_with_material(&attacker_priv, &real_s_pub, &r_pub, &eph_priv, &nonce, &psk, b"x", b"");
         assert!(env_forged.is_ok(), "envelope builds (we can't detect wrong priv locally)");
         // But ciphertext bytes differ from real, and more importantly the forged
         // envelope would DECRYPT to garbage because session_key depends on dh_ss
         // = X25519(attacker_priv, r_pub), not X25519(real_s_priv, r_pub).
         // The receiver will see decrypt failure (Poly1305 tag mismatch).
-        assert_ne!(env_real, env_forged.unwrap(),
-            "forged envelope must differ from real — different dh_ss → different session_key");
+        assert_ne!(env_real, env_forged.unwrap(), "forged envelope must differ from real — different dh_ss → different session_key");
     }
 
     #[test]
@@ -2409,10 +2358,8 @@ mod tests {
         let psk = known_key();
         let nonce = [7u8; 12];
         let pt = b"det";
-        let a = encrypt_envelope_v5_with_material(
-            &s_priv, &s_pub, &r_pub, &eph_priv, &nonce, &psk, pt, b"").unwrap();
-        let b = encrypt_envelope_v5_with_material(
-            &s_priv, &s_pub, &r_pub, &eph_priv, &nonce, &psk, pt, b"").unwrap();
+        let a = encrypt_envelope_v5_with_material(&s_priv, &s_pub, &r_pub, &eph_priv, &nonce, &psk, pt, b"").unwrap();
+        let b = encrypt_envelope_v5_with_material(&s_priv, &s_pub, &r_pub, &eph_priv, &nonce, &psk, pt, b"").unwrap();
         assert_eq!(a, b, "same material ⇒ byte-identical envelope");
     }
 
@@ -2427,8 +2374,7 @@ mod tests {
         let psk = known_key();
         let nonce = [0u8; 12];
         let pt = b"auto-path decrypt of material-path envelope";
-        let env = encrypt_envelope_v5_with_material(
-            &s_priv, &s_pub, &r_pub, &eph_priv, &nonce, &psk, pt, b"").unwrap();
+        let env = encrypt_envelope_v5_with_material(&s_priv, &s_pub, &r_pub, &eph_priv, &nonce, &psk, pt, b"").unwrap();
         let fp_in_env = v5_envelope_sender_fp(&env).unwrap();
         assert_eq!(fp_in_env, sender_fingerprint(&s_pub));
         let got = decrypt_envelope_v5(&s_pub, &r_priv, &psk, &env, b"").unwrap();
@@ -2444,9 +2390,7 @@ mod tests {
 
         // Attacker encrypts with THEIR OWN sender keys but tries to impersonate real_sender
         // (they know real_sender_pub is what receiver expects)
-        let attacker_env = encrypt_envelope_v5(
-            &attacker_priv, &attacker_pub, &r_pub, &psk, b"FORGED ORDERS", b""
-        ).unwrap();
+        let attacker_env = encrypt_envelope_v5(&attacker_priv, &attacker_pub, &r_pub, &psk, b"FORGED ORDERS", b"").unwrap();
         // Override fingerprint to look like real sender — a naive attacker might try
         let mut forged = attacker_env.clone();
         let real_fp = sender_fingerprint(&real_sender_pub);
@@ -2454,19 +2398,15 @@ mod tests {
 
         // Receiver tries to decrypt claiming the sender is real_sender
         let err = decrypt_envelope_v5(&real_sender_pub, &r_priv, &psk, &forged, b"").unwrap_err();
-        assert_eq!(err, "v5 auth failed",
-            "attacker WITHOUT real_sender_priv must fail SS DH → auth fail");
+        assert_eq!(err, "v5 auth failed", "attacker WITHOUT real_sender_priv must fail SS DH → auth fail");
 
         // Sanity: if receiver uses attacker_pub as the claimed sender, fingerprint mismatches
         let original_env = attacker_env;
         let err2 = decrypt_envelope_v5(&real_sender_pub, &r_priv, &psk, &original_env, b"").unwrap_err();
-        assert!(err2.contains("fp does not match"),
-            "fingerprint mismatch must be caught cleanly, got: {}", err2);
+        assert!(err2.contains("fp does not match"), "fingerprint mismatch must be caught cleanly, got: {}", err2);
 
         // Real sender still works
-        let real_env = encrypt_envelope_v5(
-            &real_sender_priv, &real_sender_pub, &r_pub, &psk, b"genuine", b""
-        ).unwrap();
+        let real_env = encrypt_envelope_v5(&real_sender_priv, &real_sender_pub, &r_pub, &psk, b"genuine", b"").unwrap();
         let pt = decrypt_envelope_v5(&real_sender_pub, &r_priv, &psk, &real_env, b"").unwrap();
         assert_eq!(pt, b"genuine");
         let _ = (r_priv, r_pub); // suppress unused warnings
@@ -2479,8 +2419,7 @@ mod tests {
         let env = encrypt_envelope_v5(&s_priv, &s_pub, &r_pub, &psk, b"x", b"").unwrap();
         let mut wrong_psk = psk;
         wrong_psk[0] ^= 0x01;
-        assert_eq!(decrypt_envelope_v5(&s_pub, &r_priv, &wrong_psk, &env, b"").unwrap_err(),
-            "v5 auth failed");
+        assert_eq!(decrypt_envelope_v5(&s_pub, &r_priv, &wrong_psk, &env, b"").unwrap_err(), "v5 auth failed");
     }
 
     #[test]
@@ -2489,8 +2428,7 @@ mod tests {
         let (other_priv, _) = x25519_generate_keypair();
         let psk = known_key();
         let env = encrypt_envelope_v5(&s_priv, &s_pub, &r_pub, &psk, b"x", b"").unwrap();
-        assert_eq!(decrypt_envelope_v5(&s_pub, &other_priv, &psk, &env, b"").unwrap_err(),
-            "v5 auth failed");
+        assert_eq!(decrypt_envelope_v5(&s_pub, &other_priv, &psk, &env, b"").unwrap_err(), "v5 auth failed");
     }
 
     #[test]
@@ -2500,8 +2438,7 @@ mod tests {
         let e1 = encrypt_envelope_v5(&s_priv, &s_pub, &r_pub, &psk, b"msg", b"").unwrap();
         let e2 = encrypt_envelope_v5(&s_priv, &s_pub, &r_pub, &psk, b"msg", b"").unwrap();
         // Ephemeral pub is at [14..46]. Must differ across calls.
-        assert_ne!(&e1[14..46], &e2[14..46],
-            "v5 must still rotate ephemeral keys each call");
+        assert_ne!(&e1[14..46], &e2[14..46], "v5 must still rotate ephemeral keys each call");
         // Fingerprint [6..14] is sender-dependent, stable across calls.
         assert_eq!(&e1[6..14], &e2[6..14]);
     }
@@ -2512,8 +2449,7 @@ mod tests {
         let psk = known_key();
         let mut env = encrypt_envelope_v5(&s_priv, &s_pub, &r_pub, &psk, b"x", b"").unwrap();
         env[20] ^= 0xFF; // corrupt ephemeral pub
-        assert_eq!(decrypt_envelope_v5(&s_pub, &r_priv, &psk, &env, b"").unwrap_err(),
-            "v5 auth failed");
+        assert_eq!(decrypt_envelope_v5(&s_pub, &r_priv, &psk, &env, b"").unwrap_err(), "v5 auth failed");
     }
 
     #[test]
@@ -2523,8 +2459,7 @@ mod tests {
         let (r_priv, r_pub) = x25519_generate_keypair();
         let (a_priv, a_pub) = x25519_generate_keypair();
         let (b_priv, b_pub) = x25519_generate_keypair();
-        let mut known: std::collections::HashMap<[u8; SENDER_FP_LEN], [u8; 32]>
-            = std::collections::HashMap::new();
+        let mut known: std::collections::HashMap<[u8; SENDER_FP_LEN], [u8; 32]> = std::collections::HashMap::new();
         known.insert(sender_fingerprint(&a_pub), a_pub);
         known.insert(sender_fingerprint(&b_pub), b_pub);
         let psk = known_key();
@@ -2548,8 +2483,7 @@ mod tests {
         let fp = v5_envelope_sender_fp(&env).unwrap();
         // Empty lookup table — sender unknown
         let known: std::collections::HashMap<[u8; SENDER_FP_LEN], [u8; 32]> = Default::default();
-        assert!(known.get(&fp).is_none(),
-            "unknown sender must not resolve; transport layer should reject the envelope");
+        assert!(known.get(&fp).is_none(), "unknown sender must not resolve; transport layer should reject the envelope");
     }
 
     /// RFC 8439 Section 2.8.2 test vector — verifies the ChaCha20-Poly1305
@@ -2560,24 +2494,19 @@ mod tests {
         // Plaintext from RFC 8439 §2.8.2
         let plaintext = b"Ladies and Gentlemen of the class of '99: If I could offer you only one tip for the future, sunscreen would be it.";
         let key: [u8; 32] = [
-            0x80,0x81,0x82,0x83,0x84,0x85,0x86,0x87,0x88,0x89,0x8a,0x8b,0x8c,0x8d,0x8e,0x8f,
-            0x90,0x91,0x92,0x93,0x94,0x95,0x96,0x97,0x98,0x99,0x9a,0x9b,0x9c,0x9d,0x9e,0x9f,
+            0x80, 0x81, 0x82, 0x83, 0x84, 0x85, 0x86, 0x87, 0x88, 0x89, 0x8a, 0x8b, 0x8c, 0x8d, 0x8e, 0x8f, 0x90, 0x91, 0x92, 0x93, 0x94, 0x95, 0x96, 0x97, 0x98, 0x99, 0x9a, 0x9b, 0x9c, 0x9d, 0x9e,
+            0x9f,
         ];
-        let aad: [u8; 12] = [0x50,0x51,0x52,0x53,0xc0,0xc1,0xc2,0xc3,0xc4,0xc5,0xc6,0xc7];
-        let nonce: [u8; 12] = [0x07,0x00,0x00,0x00,0x40,0x41,0x42,0x43,0x44,0x45,0x46,0x47];
+        let aad: [u8; 12] = [0x50, 0x51, 0x52, 0x53, 0xc0, 0xc1, 0xc2, 0xc3, 0xc4, 0xc5, 0xc6, 0xc7];
+        let nonce: [u8; 12] = [0x07, 0x00, 0x00, 0x00, 0x40, 0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47];
         // Direct cipher call (bypass our random nonce) to check spec compliance.
         let cipher = ChaCha20Poly1305::new(Key::from_slice(&key));
-        let ct = cipher.encrypt(Nonce::from_slice(&nonce),
-            Payload { msg: plaintext, aad: &aad }).unwrap();
+        let ct = cipher.encrypt(Nonce::from_slice(&nonce), Payload { msg: plaintext, aad: &aad }).unwrap();
         // Expected ciphertext from RFC 8439 (first 16 bytes shown; full vector is long)
-        let expected_prefix = [
-            0xd3,0x1a,0x8d,0x34,0x64,0x8e,0x60,0xdb,0x7b,0x86,0xaf,0xbc,0x53,0xef,0x7e,0xc2,
-        ];
+        let expected_prefix = [0xd3, 0x1a, 0x8d, 0x34, 0x64, 0x8e, 0x60, 0xdb, 0x7b, 0x86, 0xaf, 0xbc, 0x53, 0xef, 0x7e, 0xc2];
         assert_eq!(&ct[..16], &expected_prefix, "RFC 8439 vector mismatch — do not deploy");
         // And the tag (last 16 bytes)
-        let expected_tag = [
-            0x1a,0xe1,0x0b,0x59,0x4f,0x09,0xe2,0x6a,0x7e,0x90,0x2e,0xcb,0xd0,0x60,0x06,0x91,
-        ];
-        assert_eq!(&ct[ct.len()-16..], &expected_tag, "RFC 8439 tag mismatch");
+        let expected_tag = [0x1a, 0xe1, 0x0b, 0x59, 0x4f, 0x09, 0xe2, 0x6a, 0x7e, 0x90, 0x2e, 0xcb, 0xd0, 0x60, 0x06, 0x91];
+        assert_eq!(&ct[ct.len() - 16..], &expected_tag, "RFC 8439 tag mismatch");
     }
 }

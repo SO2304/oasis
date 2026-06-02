@@ -349,13 +349,19 @@ fn main() {
             world = WorldModel::new(); // Refresh zones
             let mut baro_center = vz();
             baro_center[30] = (s.pressure - 1013.25) * 0.1;
-            if let Err(e) = world.try_add_zone(ZoneType::Entropy, baro_center, 0.5, 1.0) { eprintln!("[oasis-daemon] zone cap hit: {:?}", e); }
+            if let Err(e) = world.try_add_zone(ZoneType::Entropy, baro_center, 0.5, 1.0) {
+                eprintln!("[oasis-daemon] zone cap hit: {:?}", e);
+            }
             if s.motion > 0.1 {
                 let mut motion_center = ag[0].pos;
                 motion_center[0] += s.motion * 0.5;
-                if let Err(e) = world.try_add_zone(ZoneType::Repulsive, motion_center, s.motion * 2.0, 2.0) { eprintln!("[oasis-daemon] zone cap hit: {:?}", e); }
+                if let Err(e) = world.try_add_zone(ZoneType::Repulsive, motion_center, s.motion * 2.0, 2.0) {
+                    eprintln!("[oasis-daemon] zone cap hit: {:?}", e);
+                }
             }
-            if let Err(e) = world.try_add_zone(ZoneType::Attractive, goal, 1.0, 0.5) { eprintln!("[oasis-daemon] zone cap hit: {:?}", e); }
+            if let Err(e) = world.try_add_zone(ZoneType::Attractive, goal, 1.0, 0.5) {
+                eprintln!("[oasis-daemon] zone cap hit: {:?}", e);
+            }
         }
 
         let fb = sensor_to_force(&s);

@@ -42,10 +42,10 @@ struct SoakOutcome {
     reflex_fires: u32,
     branch_calls: u32,
     violations: u32,
-    final_entropy_bits: u64,       // f64 bits for eq check
+    final_entropy_bits: u64, // f64 bits for eq check
     final_fear_bits: u64,
     final_pain_bits: u64,
-    roles: [usize; 6],             // Stem, Nav, Sent, Work, Scout, Heal
+    roles: [usize; 6], // Stem, Nav, Sent, Work, Scout, Heal
 }
 
 fn run_soak(verbose: bool) -> (SoakOutcome, std::time::Duration) {
@@ -60,11 +60,15 @@ fn run_soak(verbose: bool) -> (SoakOutcome, std::time::Duration) {
     let mut dreams = DreamEngine::new();
     let mut world = WorldModel::new();
 
-    for _ in 0..N_AGENTS { morpho.register(); }
+    for _ in 0..N_AGENTS {
+        morpho.register();
+    }
 
-    let mut obs = vz(); obs[10] = 3.0;
+    let mut obs = vz();
+    obs[10] = 3.0;
     world.try_add_zone(ZoneType::Repulsive, obs, 2.0, 0.5).expect("setup must not exceed cap");
-    let mut tgt = vz(); tgt[10] = 8.0;
+    let mut tgt = vz();
+    tgt[10] = 8.0;
     world.try_add_zone(ZoneType::Attractive, tgt, 3.0, 0.3).expect("setup must not exceed cap");
 
     let mut dream_fires = 0u32;
@@ -74,9 +78,7 @@ fn run_soak(verbose: bool) -> (SoakOutcome, std::time::Duration) {
 
     let mut rng_state: u64 = 0xCAFEBABE_CAFEBABE;
     let mut rnd = || -> f64 {
-        rng_state = rng_state
-            .wrapping_mul(6364136223846793005)
-            .wrapping_add(1442695040888963407);
+        rng_state = rng_state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
         ((rng_state >> 32) as f64) / (u32::MAX as f64)
     };
 
@@ -99,13 +101,15 @@ fn run_soak(verbose: bool) -> (SoakOutcome, std::time::Duration) {
 
         emo.update(&agents[0].pos, entropy, t);
 
-        let moms: Vec<AgentMomentum> = agents.iter()
-            .map(|a| AgentMomentum { momentum: a.momentum, entropy: a.entropy })
-            .collect();
+        let moms: Vec<AgentMomentum> = agents.iter().map(|a| AgentMomentum { momentum: a.momentum, entropy: a.entropy }).collect();
         syn.update(&moms);
 
-        if reflex_g.check(gyro.abs()) { reflex_fires += 1; }
-        if reflex_m.check(accel.abs()) { reflex_fires += 1; }
+        if reflex_g.check(gyro.abs()) {
+            reflex_fires += 1;
+        }
+        if reflex_m.check(accel.abs()) {
+            reflex_fires += 1;
+        }
 
         if t % 20 == 0 {
             let cmd = (rnd() - 0.5) * 0.5;
@@ -126,7 +130,8 @@ fn run_soak(verbose: bool) -> (SoakOutcome, std::time::Duration) {
 
         if t % 50 == 0 {
             let mut brancher = TemporalBrancher::new(4);
-            let mut goal = vz(); goal[10] = 5.0;
+            let mut goal = vz();
+            goal[10] = 5.0;
             brancher.set_goal(goal);
             let base = vz();
             let _r = brancher.branch(&agents[0], &base, &vz());
@@ -142,27 +147,40 @@ fn run_soak(verbose: bool) -> (SoakOutcome, std::time::Duration) {
         }
 
         if t % 100 == 0 {
-            let mut goal = vz(); goal[10] = 8.0;
+            let mut goal = vz();
+            goal[10] = 8.0;
             let _path = world.navigate(&agents[0].pos, &goal, 20);
         }
 
         if t > 0 && t % CHECK_EVERY == 0 {
             let pain = eff.get_pain(0);
-            if !(0.0..=5.0).contains(&pain) { violations += 1; }
-            if emo.fear > 5.0 + 1e-9 || emo.fear < 0.0 { violations += 1; }
-            let count: usize = [Role::Stem, Role::Navigator, Role::Sentinel,
-                               Role::Worker, Role::Scout, Role::Healer]
-                .iter().map(|&r| morpho.count_by_role(r)).sum();
-            if count != N_AGENTS { violations += 1; }
-            if t > 100 && morpho.count_by_role(Role::Stem) > 0 { violations += 1; }
+            if !(0.0..=5.0).contains(&pain) {
+                violations += 1;
+            }
+            if emo.fear > 5.0 + 1e-9 || emo.fear < 0.0 {
+                violations += 1;
+            }
+            let count: usize = [Role::Stem, Role::Navigator, Role::Sentinel, Role::Worker, Role::Scout, Role::Healer]
+                .iter()
+                .map(|&r| morpho.count_by_role(r))
+                .sum();
+            if count != N_AGENTS {
+                violations += 1;
+            }
+            if t > 100 && morpho.count_by_role(Role::Stem) > 0 {
+                violations += 1;
+            }
             let expected_min = if t >= 500 { (t - 500) / 500 } else { 0 };
-            if dream_fires < expected_min { violations += 1; }
+            if dream_fires < expected_min {
+                violations += 1;
+            }
             for a in agents.iter() {
-                if !(0.0..=1.0).contains(&a.entropy) { violations += 1; }
+                if !(0.0..=1.0).contains(&a.entropy) {
+                    violations += 1;
+                }
             }
             if verbose {
-                println!("  [T{}] ok (dreams={} reflex={} branch={} fear={:.3} pain={:.3} ent={:.3})",
-                    t, dream_fires, reflex_fires, branch_calls, emo.fear, pain, entropy);
+                println!("  [T{}] ok (dreams={} reflex={} branch={} fear={:.3} pain={:.3} ent={:.3})", t, dream_fires, reflex_fires, branch_calls, emo.fear, pain, entropy);
             }
         }
     }
@@ -194,8 +212,7 @@ fn median_min_max(samples: &mut [f64]) -> (f64, f64, f64) {
 }
 
 fn main() {
-    println!("OASIS — 11-mechanism soak bench (K={} repeats, {} ticks each)",
-             K_REPEATS, TOTAL_TICKS);
+    println!("OASIS — 11-mechanism soak bench (K={} repeats, {} ticks each)", K_REPEATS, TOTAL_TICKS);
     println!("  agents: {}, check interval: {}", N_AGENTS, CHECK_EVERY);
     println!();
 
@@ -208,10 +225,7 @@ fn main() {
     let mut all_outcomes = vec![first_outcome.clone()];
     for k in 2..=K_REPEATS {
         let (outcome, elapsed) = run_soak(false);
-        println!("  run {}: {:.2}s  (dreams={} reflex={} branch={} violations={})",
-                 k, elapsed.as_secs_f64(),
-                 outcome.dream_fires, outcome.reflex_fires,
-                 outcome.branch_calls, outcome.violations);
+        println!("  run {}: {:.2}s  (dreams={} reflex={} branch={} violations={})", k, elapsed.as_secs_f64(), outcome.dream_fires, outcome.reflex_fires, outcome.branch_calls, outcome.violations);
         all_elapsed.push(elapsed.as_secs_f64());
         all_outcomes.push(outcome);
     }
@@ -242,24 +256,21 @@ fn main() {
     println!("final entropy:      {:.3}", f64::from_bits(first_outcome.final_entropy_bits));
     println!("final fear:         {:.3}", f64::from_bits(first_outcome.final_fear_bits));
     println!("final pain:         {:.3}", f64::from_bits(first_outcome.final_pain_bits));
-    println!("roles:              Stem={} Nav={} Sent={} Work={} Scout={} Heal={}",
-             first_outcome.roles[0], first_outcome.roles[1],
-             first_outcome.roles[2], first_outcome.roles[3],
-             first_outcome.roles[4], first_outcome.roles[5]);
+    println!(
+        "roles:              Stem={} Nav={} Sent={} Work={} Scout={} Heal={}",
+        first_outcome.roles[0], first_outcome.roles[1], first_outcome.roles[2], first_outcome.roles[3], first_outcome.roles[4], first_outcome.roles[5]
+    );
     println!("violations:         {}", first_outcome.violations);
     println!();
     println!("=== K={} TIMING BAND ===", K_REPEATS);
-    println!("elapsed median:     {:.3}s  ({:.3}-{:.3}s) ±{:.1}%",
-             median, min, max, half);
+    println!("elapsed median:     {:.3}s  ({:.3}-{:.3}s) ±{:.1}%", median, min, max, half);
     println!("tick rate median:   {:.0} Hz  ({:.0}-{:.0} Hz)", median_hz, min_hz, max_hz);
     println!("determinism check:  all {} runs produced identical functional output", K_REPEATS);
     if first_outcome.violations == 0 {
-        println!("STATUS:             OK — all invariants held across {} runs × {} ticks",
-                 K_REPEATS, TOTAL_TICKS);
+        println!("STATUS:             OK — all invariants held across {} runs × {} ticks", K_REPEATS, TOTAL_TICKS);
         std::process::exit(0);
     } else {
-        println!("STATUS:             FAIL — {} invariant violations",
-                 first_outcome.violations);
+        println!("STATUS:             FAIL — {} invariant violations", first_outcome.violations);
         std::process::exit(1);
     }
 }

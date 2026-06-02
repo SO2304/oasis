@@ -4,11 +4,11 @@
 //! Discrete states (CREATED, RUNNING, etc.) are projections (collapse)
 //! of the continuous vector onto anchors.
 
-use crate::vec::*;
-#[cfg(not(feature = "std"))]
-use alloc::{vec::Vec, string::String, vec, format};
 #[cfg(not(feature = "std"))]
 use crate::fmath::F64Ext;
+use crate::vec::*;
+#[cfg(not(feature = "std"))]
+use alloc::{format, string::String, vec, vec::Vec};
 
 /// Number of anchor dimensions used for state encoding
 const AD: usize = 9;
@@ -330,14 +330,14 @@ mod tests {
     fn r14_monotonic_in_threshold() {
         // ∀ agent, t1 ≤ t2: is_action_safe(agent, t1) → is_action_safe(agent, t2)
         let mut ag = agent_new(4);
-        for _ in 0..20 { inject_sensory(&mut ag, 0.5); }
+        for _ in 0..20 {
+            inject_sensory(&mut ag, 0.5);
+        }
         for t1_i in 1..100 {
             let t1 = t1_i as f64 * 0.01;
             let t2 = t1 + 0.05;
             if is_action_safe(&ag, t1) {
-                assert!(is_action_safe(&ag, t2),
-                    "monotonicity: safe@{:.3} implies safe@{:.3} (entropy={:.4})",
-                    t1, t2, ag.entropy);
+                assert!(is_action_safe(&ag, t2), "monotonicity: safe@{:.3} implies safe@{:.3} (entropy={:.4})", t1, t2, ag.entropy);
             }
         }
     }
@@ -356,7 +356,9 @@ mod tests {
     fn r14_deterministic() {
         // Same input must give same output (pure function).
         let mut ag = agent_new(7);
-        for _ in 0..10 { inject_sensory(&mut ag, 0.3); }
+        for _ in 0..10 {
+            inject_sensory(&mut ag, 0.3);
+        }
         for _ in 0..100 {
             assert_eq!(is_action_safe(&ag, 0.5), is_action_safe(&ag, 0.5));
         }
@@ -388,12 +390,7 @@ mod kani_proofs {
         kani::assume(entropy.is_finite());
         kani::assume(entropy >= 0.0 && entropy <= 1.0);
 
-        let ag = Agent {
-            pos: crate::vec::vz(),
-            momentum: crate::vec::vz(),
-            entropy,
-            collapsed: 0,
-        };
+        let ag = Agent { pos: crate::vec::vz(), momentum: crate::vec::vz(), entropy, collapsed: 0 };
 
         let t1: f64 = kani::any();
         let t2: f64 = kani::any();

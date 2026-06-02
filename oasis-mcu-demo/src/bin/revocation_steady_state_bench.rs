@@ -32,6 +32,7 @@ use core::fmt::Write;
 use cortex_m_rt::entry;
 use embedded_alloc::LlffHeap as Heap;
 use fugit::RateExtU32;
+use panic_halt as _;
 use rp_pico::hal::{
     clocks::init_clocks_and_plls,
     pac,
@@ -42,7 +43,6 @@ use rp_pico::hal::{
     Clock,
 };
 use rp_pico::{hal, XOSC_CRYSTAL_FREQ};
-use panic_halt as _;
 
 #[global_allocator]
 static HEAP: Heap = Heap::empty();
@@ -61,34 +61,77 @@ fn make_fp(i: u32) -> [u8; FP_LEN] {
 
 #[entry]
 fn main() -> ! {
-    unsafe { HEAP.init(HEAP_MEM.as_mut_ptr() as usize, HEAP_SIZE); }
+    unsafe {
+        HEAP.init(HEAP_MEM.as_mut_ptr() as usize, HEAP_SIZE);
+    }
 
     let mut pac = pac::Peripherals::take().unwrap();
     let _core = pac::CorePeripherals::take().unwrap();
     let mut watchdog = Watchdog::new(pac.WATCHDOG);
-    let clocks = init_clocks_and_plls(XOSC_CRYSTAL_FREQ, pac.XOSC, pac.CLOCKS,
-        pac.PLL_SYS, pac.PLL_USB, &mut pac.RESETS, &mut watchdog).ok().unwrap();
+    let clocks = init_clocks_and_plls(
+        XOSC_CRYSTAL_FREQ,
+        pac.XOSC,
+        pac.CLOCKS,
+        pac.PLL_SYS,
+        pac.PLL_USB,
+        &mut pac.RESETS,
+        &mut watchdog,
+    )
+    .ok()
+    .unwrap();
     let sio = Sio::new(pac.SIO);
-    let pins = rp_pico::Pins::new(pac.IO_BANK0, pac.PADS_BANK0,
-        sio.gpio_bank0, &mut pac.RESETS);
+    let pins = rp_pico::Pins::new(
+        pac.IO_BANK0,
+        pac.PADS_BANK0,
+        sio.gpio_bank0,
+        &mut pac.RESETS,
+    );
     let uart_pins = (
         pins.gpio0.into_function::<hal::gpio::FunctionUart>(),
         pins.gpio1.into_function::<hal::gpio::FunctionUart>(),
     );
     let mut uart = UartPeripheral::new(pac.UART0, uart_pins, &mut pac.RESETS)
-        .enable(UartConfig::new(115200.Hz(), DataBits::Eight, None, StopBits::One),
-            clocks.peripheral_clock.freq()).unwrap();
+        .enable(
+            UartConfig::new(115200.Hz(), DataBits::Eight, None, StopBits::One),
+            clocks.peripheral_clock.freq(),
+        )
+        .unwrap();
     let timer = Timer::new(pac.TIMER, &mut pac.RESETS, &clocks);
 
     writeln!(uart, "").ok();
-    writeln!(uart, "╔══════════════════════════════════════════════════════════════════╗").ok();
-    writeln!(uart, "║  Per-envelope steady-state revocation bench — M1 validation     ║").ok();
-    writeln!(uart, "║  measures the HOT PATH: revocation check per envelope received  ║").ok();
-    writeln!(uart, "╚══════════════════════════════════════════════════════════════════╝").ok();
+    writeln!(
+        uart,
+        "╔══════════════════════════════════════════════════════════════════╗"
+    )
+    .ok();
+    writeln!(
+        uart,
+        "║  Per-envelope steady-state revocation bench — M1 validation     ║"
+    )
+    .ok();
+    writeln!(
+        uart,
+        "║  measures the HOT PATH: revocation check per envelope received  ║"
+    )
+    .ok();
+    writeln!(
+        uart,
+        "╚══════════════════════════════════════════════════════════════════╝"
+    )
+    .ok();
     writeln!(uart, "").ok();
-    writeln!(uart, "  Method: build BTreeSet once with M entries, loop {} checks,",
-             N_CHECKS_PER_TRIAL).ok();
-    writeln!(uart, "          K={} trials, report min/median/max per-check ns.", K_TRIALS).ok();
+    writeln!(
+        uart,
+        "  Method: build BTreeSet once with M entries, loop {} checks,",
+        N_CHECKS_PER_TRIAL
+    )
+    .ok();
+    writeln!(
+        uart,
+        "          K={} trials, report min/median/max per-check ns.",
+        K_TRIALS
+    )
+    .ok();
     writeln!(uart, "  R20 budget: 1 ms = 1 000 000 ns per envelope.").ok();
     writeln!(uart, "").ok();
 
@@ -97,21 +140,40 @@ fn main() -> ! {
     }
 
     writeln!(uart, "").ok();
-    writeln!(uart, "──────────────────────────────────────────────────────────────────").ok();
-    writeln!(uart, "  M1 verdict: see per-check medians above vs R20 budget 1 000 000 ns").ok();
+    writeln!(
+        uart,
+        "──────────────────────────────────────────────────────────────────"
+    )
+    .ok();
+    writeln!(
+        uart,
+        "  M1 verdict: see per-check medians above vs R20 budget 1 000 000 ns"
+    )
+    .ok();
     writeln!(uart, "  bench complete.").ok();
 
-    loop { cortex_m::asm::wfi(); }
+    loop {
+        cortex_m::asm::wfi();
+    }
 }
 
-fn run_steady_state_bench<U: core::fmt::Write>(
-    uart: &mut U,
-    timer: &Timer,
-    rev_count: u32,
-) {
-    writeln!(uart, "──────────────────────────────────────────────────────────────────").ok();
-    writeln!(uart, "  Steady-state: rev_count = {} (local BTreeSet)", rev_count).ok();
-    writeln!(uart, "──────────────────────────────────────────────────────────────────").ok();
+fn run_steady_state_bench<U: core::fmt::Write>(uart: &mut U, timer: &Timer, rev_count: u32) {
+    writeln!(
+        uart,
+        "──────────────────────────────────────────────────────────────────"
+    )
+    .ok();
+    writeln!(
+        uart,
+        "  Steady-state: rev_count = {} (local BTreeSet)",
+        rev_count
+    )
+    .ok();
+    writeln!(
+        uart,
+        "──────────────────────────────────────────────────────────────────"
+    )
+    .ok();
 
     // Build local set ONCE — cost not counted against per-envelope.
     let mut local: BTreeSet<[u8; FP_LEN]> = BTreeSet::new();
@@ -132,9 +194,9 @@ fn run_steady_state_bench<U: core::fmt::Write>(
             // most envelopes are NOT from revoked nodes.
             // 1 in 10 is from a revoked fp (i.e., expected to hit).
             let probe_id = if i % 10 == 0 {
-                i % rev_count               // hit
+                i % rev_count // hit
             } else {
-                rev_count + (i % 1000)      // guaranteed miss
+                rev_count + (i % 1000) // guaranteed miss
             };
             if local.contains(&make_fp(probe_id)) {
                 hits += 1;
@@ -145,8 +207,12 @@ fn run_steady_state_bench<U: core::fmt::Write>(
         let elapsed_ns = elapsed_us * 1000;
         let per_check_ns = elapsed_ns / N_CHECKS_PER_TRIAL as u64;
         per_check_ns_samples.push(per_check_ns);
-        writeln!(uart, "    trial {}: {} ns/check  ({} hits, {} µs total)",
-                 trial, per_check_ns, hits, elapsed_us).ok();
+        writeln!(
+            uart,
+            "    trial {}: {} ns/check  ({} hits, {} µs total)",
+            trial, per_check_ns, hits, elapsed_us
+        )
+        .ok();
     }
 
     // Compute min / median / max
@@ -155,16 +221,32 @@ fn run_steady_state_bench<U: core::fmt::Write>(
     let median = per_check_ns_samples[K_TRIALS as usize / 2];
     let max = per_check_ns_samples[K_TRIALS as usize - 1];
     writeln!(uart, "").ok();
-    writeln!(uart, "  K=10 bands: min = {} ns/check, median = {} ns/check, max = {} ns/check",
-             min, median, max).ok();
+    writeln!(
+        uart,
+        "  K=10 bands: min = {} ns/check, median = {} ns/check, max = {} ns/check",
+        min, median, max
+    )
+    .ok();
     let r20_ns: u64 = 1_000_000;
     let headroom = r20_ns / median.max(1);
-    writeln!(uart, "  R20 budget headroom (median): {}× ({} ns measured vs {} ns budget)",
-             headroom, median, r20_ns).ok();
+    writeln!(
+        uart,
+        "  R20 budget headroom (median): {}× ({} ns measured vs {} ns budget)",
+        headroom, median, r20_ns
+    )
+    .ok();
     if median <= r20_ns {
-        writeln!(uart, "  [R20 OK] per-envelope check fits trivially in steady state").ok();
+        writeln!(
+            uart,
+            "  [R20 OK] per-envelope check fits trivially in steady state"
+        )
+        .ok();
     } else {
-        writeln!(uart, "  [R20 FAIL] per-envelope check EXCEEDS budget — investigate").ok();
+        writeln!(
+            uart,
+            "  [R20 FAIL] per-envelope check EXCEEDS budget — investigate"
+        )
+        .ok();
     }
     writeln!(uart, "").ok();
 }

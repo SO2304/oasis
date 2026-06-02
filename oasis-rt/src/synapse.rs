@@ -3,11 +3,11 @@
 //! Proven 7/7 on Samsung Galaxy with real sensor data.
 //! dt = postFireTick - preFireTick (causal direction verified).
 
-use crate::vec::*;
-#[cfg(not(feature = "std"))]
-use alloc::{vec::Vec, string::String, vec, format};
 #[cfg(not(feature = "std"))]
 use crate::fmath::F64Ext;
+use crate::vec::*;
+#[cfg(not(feature = "std"))]
+use alloc::{format, string::String, vec, vec::Vec};
 
 const MAX_SYNAPSES: usize = 32;
 
@@ -225,8 +225,12 @@ impl SynapticNetwork {
     /// None otherwise. Used for applying STDP-learned weights to downstream computations.
     pub fn weight_between(&self, pre: usize, post: usize) -> Option<f64> {
         for s in self.synapses[..self.len].iter() {
-            if !s.active { continue; }
-            if s.pre == pre && s.post == post { return Some(s.weight); }
+            if !s.active {
+                continue;
+            }
+            if s.pre == pre && s.post == post {
+                return Some(s.weight);
+            }
         }
         None
     }
@@ -430,7 +434,7 @@ mod kani_proofs {
 
         let out = apply_reinforce(w, r, e, rate, max_w);
         assert!(out >= -max_w);
-        assert!(out <=  max_w);
+        assert!(out <= max_w);
         assert!(out.is_finite());
     }
 
@@ -469,7 +473,7 @@ mod kani_proofs {
         let t: f64 = kani::any();
         kani::assume(w.is_finite() && t.is_finite());
         kani::assume(t > 0.0 && t < 1e6);
-        kani::assume(w.abs() < t);  // strictly below threshold
+        kani::assume(w.abs() < t); // strictly below threshold
 
         assert!(would_prune(w, t));
     }
@@ -482,7 +486,7 @@ mod kani_proofs {
         let max_w: f64 = kani::any();
         kani::assume(w.is_finite() && max_w.is_finite());
         kani::assume(max_w > 0.0 && max_w < 1e6);
-        kani::assume(w.abs() <= max_w);  // precondition: already bounded
+        kani::assume(w.abs() <= max_w); // precondition: already bounded
 
         // Any of reward / eligibility / rate being 0 is sufficient.
         let out = apply_reinforce(w, 0.0, 1.0, 1.0, max_w);

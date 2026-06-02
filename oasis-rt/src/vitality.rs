@@ -7,7 +7,7 @@
 //! R14 threshold scales with vitality. Reflexes always fire.
 
 #[cfg(not(feature = "std"))]
-use alloc::{vec::Vec, string::String, vec, format};
+use alloc::{format, string::String, vec, vec::Vec};
 
 /// How critical a sensor/actuator is to survival
 #[derive(Clone, Copy, Debug, PartialEq)]

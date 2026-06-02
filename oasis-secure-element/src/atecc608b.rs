@@ -43,7 +43,7 @@
 //! - Decision deferred to: hardware-on-bench round, ~$5 chip + 1
 //!   afternoon to validate.
 
-use crate::{SecureElement, SeError, TamperReason};
+use crate::{SeError, SecureElement, TamperReason};
 
 pub struct Atecc608bSe<I2C, TAMP> {
     pub i2c: I2C,
@@ -53,7 +53,11 @@ pub struct Atecc608bSe<I2C, TAMP> {
 
 impl<I2C, TAMP> Atecc608bSe<I2C, TAMP> {
     pub fn new(i2c: I2C, tamper_pin: TAMP) -> Self {
-        Self { i2c, tamper_pin, initialized: false }
+        Self {
+            i2c,
+            tamper_pin,
+            initialized: false,
+        }
     }
 }
 
@@ -69,8 +73,10 @@ impl<I2C, TAMP> SecureElement for Atecc608bSe<I2C, TAMP> {
         //
         // Until physical validation: refuse rather than pretend.
         self.initialized = false;
-        Err(SeError::Driver("Atecc608bSe: provision not yet implemented — \
-            pending hardware validation. Use SimSecureElement for tests."))
+        Err(SeError::Driver(
+            "Atecc608bSe: provision not yet implemented — \
+            pending hardware validation. Use SimSecureElement for tests.",
+        ))
     }
 
     fn pubkey(&self) -> Result<[u8; 32], SeError> {
@@ -88,5 +94,7 @@ impl<I2C, TAMP> SecureElement for Atecc608bSe<I2C, TAMP> {
         Err(SeError::Driver("Atecc608bSe: wipe not yet implemented"))
     }
 
-    fn is_wiped(&self) -> bool { false }
+    fn is_wiped(&self) -> bool {
+        false
+    }
 }

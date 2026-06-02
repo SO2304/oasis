@@ -27,27 +27,42 @@ fn main() -> ExitCode {
     while i < args.len() {
         match args[i].as_str() {
             "--pub-hex" => {
-                pub_hex = Some(args.get(i+1).cloned()
-                    .unwrap_or_else(|| { eprintln!("--pub-hex needs value"); std::process::exit(2) }));
+                pub_hex = Some(args.get(i + 1).cloned().unwrap_or_else(|| {
+                    eprintln!("--pub-hex needs value");
+                    std::process::exit(2)
+                }));
                 i += 2;
             }
             "--expect" => {
-                expect = Some(args.get(i+1).cloned()
-                    .unwrap_or_else(|| { eprintln!("--expect needs value"); std::process::exit(2) }));
+                expect = Some(args.get(i + 1).cloned().unwrap_or_else(|| {
+                    eprintln!("--expect needs value");
+                    std::process::exit(2)
+                }));
                 i += 2;
             }
-            "-h" | "--help" => { print_usage(); return ExitCode::SUCCESS; }
-            other => { eprintln!("unknown arg: {}", other); print_usage(); return ExitCode::from(2); }
+            "-h" | "--help" => {
+                print_usage();
+                return ExitCode::SUCCESS;
+            }
+            other => {
+                eprintln!("unknown arg: {}", other);
+                print_usage();
+                return ExitCode::from(2);
+            }
         }
     }
 
-    let pub_hex = pub_hex
-        .or_else(|| std::env::var("OASIS_SPORE_ID_PUB_HEX").ok())
-        .unwrap_or_else(|| { eprintln!("error: no pub-hex (provide --pub-hex or OASIS_SPORE_ID_PUB_HEX)"); std::process::exit(2) });
+    let pub_hex = pub_hex.or_else(|| std::env::var("OASIS_SPORE_ID_PUB_HEX").ok()).unwrap_or_else(|| {
+        eprintln!("error: no pub-hex (provide --pub-hex or OASIS_SPORE_ID_PUB_HEX)");
+        std::process::exit(2)
+    });
 
     let pub_bytes = match parse_hex32(&pub_hex) {
         Some(b) => b,
-        None => { eprintln!("error: pub-hex must be 64 hex chars"); return ExitCode::from(2); }
+        None => {
+            eprintln!("error: pub-hex must be 64 hex chars");
+            return ExitCode::from(2);
+        }
     };
 
     let fp = spore_crypto::sender_fingerprint(&pub_bytes);
@@ -70,11 +85,13 @@ fn main() -> ExitCode {
 }
 
 fn parse_hex32(hex: &str) -> Option<[u8; 32]> {
-    if hex.len() != 64 { return None; }
+    if hex.len() != 64 {
+        return None;
+    }
     let mut out = [0u8; 32];
     for i in 0..32 {
-        let hi = hex_digit(hex.as_bytes()[i*2])?;
-        let lo = hex_digit(hex.as_bytes()[i*2+1])?;
+        let hi = hex_digit(hex.as_bytes()[i * 2])?;
+        let lo = hex_digit(hex.as_bytes()[i * 2 + 1])?;
         out[i] = (hi << 4) | lo;
     }
     Some(out)

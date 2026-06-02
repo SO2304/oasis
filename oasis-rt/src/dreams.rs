@@ -6,7 +6,7 @@
 use crate::synapse::SynapticNetwork;
 use crate::vec::*;
 #[cfg(not(feature = "std"))]
-use alloc::{vec::Vec, string::String, vec, format};
+use alloc::{format, string::String, vec, vec::Vec};
 
 const MAX_EXPERIENCES: usize = 64;
 const MAX_TRAJECTORY: usize = 16;
@@ -160,8 +160,7 @@ impl DreamEngine {
 
     /// Feed current entropy; update EMA. Does NOT trigger a dream.
     pub fn observe_entropy(&mut self, current_entropy: f64) {
-        self.entropy_ema = self.entropy_ema * (1.0 - self.ema_alpha)
-                         + current_entropy * self.ema_alpha;
+        self.entropy_ema = self.entropy_ema * (1.0 - self.ema_alpha) + current_entropy * self.ema_alpha;
     }
 
     /// Decide adaptively if we should dream now. Rules:
@@ -174,18 +173,12 @@ impl DreamEngine {
     /// - At least one dream every `max_interval` ticks (upper-bounded latency)
     /// - Dreams preferentially triggered at quiescence (ents drop below mean)
     pub fn should_dream(&self, tick: u32, current_entropy: f64) -> bool {
-        should_dream_pure(
-            tick, self.last_dream_tick, current_entropy,
-            self.entropy_ema, self.max_interval, self.min_interval,
-            self.relative_drop,
-        )
+        should_dream_pure(tick, self.last_dream_tick, current_entropy, self.entropy_ema, self.max_interval, self.min_interval, self.relative_drop)
     }
 
     /// Combined entry point: observe entropy, check trigger, run dream + return.
     /// Returns None if no trigger fired.
-    pub fn maybe_dream(&mut self, tick: u32, current_entropy: f64,
-                      synapses: &mut SynapticNetwork) -> Option<DreamResult>
-    {
+    pub fn maybe_dream(&mut self, tick: u32, current_entropy: f64, synapses: &mut SynapticNetwork) -> Option<DreamResult> {
         self.observe_entropy(current_entropy);
         if !self.should_dream(tick, current_entropy) {
             return None;
@@ -196,20 +189,19 @@ impl DreamEngine {
     }
 
     #[cfg(test)]
-    pub fn entropy_ema(&self) -> f64 { self.entropy_ema }
+    pub fn entropy_ema(&self) -> f64 {
+        self.entropy_ema
+    }
 }
 
 /// Pure boolean function extracted from `should_dream` so Kani can verify it.
 /// Returns true iff a dream should fire given the trigger conditions.
 #[inline]
-pub fn should_dream_pure(
-    tick: u32, last_dream_tick: u32,
-    current_entropy: f64, entropy_ema: f64,
-    max_interval: u32, min_interval: u32,
-    relative_drop: f64,
-) -> bool {
+pub fn should_dream_pure(tick: u32, last_dream_tick: u32, current_entropy: f64, entropy_ema: f64, max_interval: u32, min_interval: u32, relative_drop: f64) -> bool {
     let since = tick.saturating_sub(last_dream_tick);
-    if since >= max_interval { return true; }
+    if since >= max_interval {
+        return true;
+    }
     if since >= min_interval && current_entropy + relative_drop <= entropy_ema {
         return true;
     }
@@ -340,15 +332,13 @@ mod tests {
         engine.record(&traj, &[0.6], 0.5, 0);
         let mut dream_ticks = 0u32;
         let entropy = 0.65; // WOULD block old absolute-threshold trigger
-        // 2000 ticks with max_interval=500 ⇒ forced fires at t=500, 1000, 1500, 2000
+                            // 2000 ticks with max_interval=500 ⇒ forced fires at t=500, 1000, 1500, 2000
         for t in 0..=2000u32 {
             if engine.maybe_dream(t, entropy, &mut net).is_some() {
                 dream_ticks += 1;
             }
         }
-        assert!(dream_ticks >= 4,
-            "expected ≥4 dreams at high entropy over 2000 ticks (max_interval=500), got {}",
-            dream_ticks);
+        assert!(dream_ticks >= 4, "expected ≥4 dreams at high entropy over 2000 ticks (max_interval=500), got {}", dream_ticks);
     }
 
     /// Invariant 2 — at stable entropy, EMA tracks it (EMA is an unbiased estimator).
@@ -359,8 +349,7 @@ mod tests {
         for _ in 0..500 {
             engine.observe_entropy(stable);
         }
-        assert!((engine.entropy_ema() - stable).abs() < 0.01,
-            "EMA should converge to stable input {}, got {}", stable, engine.entropy_ema());
+        assert!((engine.entropy_ema() - stable).abs() < 0.01, "EMA should converge to stable input {}, got {}", stable, engine.entropy_ema());
     }
 
     /// Invariant 3 — opportunistic trigger fires on entropy DROP relative to mean.
@@ -381,8 +370,7 @@ mod tests {
         let last_before = engine.dream_count;
         // Now drop entropy to 0.4 (below ema 0.7 by > relative_drop 0.1) → TRIGGER
         let triggered = engine.maybe_dream(250, 0.4, &mut net);
-        assert!(triggered.is_some(),
-            "entropy drop from ema=0.7 to 0.4 MUST trigger opportunistic dream");
+        assert!(triggered.is_some(), "entropy drop from ema=0.7 to 0.4 MUST trigger opportunistic dream");
         assert!(engine.dream_count > last_before);
     }
 
@@ -395,12 +383,13 @@ mod tests {
         let traj = [vz(), vz()];
         engine.record(&traj, &[0.5], 0.5, 0);
         // Warm EMA
-        for _ in 0..200 { engine.observe_entropy(0.7); }
+        for _ in 0..200 {
+            engine.observe_entropy(0.7);
+        }
         // First drop triggers
         assert!(engine.maybe_dream(100, 0.4, &mut net).is_some());
         // Second drop 10 ticks later — too soon (min_interval = 50)
-        assert!(engine.maybe_dream(110, 0.4, &mut net).is_none(),
-            "min_interval must rate-limit consecutive opportunistic triggers");
+        assert!(engine.maybe_dream(110, 0.4, &mut net).is_none(), "min_interval must rate-limit consecutive opportunistic triggers");
         // Third drop 60 ticks later — allowed
         assert!(engine.maybe_dream(161, 0.4, &mut net).is_some());
     }

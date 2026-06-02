@@ -42,71 +42,79 @@ fn main() {
     println!();
 
     // 1. origin_wrap
-    let mut samples: Vec<f64> = (0..K_REPEATS).map(|_| {
-        let mut r = MeshRouter::new([1u8; FP_LEN]);
-        let payload = vec![0u8; 500];
-        let start = Instant::now();
-        for _ in 0..N {
-            let _env = r.origin_wrap(&payload);
-        }
-        start.elapsed().as_nanos() as f64 / N as f64
-    }).collect();
+    let mut samples: Vec<f64> = (0..K_REPEATS)
+        .map(|_| {
+            let mut r = MeshRouter::new([1u8; FP_LEN]);
+            let payload = vec![0u8; 500];
+            let start = Instant::now();
+            for _ in 0..N {
+                let _env = r.origin_wrap(&payload);
+            }
+            start.elapsed().as_nanos() as f64 / N as f64
+        })
+        .collect();
     report("origin_wrap", &mut samples, "µs/op", 1000.0);
 
     // 2. process(&[u8])
-    let mut samples: Vec<f64> = (0..K_REPEATS).map(|_| {
-        let mut origin = MeshRouter::new([1u8; FP_LEN]);
-        let payload = vec![0u8; 500];
-        let env = origin.origin_wrap(&payload);
-        let mut hop = MeshRouter::with_config([2u8; FP_LEN], 8, N as usize * 2);
-        let start = Instant::now();
-        for i in 0..N {
-            let mut e = env.clone();
-            e[6..14].copy_from_slice(&(i as u64).to_le_bytes());
-            let _ = hop.process(&e);
-        }
-        start.elapsed().as_nanos() as f64 / N as f64
-    }).collect();
+    let mut samples: Vec<f64> = (0..K_REPEATS)
+        .map(|_| {
+            let mut origin = MeshRouter::new([1u8; FP_LEN]);
+            let payload = vec![0u8; 500];
+            let env = origin.origin_wrap(&payload);
+            let mut hop = MeshRouter::with_config([2u8; FP_LEN], 8, N as usize * 2);
+            let start = Instant::now();
+            for i in 0..N {
+                let mut e = env.clone();
+                e[6..14].copy_from_slice(&(i as u64).to_le_bytes());
+                let _ = hop.process(&e);
+            }
+            start.elapsed().as_nanos() as f64 / N as f64
+        })
+        .collect();
     report("process(&[u8])", &mut samples, "µs/op", 1000.0);
 
     // 3. process_owned
-    let mut samples: Vec<f64> = (0..K_REPEATS).map(|_| {
-        let mut origin = MeshRouter::new([1u8; FP_LEN]);
-        let payload = vec![0u8; 500];
-        let env = origin.origin_wrap(&payload);
-        let mut hop = MeshRouter::with_config([2u8; FP_LEN], 8, N as usize * 2);
-        let start = Instant::now();
-        for i in 0..N {
-            let mut e = env.clone();
-            e[6..14].copy_from_slice(&(i as u64).to_le_bytes());
-            let _ = hop.process_owned(e);
-        }
-        start.elapsed().as_nanos() as f64 / N as f64
-    }).collect();
+    let mut samples: Vec<f64> = (0..K_REPEATS)
+        .map(|_| {
+            let mut origin = MeshRouter::new([1u8; FP_LEN]);
+            let payload = vec![0u8; 500];
+            let env = origin.origin_wrap(&payload);
+            let mut hop = MeshRouter::with_config([2u8; FP_LEN], 8, N as usize * 2);
+            let start = Instant::now();
+            for i in 0..N {
+                let mut e = env.clone();
+                e[6..14].copy_from_slice(&(i as u64).to_le_bytes());
+                let _ = hop.process_owned(e);
+            }
+            start.elapsed().as_nanos() as f64 / N as f64
+        })
+        .collect();
     report("process_owned", &mut samples, "µs/op", 1000.0);
 
     // 4. 9-hop chain
     const CHAIN: u32 = 10_000;
-    let mut samples: Vec<f64> = (0..K_REPEATS).map(|_| {
-        let payload = vec![0xABu8; 500];
-        let mut origin = MeshRouter::new([0u8; FP_LEN]);
-        let mut hops: Vec<MeshRouter> = (1..=9u8)
-            .map(|i| MeshRouter::new([i; FP_LEN]))
-            .collect();
-        let start = Instant::now();
-        for i in 0..CHAIN {
-            let mut env = origin.origin_wrap(&payload);
-            env[6..14].copy_from_slice(&(i as u64).to_le_bytes());
-            for h in hops.iter_mut() {
-                match h.process_owned(env) {
-                    MeshDecision::Arrived { envelope, .. } => { env = envelope; }
-                    other => panic!("unexpected hop decision: {:?}", other),
+    let mut samples: Vec<f64> = (0..K_REPEATS)
+        .map(|_| {
+            let payload = vec![0xABu8; 500];
+            let mut origin = MeshRouter::new([0u8; FP_LEN]);
+            let mut hops: Vec<MeshRouter> = (1..=9u8).map(|i| MeshRouter::new([i; FP_LEN])).collect();
+            let start = Instant::now();
+            for i in 0..CHAIN {
+                let mut env = origin.origin_wrap(&payload);
+                env[6..14].copy_from_slice(&(i as u64).to_le_bytes());
+                for h in hops.iter_mut() {
+                    match h.process_owned(env) {
+                        MeshDecision::Arrived { envelope, .. } => {
+                            env = envelope;
+                        }
+                        other => panic!("unexpected hop decision: {:?}", other),
+                    }
                 }
+                let _ = inner_slice(&env);
             }
-            let _ = inner_slice(&env);
-        }
-        start.elapsed().as_nanos() as f64 / CHAIN as f64
-    }).collect();
+            start.elapsed().as_nanos() as f64 / CHAIN as f64
+        })
+        .collect();
     report("9-hop chain", &mut samples, "µs/chain", 1000.0);
 
     println!();

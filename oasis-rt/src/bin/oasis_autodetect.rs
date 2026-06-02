@@ -87,8 +87,7 @@ fn main() {
             DeviceKind::Unknown(s) => s.as_str(),
         };
         let dims = d.dims.iter().map(|d| d.to_string()).collect::<Vec<_>>().join(",");
-        println!("  {:<15} {:<30} [{:<3}] dims=[{}]",
-            kind_s, truncate(&d.name, 30), rw, dims);
+        println!("  {:<15} {:<30} [{:<3}] dims=[{}]", kind_s, truncate(&d.name, 30), rw, dims);
         println!("    path: {}", d.path.display());
     }
 
@@ -113,5 +112,9 @@ fn main() {
 }
 
 fn truncate(s: &str, n: usize) -> String {
-    if s.len() <= n { s.to_string() } else { format!("{}…", &s[..n.saturating_sub(1)]) }
+    if s.len() <= n {
+        s.to_string()
+    } else {
+        format!("{}…", &s[..n.saturating_sub(1)])
+    }
 }

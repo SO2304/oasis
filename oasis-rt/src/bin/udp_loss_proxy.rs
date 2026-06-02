@@ -22,15 +22,21 @@ fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().collect();
     let cfg = match Cfg::parse(&args) {
         Ok(c) => c,
-        Err(e) => { eprintln!("error: {}", e); print_usage(); return ExitCode::from(2); }
+        Err(e) => {
+            eprintln!("error: {}", e);
+            print_usage();
+            return ExitCode::from(2);
+        }
     };
 
     let sock = match UdpSocket::bind(&cfg.listen) {
         Ok(s) => s,
-        Err(e) => { eprintln!("bind {} failed: {}", cfg.listen, e); return ExitCode::FAILURE; }
+        Err(e) => {
+            eprintln!("bind {} failed: {}", cfg.listen, e);
+            return ExitCode::FAILURE;
+        }
     };
-    eprintln!("[loss_proxy] listen {} → forward {}, model={}, loss={:.0}%, burst_mean={}",
-        cfg.listen, cfg.forward, cfg.model, cfg.loss * 100.0, cfg.burst_mean);
+    eprintln!("[loss_proxy] listen {} → forward {}, model={}, loss={:.0}%, burst_mean={}", cfg.listen, cfg.forward, cfg.model, cfg.loss * 100.0, cfg.burst_mean);
 
     let mut state = State::new(cfg.loss, cfg.burst_mean);
     let mut buf = [0u8; 65535];
@@ -41,7 +47,10 @@ fn main() -> ExitCode {
     loop {
         let (len, _src) = match sock.recv_from(&mut buf) {
             Ok(v) => v,
-            Err(e) => { eprintln!("recv error: {}", e); continue; }
+            Err(e) => {
+                eprintln!("recv error: {}", e);
+                continue;
+            }
         };
         total += 1;
         let drop = match cfg.model.as_str() {
@@ -55,8 +64,7 @@ fn main() -> ExitCode {
             eprintln!("forward error: {}", e);
         }
         if total % 50 == 0 {
-            eprintln!("[loss_proxy] {} pkts, {} dropped ({:.1}%)",
-                total, dropped, dropped as f64 * 100.0 / total as f64);
+            eprintln!("[loss_proxy] {} pkts, {} dropped ({:.1}%)", total, dropped, dropped as f64 * 100.0 / total as f64);
         }
     }
 }
@@ -87,14 +95,16 @@ impl State {
         // P(stay in BAD) = 1 - 1/burst_mean
         // P(stay in GOOD) = 1 - (loss / (burst_mean * (1-loss)))
         let p_stay_bad = 1.0 - 1.0 / self.burst_mean.max(1.0);
-        let p_to_bad = if 1.0 - self.loss > 0.0 {
-            self.loss / (self.burst_mean.max(1.0) * (1.0 - self.loss))
-        } else { 1.0 };
+        let p_to_bad = if 1.0 - self.loss > 0.0 { self.loss / (self.burst_mean.max(1.0) * (1.0 - self.loss)) } else { 1.0 };
         let r = self.next_rand();
         if self.in_bad {
-            if r > p_stay_bad { self.in_bad = false; }
+            if r > p_stay_bad {
+                self.in_bad = false;
+            }
         } else {
-            if r < p_to_bad { self.in_bad = true; }
+            if r < p_to_bad {
+                self.in_bad = true;
+            }
         }
         self.in_bad
     }
@@ -111,27 +121,28 @@ struct Cfg {
 
 impl Cfg {
     fn parse(args: &[String]) -> Result<Self, String> {
-        let mut cfg = Cfg {
-            listen: "127.0.0.1:5001".into(),
-            forward: "127.0.0.1:5002".into(),
-            model: "uniform".into(),
-            loss: 0.0,
-            burst_mean: 5.0,
-        };
+        let mut cfg = Cfg { listen: "127.0.0.1:5001".into(), forward: "127.0.0.1:5002".into(), model: "uniform".into(), loss: 0.0, burst_mean: 5.0 };
         let mut i = 1;
         while i < args.len() {
             match args[i].as_str() {
-                "--listen" => { cfg.listen = args.get(i+1).ok_or("--listen needs value")?.clone(); i += 2; }
-                "--forward" => { cfg.forward = args.get(i+1).ok_or("--forward needs value")?.clone(); i += 2; }
-                "--model" => { cfg.model = args.get(i+1).ok_or("--model needs value")?.clone(); i += 2; }
+                "--listen" => {
+                    cfg.listen = args.get(i + 1).ok_or("--listen needs value")?.clone();
+                    i += 2;
+                }
+                "--forward" => {
+                    cfg.forward = args.get(i + 1).ok_or("--forward needs value")?.clone();
+                    i += 2;
+                }
+                "--model" => {
+                    cfg.model = args.get(i + 1).ok_or("--model needs value")?.clone();
+                    i += 2;
+                }
                 "--loss" => {
-                    cfg.loss = args.get(i+1).ok_or("--loss needs value")?
-                        .parse().map_err(|_| "--loss: bad f64")?;
+                    cfg.loss = args.get(i + 1).ok_or("--loss needs value")?.parse().map_err(|_| "--loss: bad f64")?;
                     i += 2;
                 }
                 "--burst-mean" => {
-                    cfg.burst_mean = args.get(i+1).ok_or("--burst-mean needs value")?
-                        .parse().map_err(|_| "--burst-mean: bad f64")?;
+                    cfg.burst_mean = args.get(i + 1).ok_or("--burst-mean needs value")?.parse().map_err(|_| "--burst-mean: bad f64")?;
                     i += 2;
                 }
                 "-h" | "--help" => return Err("help".into()),

@@ -29,12 +29,17 @@
 // HashMap on host (unchanged); BTreeMap aliased as HashMap on MCU
 // (no_std has no HashMap). O(log n) instead of O(1), but only requires
 // Ord on keys — frame names are `String`, which is Ord.
-#[cfg(feature = "std")]
-use std::collections::HashMap;
-#[cfg(not(feature = "std"))]
-use alloc::{collections::BTreeMap as HashMap, string::{String, ToString}, vec::Vec, vec};
 #[cfg(not(feature = "std"))]
 use crate::fmath::F64Ext;
+#[cfg(not(feature = "std"))]
+use alloc::{
+    collections::BTreeMap as HashMap,
+    string::{String, ToString},
+    vec,
+    vec::Vec,
+};
+#[cfg(feature = "std")]
+use std::collections::HashMap;
 
 /// 2D rigid transform: translation (x, y) + rotation θ (radians, around Z axis).
 /// Encodes the pose of a child frame relative to its parent.
@@ -47,11 +52,15 @@ pub struct Transform2D {
 
 impl Transform2D {
     #[inline]
-    pub const fn new(x: f64, y: f64, theta: f64) -> Self { Self { x, y, theta } }
+    pub const fn new(x: f64, y: f64, theta: f64) -> Self {
+        Self { x, y, theta }
+    }
 
     /// Identity transform: no translation, no rotation.
     #[inline]
-    pub const fn identity() -> Self { Self { x: 0.0, y: 0.0, theta: 0.0 } }
+    pub const fn identity() -> Self {
+        Self { x: 0.0, y: 0.0, theta: 0.0 }
+    }
 
     /// Apply this transform to a 2D point.
     /// point_in_parent = R(θ) · point_in_child + (x, y)
@@ -59,8 +68,7 @@ impl Transform2D {
     pub fn apply(&self, point: (f64, f64)) -> (f64, f64) {
         let (cos_t, sin_t) = (self.theta.cos(), self.theta.sin());
         let (px, py) = point;
-        (cos_t * px - sin_t * py + self.x,
-         sin_t * px + cos_t * py + self.y)
+        (cos_t * px - sin_t * py + self.x, sin_t * px + cos_t * py + self.y)
     }
 
     /// Inverse transform — if self = T_parent_child, inverse = T_child_parent.
@@ -68,11 +76,7 @@ impl Transform2D {
     #[inline]
     pub fn inverse(&self) -> Self {
         let (cos_t, sin_t) = (self.theta.cos(), self.theta.sin());
-        Self {
-            x: -(cos_t * self.x + sin_t * self.y),
-            y: -(-sin_t * self.x + cos_t * self.y),
-            theta: -self.theta,
-        }
+        Self { x: -(cos_t * self.x + sin_t * self.y), y: -(-sin_t * self.x + cos_t * self.y), theta: -self.theta }
     }
 }
 
@@ -81,11 +85,7 @@ impl Transform2D {
 #[inline]
 pub fn compose(a: Transform2D, b: Transform2D) -> Transform2D {
     let (cos_a, sin_a) = (a.theta.cos(), a.theta.sin());
-    Transform2D {
-        x: cos_a * b.x - sin_a * b.y + a.x,
-        y: sin_a * b.x + cos_a * b.y + a.y,
-        theta: a.theta + b.theta,
-    }
+    Transform2D { x: cos_a * b.x - sin_a * b.y + a.x, y: sin_a * b.x + cos_a * b.y + a.y, theta: a.theta + b.theta }
 }
 
 /// Wrap an angle to [-π, π]. Useful for diff checks.
@@ -105,11 +105,15 @@ pub struct TransformTree {
 }
 
 impl Default for TransformTree {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl TransformTree {
-    pub fn new() -> Self { Self { parents: HashMap::new() } }
+    pub fn new() -> Self {
+        Self { parents: HashMap::new() }
+    }
 
     /// Register T_parent_child: the pose of `child` expressed in `parent`'s frame.
     pub fn set_transform(&mut self, parent: &str, child: &str, tf: Transform2D) {
@@ -120,7 +124,9 @@ impl TransformTree {
     /// Walks the chain child→parent until both `from` and `to` share an ancestor,
     /// then composes the two legs.
     pub fn lookup(&self, from: &str, to: &str) -> Option<Transform2D> {
-        if from == to { return Some(Transform2D::identity()); }
+        if from == to {
+            return Some(Transform2D::identity());
+        }
         // Build path from 'to' up to root
         let path_to = self.path_to_root(to)?;
         let path_from = self.path_to_root(from)?;
@@ -153,18 +159,24 @@ impl TransformTree {
         while let Some((parent, _)) = self.parents.get(cur) {
             chain.push(parent.clone());
             cur = parent;
-            if chain.len() > 128 { return None; } // cycle guard
+            if chain.len() > 128 {
+                return None;
+            } // cycle guard
         }
         Some(chain)
     }
 
-    pub fn frame_count(&self) -> usize { self.parents.len() }
+    pub fn frame_count(&self) -> usize {
+        self.parents.len()
+    }
 }
 
 fn find_lca(path_to: &[String], path_from: &[String]) -> Option<(usize, usize)> {
     for (i, a) in path_to.iter().enumerate() {
         for (j, b) in path_from.iter().enumerate() {
-            if a == b { return Some((i, j)); }
+            if a == b {
+                return Some((i, j));
+            }
         }
     }
     None
@@ -254,11 +266,13 @@ mod kani_proofs {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::f64::consts::{PI, FRAC_PI_2};
+    use std::f64::consts::{FRAC_PI_2, PI};
 
     const EPS: f64 = 1e-9;
 
-    fn approx(a: f64, b: f64) -> bool { (a - b).abs() < EPS }
+    fn approx(a: f64, b: f64) -> bool {
+        (a - b).abs() < EPS
+    }
 
     #[test]
     fn identity_basic() {
@@ -374,7 +388,7 @@ mod tests {
         // base_link → sensor_left and base_link → sensor_right
         //   lookup("sensor_left", "sensor_right") should traverse via base_link
         let mut tree = TransformTree::new();
-        tree.set_transform("base_link", "sensor_left",  Transform2D::new(0.0, 0.5, 0.0));
+        tree.set_transform("base_link", "sensor_left", Transform2D::new(0.0, 0.5, 0.0));
         tree.set_transform("base_link", "sensor_right", Transform2D::new(0.0, -0.5, 0.0));
         let t = tree.lookup("sensor_left", "sensor_right").unwrap();
         // In sensor_left's frame, sensor_right is at y = -1.0

@@ -3,12 +3,12 @@
 //! Fork state into N timelines, simulate via gradient descent,
 //! evaluate fitness, collapse to the best branch.
 
+#[cfg(not(feature = "std"))]
+use crate::fmath::F64Ext;
 use crate::hyper_state::*;
 use crate::vec::*;
 #[cfg(not(feature = "std"))]
-use alloc::{vec::Vec, string::String, vec, format};
-#[cfg(not(feature = "std"))]
-use crate::fmath::F64Ext;
+use alloc::{format, string::String, vec, vec::Vec};
 
 const MAX_BRANCHES: usize = 8;
 const PROPAGATION_STEPS: usize = 8;
@@ -135,8 +135,7 @@ mod kani_proofs {
         let e: f64 = kani::any();
         let p: f64 = kani::any();
         let s: f64 = kani::any();
-        kani::assume(g1.is_finite() && g2.is_finite()
-                    && e.is_finite() && p.is_finite() && s.is_finite());
+        kani::assume(g1.is_finite() && g2.is_finite() && e.is_finite() && p.is_finite() && s.is_finite());
         kani::assume(0.0 <= e && e <= 1.0);
         kani::assume(0.0 <= p && p <= 1.0);
         kani::assume(0.0 <= s && s <= 1.0);
@@ -216,30 +215,32 @@ mod tests {
     #[test]
     fn invariant_best_fitness_is_true_argmax() {
         let mut brancher = TemporalBrancher::new(8);
-        let mut goal = vz(); goal[10] = 4.0;
+        let mut goal = vz();
+        goal[10] = 4.0;
         brancher.set_goal(goal);
         let agent = agent_new(3);
-        let mut force = vz(); force[10] = 1.0;
+        let mut force = vz();
+        force[10] = 1.0;
         let r = brancher.branch(&agent, &force, &vz());
-        let max_score = r.fitness_scores[..r.branches_evaluated]
-            .iter().cloned().fold(f64::NEG_INFINITY, f64::max);
-        assert!((r.best_fitness - max_score).abs() < 1e-9,
-            "best_fitness {} != max of scores {}", r.best_fitness, max_score);
+        let max_score = r.fitness_scores[..r.branches_evaluated].iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+        assert!((r.best_fitness - max_score).abs() < 1e-9, "best_fitness {} != max of scores {}", r.best_fitness, max_score);
     }
 
     /// Invariant 2 — each fitness score ∈ [0, 1] given the weighted sum.
     #[test]
     fn invariant_all_fitness_scores_in_unit_interval() {
         let mut brancher = TemporalBrancher::new(8);
-        let mut goal = vz(); goal[10] = 2.0;
+        let mut goal = vz();
+        goal[10] = 2.0;
         brancher.set_goal(goal);
         let agent = agent_new(3);
-        let mut force = vz(); force[10] = 0.5;
-        let mut pressure = vz(); pressure[11] = -0.5;
+        let mut force = vz();
+        force[10] = 0.5;
+        let mut pressure = vz();
+        pressure[11] = -0.5;
         let r = brancher.branch(&agent, &force, &pressure);
         for (i, &s) in r.fitness_scores[..r.branches_evaluated].iter().enumerate() {
-            assert!((0.0..=1.0).contains(&s),
-                "branch {} score {} outside [0,1]", i, s);
+            assert!((0.0..=1.0).contains(&s), "branch {} score {} outside [0,1]", i, s);
         }
     }
 
@@ -260,7 +261,8 @@ mod tests {
     fn invariant_best_direction_is_from_hypothesis_set() {
         let brancher = TemporalBrancher::new(8);
         let agent = agent_new(3);
-        let mut force = vz(); force[10] = 0.3;
+        let mut force = vz();
+        force[10] = 0.3;
         let r = brancher.branch(&agent, &force, &vz());
         // best_direction's dim 10 must equal 0.3 + cos(angle)*0.3 for some
         // angle = k * TAU / 8, k ∈ {0..8}
@@ -269,9 +271,7 @@ mod tests {
             let expected = 0.3 + angle.cos() * 0.3;
             (r.best_direction[10] - expected).abs() < 1e-9
         });
-        assert!(found,
-            "best_direction[10]={} does not match any hypothesis rotation",
-            r.best_direction[10]);
+        assert!(found, "best_direction[10]={} does not match any hypothesis rotation", r.best_direction[10]);
     }
 
     /// Invariant 4 — finite + non-negative scores always.
@@ -281,8 +281,7 @@ mod tests {
         let agent = agent_new(3);
         let r = brancher.branch(&agent, &vz(), &vz());
         for (i, &s) in r.fitness_scores[..r.branches_evaluated].iter().enumerate() {
-            assert!(s.is_finite() && s >= 0.0,
-                "branch {} score {} is negative or non-finite", i, s);
+            assert!(s.is_finite() && s >= 0.0, "branch {} score {} is negative or non-finite", i, s);
         }
     }
 
@@ -290,15 +289,16 @@ mod tests {
     #[test]
     fn invariant_branching_is_deterministic() {
         let mut brancher = TemporalBrancher::new(8);
-        let mut goal = vz(); goal[11] = 2.0;
+        let mut goal = vz();
+        goal[11] = 2.0;
         brancher.set_goal(goal);
         let agent = agent_new(3);
-        let mut force = vz(); force[10] = 0.7;
+        let mut force = vz();
+        force[10] = 0.7;
         let r1 = brancher.branch(&agent, &force, &vz());
         let r2 = brancher.branch(&agent, &force, &vz());
         for i in 0..r1.branches_evaluated {
-            assert!((r1.fitness_scores[i] - r2.fitness_scores[i]).abs() < 1e-12,
-                "non-determinism at branch {}: {} vs {}", i, r1.fitness_scores[i], r2.fitness_scores[i]);
+            assert!((r1.fitness_scores[i] - r2.fitness_scores[i]).abs() < 1e-12, "non-determinism at branch {}: {} vs {}", i, r1.fitness_scores[i], r2.fitness_scores[i]);
         }
     }
 }
