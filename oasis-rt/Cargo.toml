@@ -63,20 +63,8 @@ os_random = ["dep:getrandom", "ed25519-compact/random", "ed25519-compact/std"]
 # `cargo build --features mesh_bloom_mcu --release`
 mesh_bloom_mcu = []
 
-[profile.release]
-opt-level = 3
-lto = true
-
-# Size-optimized profile for MCU / edge deployment. Use `cargo build --release --profile minsize`.
-[profile.minsize]
-inherits = "release"
-opt-level = "z"          # size over speed
-lto = "fat"
-codegen-units = 1
-panic = "abort"
-strip = "symbols"
-debug = false
-incremental = false
+# Build profiles live at the workspace root (../Cargo.toml). Cargo ignores
+# [profile.*] declared in a non-root member crate.
 
 [[bin]]
 name = "spore_send"
