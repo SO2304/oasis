@@ -99,6 +99,17 @@ fn mesh_router() -> &'static std::sync::Mutex<crate::mesh::MeshRouter> {
                 }
             }
         }
+        // Bound long-memory Bloom false-positive growth on long-lived/unattended
+        // nodes: enable auto-reset if configured, else warn (default leaves the
+        // Bloom growing — FPR drifts past 1% after ~52k host / ~1.6k MCU inserts).
+        match std::env::var("OASIS_MESH_AUTO_RESET").ok().and_then(|s| s.trim().parse::<u64>().ok()) {
+            Some(t) if t > 0 => router.set_bloom_auto_reset_threshold(Some(t)),
+            _ => eprintln!(
+                "[oasis-mesh] warning: OASIS_MESH_AUTO_RESET unset — mesh Bloom will not \
+                 auto-reset; its false-positive rate drifts past 1% after ~52k inserts \
+                 (host) / ~1.6k (MCU). Set OASIS_MESH_AUTO_RESET=<inserts> on long-lived nodes."
+            ),
+        }
         std::sync::Mutex::new(router)
     })
 }
