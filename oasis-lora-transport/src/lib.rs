@@ -166,6 +166,13 @@ impl<R: LoRaRadio> LoRaTransport<R> {
     pub fn params(&self) -> &LoRaParams {
         &self.params
     }
+
+    /// Time-on-air (µs) to send an `envelope_len`-byte OASIS envelope, including
+    /// the 8-byte LoRa frame header. Pair with a
+    /// [`crate::airtime::DutyCycleThrottler`] to stay within regional duty limits.
+    pub fn airtime_us(&self, envelope_len: usize) -> u64 {
+        crate::airtime::airtime_us(&self.params, FRAME_HEADER_LEN + envelope_len)
+    }
     pub fn radio(&mut self) -> &mut R {
         &mut self.radio
     }
@@ -243,6 +250,10 @@ pub mod sim;
 // ── SX1262 driver hook point — stub, to be replaced with real driver.
 
 pub mod sx1262;
+
+// ── Airtime + duty-cycle throttle (no_std, pure math — regional compliance).
+
+pub mod airtime;
 
 // ── Gap 2 — FHSS anti-narrowband-jam (host-only sim for now).
 
