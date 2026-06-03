@@ -7,8 +7,10 @@ Bio-inspired agentic middleware: tension fields, Hebbian/STDP synapses, emotiona
 modulation, reflex arcs, federated learning. Runtime in Rust (30 modules, 443
 unit tests). Validated on:
 
-- **Real hardware** — Samsung S23 FE (Android/Termux), 3h23 continuous session
-  with real sensors (LSM6DSVTR IMU, barometer, light, mic), 121 290 ticks.
+- **Real hardware (claimed)** — Samsung S23 FE (Android/Termux), 3h23 continuous
+  session with real sensors (LSM6DSVTR IMU, barometer, light, mic), 121 290 ticks.
+  Note: session logs are not archived in this repo (not reproducible from the tree;
+  see IOT_READINESS.md).
 - **Simulation** — PX4 SITL + jmavsim over MAVLink v2: OASIS auto-armed PX4,
   triggered takeoff, and flew a 4-waypoint mission with closed-loop altitude
   hold (1.94 m vs 2.0 m target, ±6 cm). One successful end-to-end run; no real
@@ -141,7 +143,7 @@ Active mechanisms in `drone_bridge.rs`:
 
 ## Proven Production Session
 
-- **3h23 continuous** on Samsung S23 FE via Termux (121 290 ticks, walking + transit)
+- **3h23 continuous** on Samsung S23 FE via Termux (121 290 ticks, walking + transit) — logs not archived in-repo
 - **Record**: 3h33 v0.3 (2590 ticks on train), 0 crashes
 - **Kernel latency**: avg 8ms, 76% under 10ms
 - **Memory**: persistent on /sdcard/ (pain + federated digests, ~7 KB)

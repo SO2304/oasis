@@ -40,7 +40,7 @@ source is `wc -l oasis-rt/src/*.rs`.
 ### Face 2 — Android "nervous system" daemon (Rust)
 - Single binary (`main.rs`, ~600 LOC) running in Termux on Android
 - 11 bio-inspired mechanisms operating on real phone sensors (accelerometer, gyroscope, barometer, light, microphone)
-- Longest validated run: 3h23 on Samsung S23 FE (121 290 ticks, zero crash)
+- Longest run *claimed*: 3h23 on Samsung S23 FE (121 290 ticks, zero crash) — ⚠️ session logs are NOT archived in this repo, so it is not reproducible from the tree (see IOT_READINESS.md)
 - **Research target**: embedded adaptive AI experiments
 
 Both faces share the `oasis-rt` crate. No TS runtime is deployed.
@@ -192,7 +192,7 @@ Performance trade across the 3 mesh variants (Linux WSL, K=10 medians):
 | Spore v7 loss + FEC real UDP | bench + loss proxy: 98% @ 30% uniform, 82-90% @ 30% burst | ✅ |
 | RFC 8439 ChaCha20-Poly1305 vector | test vector matches byte-for-byte | ✅ |
 | All 11 mechanisms compile + test | 443 Rust tests across 30 modules | ✅ |
-| Android daemon 3h+ run | session_v0_5 on S23 FE, 121 290 ticks | ✅ |
+| Android daemon 3h+ run | session_v0_5 on S23 FE, 121 290 ticks | ⚠️ claimed; logs not in repo |
 | **MCU cross-compile** (`thumbv7em-none-eabi`) | `cargo build --target thumbv7em-none-eabi --lib --no-default-features --features mesh_bloom_mcu --release` | ✅ 0 errors |
 | **A/B vs ROS 2 Jazzy** (Linux intra-process, K=10 medians) | OASIS 241 ns vs rclcpp intra 5 624 ns vs rclcpp DDS 52 411 ns at 16 B — 23–217× faster | ✅ measured |
 | 7/7 rclcpp core primitives matched | pub/sub + services + actions + tf2 + timer + parameters + params-events (8/8 incl. tf) | ✅ |
