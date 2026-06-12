@@ -249,6 +249,10 @@ pub mod sim;
 
 // ── SX1262 driver hook point — stub, to be replaced with real driver.
 
+// ── SX126x command-encoding layer (datasheet-exact, no_std, tested).
+
+pub mod sx126x;
+
 pub mod sx1262;
 
 // ── Airtime + duty-cycle throttle (no_std, pure math — regional compliance).
