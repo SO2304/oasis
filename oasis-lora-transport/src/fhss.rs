@@ -27,7 +27,7 @@
 
 #![cfg(feature = "std")]
 
-use crate::{LoRaError, LoRaParams, LoRaRadio};
+use crate::{LoRaError, LoRaRadio};
 use sha2::{Digest, Sha256};
 
 /// Pseudo-random frequency selector using SHA-256 over seed + context.

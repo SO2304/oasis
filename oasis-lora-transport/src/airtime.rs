@@ -14,26 +14,20 @@
 
 use crate::LoRaParams;
 
-/// Bandwidth in Hz for an SX126x LoRa bandwidth code (the subset OASIS uses).
-/// Defaults to 125 kHz (the safest/highest-airtime assumption) for unknown codes.
+/// Bandwidth in Hz for an SX126x LoRa bandwidth code. Delegates to
+/// [`crate::sx126x::bw_hz`] so the full (non-Hz-ordered) register map and the
+/// LDRO decision share one source of truth.
 pub fn bw_hz(bw_code: u8) -> u32 {
-    match bw_code {
-        2 => 31_250,
-        3 => 62_500,
-        4 => 125_000,
-        5 => 250_000,
-        6 => 500_000,
-        _ => 125_000,
-    }
+    crate::sx126x::bw_hz(bw_code)
 }
 
 /// Time-on-air, in **microseconds**, for `payload_len` bytes under `params`.
 ///
 /// Uses the SX126x reference formula with the common LoRaWAN defaults that the
 /// SimulatedLoRaRadio and a real driver share: coding rate 4/5, explicit header,
-/// CRC on, 8-symbol preamble, low-data-rate-optimize auto-enabled for SF≥11 at
-/// ≤125 kHz. Integer-exact for those defaults (verified against the published
-/// airtime tables — see tests).
+/// CRC on, 8-symbol preamble, low-data-rate-optimize auto-enabled when the symbol
+/// time is ≥ 16 ms (via [`crate::sx126x::ldro`]). Integer-exact for those defaults
+/// (verified against the published airtime tables — see tests).
 pub fn airtime_us(params: &LoRaParams, payload_len: usize) -> u64 {
     let sf = (params.sf.clamp(6, 12)) as u64;
     let bw = bw_hz(params.bw_code) as u64;
@@ -42,11 +36,9 @@ pub fn airtime_us(params: &LoRaParams, payload_len: usize) -> u64 {
     let crc = 1u64; // CRC on
     let ih = 0u64; // explicit header
     let n_pre = 8u64; // preamble symbols
-    let de = if sf >= 11 && bw <= 125_000 {
-        1u64
-    } else {
-        0u64
-    };
+                      // Low-data-rate optimize — shared rule (symbol time ≥ 16 ms), keyed off the
+                      // real bandwidth, not the raw register code. Single source: `sx126x::ldro`.
+    let de = crate::sx126x::ldro(sf as u8, params.bw_code) as u64;
 
     // Symbol time (µs): 2^SF / BW seconds.
     let t_sym = ((1u64 << sf) * 1_000_000) / bw;

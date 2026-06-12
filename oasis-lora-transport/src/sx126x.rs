@@ -55,13 +55,33 @@ pub fn rf_freq_word(freq_hz: u32) -> [u8; 4] {
     word.to_be_bytes()
 }
 
-/// LoRa low-data-rate optimize flag (symbol time > 16 ms). Mirrors `airtime`.
-pub fn ldro(sf: u8, bw_code: u8) -> u8 {
-    if (sf >= 11 && bw_code <= 4) || (sf == 12 && bw_code == 5) {
-        1
-    } else {
-        0
+/// Bandwidth in Hz for an SX126x LoRa bandwidth register code. The register
+/// codes are **not** ordered by Hz (e.g. code 3 = 62.5 kHz, code 8 = 10.4 kHz),
+/// so any symbol-time decision must key off this, never the raw code. Unknown
+/// codes default to 125 kHz (the safest / highest-airtime assumption).
+pub fn bw_hz(bw_code: u8) -> u32 {
+    match bw_code {
+        0 => 7_810,
+        8 => 10_420,
+        1 => 15_630,
+        9 => 20_830,
+        2 => 31_250,
+        10 => 41_670,
+        3 => 62_500,
+        4 => 125_000,
+        5 => 250_000,
+        6 => 500_000,
+        _ => 125_000,
     }
+}
+
+/// LoRa Low-Data-Rate-Optimize flag: enable when the symbol time
+/// `Tsym = 2^SF / BW` is ≥ 16 ms (Semtech datasheet / RadioLib `autoLDRO`).
+/// Keys off [`bw_hz`] because the BW register field is not Hz-ordered — a scalar
+/// `bw_code <= N` test cannot express the condition for narrow bandwidths.
+pub fn ldro(sf: u8, bw_code: u8) -> u8 {
+    let t_sym_us = ((1u64 << sf) * 1_000_000) / bw_hz(bw_code) as u64;
+    (t_sym_us >= 16_000) as u8
 }
 
 /// `SetModulationParams` (LoRa): [SF, BW, CR, LDRO].
@@ -90,11 +110,15 @@ pub fn packet_params(preamble_len: u16, payload_len: u8, crc_on: bool) -> [u8; 6
 /// `SetPaConfig` for the SX1262, chosen from the datasheet optimal-settings
 /// table (Table 13-21) by target power. Returns [paDutyCycle, hpMax, devSel, paLut].
 pub fn pa_config(tx_power_dbm: i8) -> [u8; 4] {
-    let (duty, hp_max) = match tx_power_dbm {
-        p if p >= 22 => (0x04, 0x07),
-        20 | 21 => (0x03, 0x05),
-        17 | 18 | 19 => (0x02, 0x03),
-        _ => (0x02, 0x02), // <= +14 dBm
+    // RadioLib SX126x band boundaries (strict-greater): >20, >17, >14, else.
+    let (duty, hp_max) = if tx_power_dbm > 20 {
+        (0x04, 0x07)
+    } else if tx_power_dbm > 17 {
+        (0x03, 0x05)
+    } else if tx_power_dbm > 14 {
+        (0x02, 0x03)
+    } else {
+        (0x02, 0x02)
     };
     [duty, hp_max, 0x00 /* SX1262 */, 0x01]
 }
@@ -178,9 +202,41 @@ mod tests {
 
     #[test]
     fn pa_config_table() {
+        // RadioLib bands: >20 / >17 / >14 / else.
         assert_eq!(pa_config(22), [0x04, 0x07, 0x00, 0x01]); // +22 dBm
+        assert_eq!(pa_config(21), [0x04, 0x07, 0x00, 0x01]); // 21 -> top row (not lumped with 20)
+        assert_eq!(pa_config(20), [0x03, 0x05, 0x00, 0x01]); // +20 dBm
+        assert_eq!(pa_config(17), [0x02, 0x03, 0x00, 0x01]); // 17 -> +17 row
+        assert_eq!(pa_config(16), [0x02, 0x03, 0x00, 0x01]); // 16 no longer falls to +14 row
+        assert_eq!(pa_config(15), [0x02, 0x03, 0x00, 0x01]); // 15 -> +17 row
         assert_eq!(pa_config(14), [0x02, 0x02, 0x00, 0x01]); // +14 dBm
         assert_eq!(pa_config(0), [0x02, 0x02, 0x00, 0x01]); // low power -> +14 row
+    }
+
+    #[test]
+    fn bw_hz_register_map_is_not_hz_ordered() {
+        assert_eq!(bw_hz(4), 125_000);
+        assert_eq!(bw_hz(5), 250_000);
+        assert_eq!(bw_hz(6), 500_000);
+        // the non-monotonic part: code 3 > code 8 in Hz despite 3 < 8.
+        assert_eq!(bw_hz(3), 62_500);
+        assert_eq!(bw_hz(8), 10_420);
+        assert!(bw_hz(3) > bw_hz(8));
+        assert_eq!(bw_hz(99), 125_000); // unknown -> default
+    }
+
+    #[test]
+    fn ldro_keys_off_symbol_time_not_raw_code() {
+        // Tsym = 2^SF / BW; LDRO when Tsym >= 16 ms.
+        assert_eq!(ldro(7, 4), 0); // SF7  /125k  = 1.024 ms
+        assert_eq!(ldro(10, 4), 0); // SF10 /125k  = 8.192 ms
+        assert_eq!(ldro(11, 4), 1); // SF11 /125k  = 16.384 ms
+        assert_eq!(ldro(12, 6), 0); // SF12 /500k  = 8.192 ms  (never for 500k)
+        assert_eq!(ldro(12, 5), 1); // SF12 /250k  = 16.384 ms
+                                    // Cases the old `bw_code <= 4` gate got WRONG (narrow / boundary BWs):
+        assert_eq!(ldro(10, 3), 1); // SF10 /62.5k = 16.384 ms  (was 0)
+        assert_eq!(ldro(9, 2), 1); //  SF9  /31.25k= 16.384 ms  (was 0)
+        assert_eq!(ldro(8, 8), 1); //  SF8  /10.4k = 24.57 ms   (was 0)
     }
 
     #[test]

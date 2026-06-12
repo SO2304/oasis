@@ -1,30 +1,33 @@
 //! OASIS LoRa Transport — scaffolding for Gap 1 (real radio transport).
 //!
 //! This crate defines the **abstraction layer** between an OASIS
-//! `MeshRouter` and a LoRa radio (SX126x family: SX1261, SX1262, SX1268).
-//! It does NOT contain a real SX126x SPI driver yet — that's the final
-//! piece when hardware lands. It DOES give you:
+//! `MeshRouter` and a LoRa radio (SX126x family: SX1261, SX1262, SX1268),
+//! and ships a real (mock-tested, not yet silicon-run) SX1262 driver. It
+//! gives you:
 //!
 //! 1. A minimal `LoRaRadio` trait matching SX126x-style APIs: init,
 //!    set modulation, tx_payload, rx_payload, sleep. Blocking; no async.
-//! 2. A `SimulatedLoRaRadio` that routes bytes through an in-process
+//! 2. A [`sx126x`] command-encoding layer — datasheet-exact, `no_std`,
+//!    pure functions, unit-tested against canonical reference values.
+//! 3. A [`sx1262::Sx1262Driver`] implementing `LoRaRadio` over
+//!    `embedded-hal 1.0` (SPI + GPIO + delay). The command sequencing is
+//!    mock-SPI tested; it has **not** been run on real silicon.
+//! 4. A `SimulatedLoRaRadio` that routes bytes through an in-process
 //!    channel (host-only, `std` feature). Two instances paired with
 //!    crossed tx/rx channels = a simulated radio link, with optional
 //!    loss injection.
-//! 3. A `LoRaTransport<R: LoRaRadio>` glue that wraps OASIS's existing
+//! 5. A `LoRaTransport<R: LoRaRadio>` glue that wraps OASIS's existing
 //!    `pack_lora_frame` / `parse_lora_frame` around the radio trait,
 //!    so a `MeshRouter::origin_wrap()` envelope goes TX → air → RX
 //!    → `MeshRouter::process()` byte-for-byte.
 //!
-//! When real hardware lands:
+//! Wiring a real radio (RP2040 example):
 //!
 //! ```ignore
-//! use lora_transport::LoRaTransport;
-//! // Replace this stub:
-//! // let radio = SimulatedLoRaRadio::new(...);
-//! // With a real driver, e.g.:
-//! let radio = Sx1262Driver::new(spi, nss, reset, busy, dio1);
-//! let transport = LoRaTransport::new(radio, LoRaParams::default());
+//! use oasis_lora_transport::{LoRaTransport, LoRaParams, sx1262::Sx1262Driver};
+//! // `spi`, the pins and `delay` come from the board HAL (embedded-hal 1.0).
+//! let radio = Sx1262Driver::new(spi, nss, busy, reset, dio1, delay);
+//! let transport = LoRaTransport::new(radio, LoRaParams::default())?;
 //! ```
 //!
 //! The rest of the code — the `MeshRouter`, `pack_lora_frame`, v0A
@@ -247,11 +250,11 @@ fn parse_lora_frame_local(frame: &[u8]) -> Result<(usize, usize), LoRaError> {
 #[cfg(feature = "std")]
 pub mod sim;
 
-// ── SX1262 driver hook point — stub, to be replaced with real driver.
-
 // ── SX126x command-encoding layer (datasheet-exact, no_std, tested).
 
 pub mod sx126x;
+
+// ── SX1262 driver — real, embedded-hal 1.0, mock-SPI tested (not silicon-run).
 
 pub mod sx1262;
 
