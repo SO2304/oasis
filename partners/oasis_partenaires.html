@@ -1,8 +1,8 @@
 <title>OASIS Partenaires</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@112,600;112,800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@112,800&family=IBM+Plex+Sans:wght@400;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <style>
-/* Layout: one 64rem column, a cockpit-style "proof ledger" as the spine; safety orange used only for calls to action and the OASIS bar */
+/* Layout: a one-page datasheet. Spec table first, status in three columns, then repro commands; orange only on the ask */
 :root {
   --bg: #eef1f4;
   --surface: #ffffff;
@@ -10,7 +10,6 @@
   --muted: #566476;
   --line: #d3dae2;
   --accent: #e2531d;
-  --accent-ink: #ffffff;
   --proven: #1f7a4d;
   --sim: #2c5fa8;
   --todo: #9a6a12;
@@ -21,261 +20,126 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     --bg: #0f151c; --surface: #17202a; --ink: #e6ebf0; --muted: #98a5b4; --line: #2a3644;
-    --accent: #f06a35; --accent-ink: #120a06; --proven: #4cc38a; --sim: #79a6e8; --todo: #e0ad4f;
+    --accent: #f06a35; --proven: #4cc38a; --sim: #79a6e8; --todo: #e0ad4f;
     color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
   --bg: #0f151c; --surface: #17202a; --ink: #e6ebf0; --muted: #98a5b4; --line: #2a3644;
-  --accent: #f06a35; --accent-ink: #120a06; --proven: #4cc38a; --sim: #79a6e8; --todo: #e0ad4f;
+  --accent: #f06a35; --proven: #4cc38a; --sim: #79a6e8; --todo: #e0ad4f;
   color-scheme: dark;
 }
 * { box-sizing: border-box; }
-body { background: var(--bg); color: var(--ink); font: 400 1rem/1.6 var(--body); padding-inline: 16px; padding-block: 0; }
-.wrap { max-width: 64rem; margin: 0 auto; display: grid; gap: 4.5rem; padding-block: 3rem 4rem; }
-h1, h2, h3 { font-family: var(--display); font-stretch: 112%; text-wrap: balance; margin: 0; line-height: 1.1; }
-h1 { font-weight: 800; font-size: clamp(2.1rem, 5vw, 3.4rem); letter-spacing: -0.01em; }
-h2 { font-weight: 800; font-size: clamp(1.5rem, 3vw, 2rem); }
-h3 { font-weight: 600; font-size: 1.1rem; }
-p { margin: 0; max-width: 65ch; }
-.eyebrow { font: 500 0.75rem/1 var(--mono); text-transform: uppercase; letter-spacing: 0.12em; color: var(--muted); }
-section { display: grid; gap: 1.5rem; }
-.lead { font-size: 1.15rem; color: var(--muted); }
-a { color: inherit; }
-.btns { display: flex; flex-wrap: wrap; gap: 0.75rem; }
-.btn { display: inline-block; padding: 0.75rem 1.2rem; border: 1.5px solid var(--ink); text-decoration: none; font-weight: 600; border-radius: 2px; }
-.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
-.btn:focus-visible { outline: 3px solid var(--sim); outline-offset: 2px; }
+body { background: var(--bg); color: var(--ink); font: 400 0.95rem/1.5 var(--body); padding-inline: 16px; padding-block: 0; }
+.wrap { max-width: 60rem; margin: 0 auto; display: grid; gap: 2.25rem; padding-block: 2.5rem 3rem; }
+h1, h2 { font-family: var(--display); font-stretch: 112%; font-weight: 800; margin: 0; line-height: 1.1; text-wrap: balance; }
+h1 { font-size: clamp(1.7rem, 4vw, 2.4rem); }
+h2 { font: 500 0.75rem/1 var(--mono); text-transform: uppercase; letter-spacing: 0.12em; color: var(--muted); }
+p { margin: 0; max-width: 70ch; }
+section { display: grid; gap: 0.75rem; }
+header { display: grid; gap: 0.6rem; }
+.sub { font-size: 1.05rem; color: var(--muted); }
+.sub b { color: var(--ink); font-weight: 600; }
 
-/* hero */
-.hero { display: grid; gap: 1.5rem; }
-.callsign { display: flex; flex-wrap: wrap; gap: 0.5rem 1.5rem; font: 400 0.85rem/1.4 var(--mono); color: var(--muted); border-top: 1px solid var(--line); padding-top: 1rem; }
-.callsign b { color: var(--ink); font-weight: 500; }
+.box { background: var(--surface); border: 1px solid var(--line); overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; }
+th, td { text-align: left; padding: 0.55rem 0.9rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+tr:last-child th, tr:last-child td { border-bottom: 0; }
+th { width: 9.5rem; font: 500 0.75rem/1.5 var(--mono); text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+td { font-family: var(--mono); font-size: 0.88rem; font-variant-numeric: tabular-nums; }
+td small { color: var(--muted); font-size: 0.8rem; }
 
-/* video */
-.video { display: block; width: 100%; max-width: 100%; aspect-ratio: 16 / 9; background: #000; border: 1px solid var(--line); }
-.hud { font: 500 0.8rem/1.5 var(--mono); color: var(--muted); display: flex; flex-wrap: wrap; gap: 0.25rem 1.25rem; }
+.status { display: grid; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); gap: 1rem; }
+.col { border-top: 3px solid currentColor; padding-top: 0.6rem; display: grid; gap: 0.4rem; align-content: start; }
+.col.proven { color: var(--proven); }
+.col.sim { color: var(--sim); }
+.col.todo { color: var(--todo); }
+.col h3 { margin: 0; font: 500 0.75rem/1 var(--mono); letter-spacing: 0.1em; text-transform: uppercase; }
+.col ul { margin: 0; padding-left: 1rem; color: var(--ink); font-size: 0.9rem; display: grid; gap: 0.25rem; }
 
-/* ledger */
-.ledger-wrap { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); }
-table { border-collapse: collapse; width: 100%; min-width: 40rem; font-size: 0.95rem; }
-th, td { text-align: left; padding: 0.8rem 1rem; border-bottom: 1px solid var(--line); vertical-align: top; }
-th { font: 500 0.72rem/1.2 var(--mono); text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); }
-tr:last-child td { border-bottom: 0; }
-td.ev { color: var(--muted); }
-.tag { display: inline-block; font: 500 0.7rem/1 var(--mono); letter-spacing: 0.08em; padding: 0.35rem 0.5rem; border: 1px solid currentColor; white-space: nowrap; }
-.tag.proven { color: var(--proven); }
-.tag.sim { color: var(--sim); }
-.tag.todo { color: var(--todo); }
-.legend { display: flex; flex-wrap: wrap; gap: 0.75rem 1.5rem; font-size: 0.9rem; color: var(--muted); align-items: center; }
+pre { margin: 0; padding: 1rem; font: 400 0.82rem/1.6 var(--mono); color: var(--ink); white-space: pre; }
+pre .c { color: var(--muted); }
 
-/* numbers */
-.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr)); gap: 2rem; }
-.grid2 > * { min-width: 0; }
-.chart { background: var(--surface); border: 1px solid var(--line); padding: 1.25rem; display: grid; gap: 0.75rem; }
-.chart svg { width: 100%; height: auto; display: block; }
-.chart .note { font-size: 0.85rem; color: var(--muted); }
-.stats { display: grid; gap: 0; }
-.stat { display: grid; grid-template-columns: 1fr auto; gap: 1rem; padding: 0.85rem 0; border-bottom: 1px solid var(--line); align-items: baseline; }
-.stat span:first-child { color: var(--muted); }
-.stat span:last-child { font: 500 1rem/1.3 var(--mono); font-variant-numeric: tabular-nums; text-align: right; }
-
-/* roadmap */
-.phases { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: 1rem; }
-.phase { border-top: 3px solid var(--ink); padding-top: 1rem; display: grid; gap: 0.5rem; align-content: start; }
-.phase .meta { font: 400 0.8rem/1.4 var(--mono); color: var(--muted); }
-.phase ul { margin: 0; padding-left: 1.1rem; color: var(--muted); font-size: 0.95rem; }
-
-/* partners */
-.profiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); gap: 1rem; }
-.profile { background: var(--surface); border: 1px solid var(--line); padding: 1.25rem; display: grid; gap: 0.6rem; align-content: start; }
-.profile p { color: var(--muted); font-size: 0.95rem; }
-.offer { display: grid; grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr)); gap: 2rem; }
-.offer ul { margin: 0; padding-left: 1.1rem; display: grid; gap: 0.4rem; }
-.cta { border: 1.5px solid var(--ink); padding: 1.75rem; display: grid; gap: 1rem; }
-footer { font-size: 0.85rem; color: var(--muted); border-top: 1px solid var(--line); padding-top: 1.25rem; }
-code { font-family: var(--mono); font-size: 0.85em; }
+.ask { border: 1.5px solid var(--accent); padding: 1.1rem 1.25rem; display: grid; gap: 0.5rem; }
+.ask p { font-size: 0.95rem; }
+.ask strong { color: var(--accent); }
+footer { font-size: 0.8rem; color: var(--muted); }
 </style>
 
 <div class="wrap">
 
-  <header class="hero">
-    <span class="eyebrow">OASIS · runtime Rust · pré-1.0 · recherche de partenaires pilotes</span>
-    <h1>Une couche d'autonomie sûre au-dessus de PX4, pour les essaims de drones et les réseaux de capteurs</h1>
-    <p class="lead">OASIS s'installe au-dessus de l'autopilote. Il bloque toute action physique quand l'incertitude dépasse un seuil (règle R14), fait circuler les messages entre les machines sur un réseau maillé chiffré et signé, et fonctionne sans cloud. Le logiciel est écrit en Rust. La logique est démontrée en simulation et sous vérification formelle. Je cherche maintenant des partenaires pour le premier essai sur du vrai matériel.</p>
-    <div class="btns">
-      <a class="btn primary" href="#partenariat">Devenir partenaire pilote</a>
-      <a class="btn" href="#preuves">Voir les preuves</a>
-    </div>
-    <div class="callsign">
-      <span><b>443</b> tests unitaires</span>
-      <span><b>113</b> preuves formelles Kani</span>
-      <span><b>30</b> modules Rust</span>
-      <span><b>MAVLink v2</b> · PX4</span>
-      <span><b>no_std</b> Cortex-M</span>
-    </div>
+  <header>
+    <h1>OASIS : couche d'autonomie et mesh signé au-dessus de PX4</h1>
+    <p class="sub">Runtime <b>Rust</b>, <b>no_std</b>, interface <b>MAVLink v2</b>. Gate R14 : aucune actuation si l'entropie capteurs dépasse le seuil. Pré-1.0. <b>Je cherche un partenaire pour le premier test sur hardware réel.</b></p>
   </header>
 
-  <section id="demo" aria-labelledby="demo-h">
-    <span class="eyebrow">Démonstration · 90 s</span>
-    <h2 id="demo-h">Trois plateformes partagent leur expérience sans serveur</h2>
-    <video class="video" controls muted playsinline preload="metadata" poster="demo-poster.jpg">
-      <source src="demo-mesh-3plat.mp4" type="video/mp4">
-      Votre navigateur ne lit pas cette vidéo.
-    </video>
-    <div class="hud">
-      <span>1 téléphone Android, capteurs réels</span>
-      <span>1 PC</span>
-      <span>3 drones simulés (Webots)</span>
-      <span>78 fusions téléphone → drones en 5 min</span>
-      <span>401 messages reçus par le téléphone</span>
-    </div>
-    <p>Chaque appareil fait tourner son propre noyau OASIS. Ils échangent directement des résumés de ce qu'ils ont appris, sans cloud, sans serveur et sans broker. Le téléphone fonctionne avec ses vrais capteurs (IMU, baromètre, luminosité). Les drones sont simulés. Le graphique « perte de capteur » à la fin de la vidéo est une illustration construite à partir des données de test, pas une mesure en vol. L'enregistrement est antérieur à la version actuelle, qui compte 443 tests.</p>
-  </section>
-
-  <section id="preuves" aria-labelledby="preuves-h">
-    <span class="eyebrow">Registre des preuves</span>
-    <h2 id="preuves-h">Ce qui est démontré, et sur quoi</h2>
-    <p>Chaque ligne indique le type de preuve. Je ne présente pas un résultat de simulation comme un résultat matériel.</p>
-    <div class="legend">
-      <span class="tag proven">PROUVÉ</span> testé ou prouvé formellement, reproductible depuis le dépôt
-      <span class="tag sim">SIMULÉ</span> simulateur ou banc x86
-      <span class="tag todo">À FAIRE</span> prochaine étape, objet du partenariat
-    </div>
-    <div class="ledger-wrap">
+  <section aria-labelledby="spec-h">
+    <h2 id="spec-h">Spécifications</h2>
+    <div class="box">
       <table>
-        <thead><tr><th>Capacité</th><th>Preuve</th><th>Statut</th></tr></thead>
-        <tbody>
-          <tr><td>Suite de tests du noyau</td><td class="ev"><code>cargo test --workspace --release</code> : 443 tests</td><td><span class="tag proven">PROUVÉ</span></td></tr>
-          <tr><td>Invariants de sécurité (quorum, révocation, signature mesh)</td><td class="ev">113 harnais de preuve Kani (CBMC)</td><td><span class="tag proven">PROUVÉ</span></td></tr>
-          <tr><td>Chiffrement ChaCha20-Poly1305</td><td class="ev">Vecteur RFC 8439 identique octet par octet</td><td><span class="tag proven">PROUVÉ</span></td></tr>
-          <tr><td>Mesh signé Ed25519, résistant à un nœud compromis</td><td class="ev">10 tests, dont le rejet d'une origine usurpée</td><td><span class="tag proven">PROUVÉ</span></td></tr>
-          <tr><td>MAVLink v2 : CRC, signature, anti-rejeu</td><td class="ev">29 tests et 300 trames PX4 réelles</td><td><span class="tag proven">PROUVÉ</span></td></tr>
-          <tr><td>Compilation pour microcontrôleur</td><td class="ev">Cortex-M (<code>thumbv7em</code>, RP2040, STM32F4), 0 erreur</td><td><span class="tag proven">PROUVÉ</span></td></tr>
-          <tr><td>Mesh fédéré téléphone, PC et drones, sans serveur</td><td class="ev">Vidéo ci-dessus : téléphone Android réel, drones simulés sous Webots</td><td><span class="tag sim">SIMULÉ</span></td></tr>
-          <tr><td>Armement, décollage et mission 4 waypoints pilotés par OASIS</td><td class="ev">Journaux PX4 SITL + jMAVSim, 1 exécution complète</td><td><span class="tag sim">SIMULÉ</span></td></tr>
-          <tr><td>Essaim de 200 drones, déduplication</td><td class="ev"><code>sim_200_drones</code> : 84,8 % de doublons éliminés (topologie réseau sans modèle radio)</td><td><span class="tag sim">SIMULÉ</span></td></tr>
-          <tr><td>Tolérance aux pertes UDP</td><td class="ev">98 % de livraison à 30 % de perte uniforme avec FEC</td><td><span class="tag sim">SIMULÉ</span></td></tr>
-          <tr><td>Exécution sur MCU</td><td class="ev">Wokwi (RP2040) et Renode (STM32F4)</td><td><span class="tag sim">SIMULÉ</span></td></tr>
-          <tr><td>Vol réel Pixhawk et quadricoptère</td><td class="ev">Pas encore réalisé</td><td><span class="tag todo">À FAIRE</span></td></tr>
-          <tr><td>Radio LoRa SX1262 sur matériel</td><td class="ev">Le driver est une ébauche, le banc de 3 nœuds est chiffré</td><td><span class="tag todo">À FAIRE</span></td></tr>
-          <tr><td>Audit cryptographique externe</td><td class="ev">Pas encore réalisé</td><td><span class="tag todo">À FAIRE</span></td></tr>
-        </tbody>
+        <tr><th>Cible</th><td>x86_64 Linux/Windows · Android (Termux) · <code>thumbv6m</code> RP2040 · <code>thumbv7em</code> STM32F4 <small>(compile, pas encore booté sur silicium)</small></td></tr>
+        <tr><th>Interface</th><td>MAVLink v2 : CRC, signature, anti-rejeu · OFFBOARD, PARAM_SET, waypoints</td></tr>
+        <tr><th>Crypto</th><td>ChaCha20-Poly1305 (vecteur RFC 8439 exact) · X25519 · Noise-KK · Ed25519 <small>(pas de crypto maison)</small></td></tr>
+        <tr><th>Mesh</th><td>multi-hop, TTL, dédup Bloom · v9 HMAC-SHA256 · v0A Ed25519 par nœud (résiste à un insider) · fenêtre anti-rejeu 128 bits</td></tr>
+        <tr><th>Vérification</th><td>443 tests · 113 harnais Kani (CBMC)</td></tr>
+        <tr><th>Gate R14</th><td>p50 331 ns · p99 360 ns · 1000/1000 fautes bloquées</td></tr>
+        <tr><th>Pub/sub 16 o</th><td>162 ns <small>vs rclcpp intra 4 562 ns (28×) · rclcpp DDS 45 243 ns (279×)</small></td></tr>
+        <tr><th>Pub/sub 1 Mo</th><td>48,8 µs <small>vs rclcpp intra 183 µs (3,75×)</small></td></tr>
+        <tr><th>Mesh wrap</th><td>v8 123 ns · v9 431 ns · v0A 251 µs <small>(Ed25519 réservé aux broadcasts d'autorité)</small></td></tr>
       </table>
     </div>
+    <p style="font-size:0.8rem;color:var(--muted)">Benchs : médianes K=10, x86 WSL2. Ed25519 verify ≈ 206 ms sur Cortex-M0+ (Renode).</p>
   </section>
 
-  <section id="chiffres" aria-labelledby="chiffres-h">
-    <span class="eyebrow">Performance mesurée</span>
-    <h2 id="chiffres-h">Comparaison A/B avec ROS 2 Jazzy</h2>
-    <div class="grid2">
-      <figure class="chart" style="margin:0">
-        <svg viewBox="0 0 420 190" role="img" aria-labelledby="ch-t">
-          <title id="ch-t">Latence pub/sub à 16 octets, échelle logarithmique : OASIS 162 ns, rclcpp intra-processus 4 562 ns, rclcpp DDS 45 243 ns</title>
-          <!-- log10 scale: 100 ns at x=110 to 100 000 ns at x=400 (97 px per decade) -->
-          <g stroke="var(--line)" stroke-width="1">
-            <line x1="110" y1="10" x2="110" y2="150"/><line x1="207" y1="10" x2="207" y2="150"/>
-            <line x1="303" y1="10" x2="303" y2="150"/><line x1="400" y1="10" x2="400" y2="150"/>
-          </g>
-          <g font-family="IBM Plex Mono, monospace" font-size="11" fill="var(--muted)" text-anchor="middle">
-            <text x="110" y="168">100 ns</text><text x="207" y="168">1 µs</text>
-            <text x="303" y="168">10 µs</text><text x="390" y="168">100 µs</text>
-          </g>
-          <g font-family="IBM Plex Sans, sans-serif" font-size="12" fill="var(--ink)" text-anchor="end">
-            <text x="102" y="38">OASIS</text><text x="102" y="83">rclcpp intra</text><text x="102" y="128">rclcpp DDS</text>
-          </g>
-          <rect x="110" y="24" width="20" height="22" fill="var(--accent)"/>
-          <rect x="110" y="69" width="160" height="22" fill="var(--muted)"/>
-          <rect x="110" y="114" width="257" height="22" fill="var(--muted)"/>
-          <g font-family="IBM Plex Mono, monospace" font-size="11" fill="var(--ink)">
-            <text x="136" y="39">162 ns</text><text x="276" y="84">4 562 ns</text><text x="373" y="122" text-anchor="end" fill="var(--bg)">45 µs</text>
-          </g>
-        </svg>
-        <figcaption class="note">Boucle pub/sub, charge utile de 16 octets, médianes sur K=10 exécutions des deux côtés, Linux WSL2. Échelle logarithmique.</figcaption>
-      </figure>
-      <div class="stats">
-        <div class="stat"><span>Contre rclcpp intra-processus, 16 o</span><span>28× plus rapide</span></div>
-        <div class="stat"><span>Contre rclcpp DDS, 16 o</span><span>279× plus rapide</span></div>
-        <div class="stat"><span>Contre rclcpp intra-processus, 1 Mo</span><span>3,75× plus rapide</span></div>
-        <div class="stat"><span>Décision R14, p50 / p99</span><span>331 / 360 ns</span></div>
-        <div class="stat"><span>R14, fautes bloquées au-dessus du seuil</span><span>1000 / 1000</span></div>
-        <div class="stat"><span>Mesh v9 HMAC, émission</span><span>431 ns ±7 %</span></div>
-        <div class="stat"><span>Mesh v0A Ed25519, vérification</span><span>135 µs ±19 %</span></div>
-      </div>
-    </div>
-    <p>Tous les chiffres sont des médianes sur 10 exécutions avec leur dispersion, mesurées sur un PC x86. Sur un microcontrôleur Cortex-M0+, une vérification Ed25519 prend environ 206 ms en simulateur. Les signatures Ed25519 du mesh sont donc réservées aux messages d'autorité peu fréquents.</p>
-  </section>
-
-  <section id="faisabilite" aria-labelledby="fais-h">
-    <span class="eyebrow">Faisabilité</span>
-    <h2 id="fais-h">Le chemin vers le matériel réel est court et chiffré</h2>
-    <p>L'architecture est en place. Ce qui manque relève surtout du matériel : des cartes, une radio et un banc de vol. Chaque étape a un coût et un critère de réussite définis.</p>
-    <div class="phases">
-      <div class="phase">
-        <h3>Radio et énergie</h3>
-        <span class="meta">quelques semaines · environ 80 €</span>
-        <ul><li>Driver SX1262 réel</li><li>Respect du duty-cycle EU868 à 1 %</li><li>Mise en veille et mesure de consommation</li></ul>
-      </div>
-      <div class="phase">
-        <h3>Validation sur silicium</h3>
-        <span class="meta">quelques semaines · environ 30 €</span>
-        <ul><li>Flash RP2040 et STM32F4</li><li>Clés dans un élément sécurisé ATECC608B</li><li>Banc LoRa-mesh de 3 nœuds</li></ul>
-      </div>
-      <div class="phase">
-        <h3>Vol réel</h3>
-        <span class="meta">avec un partenaire</span>
-        <ul><li>Pixhawk et quadricoptère</li><li>Armement, décollage, 4 waypoints</li><li>Test du gel d'actuation R14 en vol</li></ul>
-      </div>
-      <div class="phase">
-        <h3>Industrialisation</h3>
-        <span class="meta">plusieurs mois</span>
-        <ul><li>Mises à jour à distance (OTA) signées</li><li>Audit cryptographique externe</li><li>Certification radio CE</li></ul>
-      </div>
-    </div>
-  </section>
-
-  <section id="partenariat" aria-labelledby="part-h">
-    <span class="eyebrow">Partenariat</span>
-    <h2 id="part-h">Trois profils de partenaires pilotes</h2>
-    <div class="profiles">
-      <div class="profile">
-        <h3>Intégrateurs et opérateurs de drones</h3>
-        <p>Vous volez déjà sous PX4. Vous avez besoin de coordonner plusieurs appareils et de bloquer les commandes dangereuses quand les capteurs se dégradent.</p>
-      </div>
-      <div class="profile">
-        <h3>IoT et LoRa : agriculture, industrie, infrastructures</h3>
-        <p>Vous déployez des capteurs sans couverture réseau fiable. Vous avez besoin d'un mesh signé, résistant au rejeu et sans dépendance au cloud.</p>
-      </div>
-      <div class="profile">
-        <h3>Laboratoires et centres de R&amp;D</h3>
-        <p>Robotique, systèmes embarqués, sécurité. Vous voulez un banc d'essai ouvert, en Rust, avec des preuves formelles pour vos travaux.</p>
-      </div>
-    </div>
-    <div class="offer">
-      <div>
-        <h3>Ce que vous obtenez</h3>
+  <section aria-labelledby="st-h">
+    <h2 id="st-h">État réel</h2>
+    <div class="status">
+      <div class="col proven">
+        <h3>Prouvé · reproductible</h3>
         <ul>
-          <li>Un accès direct au code et à son concepteur</li>
-          <li>Une intégration adaptée à votre matériel</li>
-          <li>Les résultats et les journaux du pilote</li>
-          <li>Un rôle dans les priorités de la feuille de route</li>
+          <li>Tests et preuves Kani ci-dessus</li>
+          <li>300 trames PX4 capturées, parsées et vérifiées</li>
+          <li>Daemon sur téléphone Android, capteurs réels (IMU, baro, lux)</li>
         </ul>
       </div>
-      <div>
-        <h3>Ce que je recherche</h3>
+      <div class="col sim">
+        <h3>Simulation uniquement</h3>
         <ul>
-          <li>Un terrain d'essai : drone, banc de capteurs ou site</li>
-          <li>Un cas d'usage réel avec ses contraintes</li>
-          <li>Du matériel ou un co-financement pour la phase de vol réel</li>
-          <li>Vos retours techniques</li>
+          <li>PX4 SITL : arm, takeoff, 4 waypoints, alt 1,94 m pour 2,00 m</li>
+          <li>200 nœuds : 84,8 % de doublons droppés (topologie, sans airtime)</li>
+          <li>MCU sous Wokwi / Renode</li>
+        </ul>
+      </div>
+      <div class="col todo">
+        <h3>Manquant</h3>
+        <ul>
+          <li>Vol Pixhawk réel</li>
+          <li>Driver SX1262 (stub) et gestion d'énergie</li>
+          <li>Secure element, OTA, audit crypto externe</li>
         </ul>
       </div>
     </div>
-    <div class="cta">
-      <h3>Discutons d'un pilote de 4 à 8 semaines</h3>
-      <p>Envoyez-moi un message sur LinkedIn avec votre cas d'usage en deux lignes. Je réponds avec une proposition de périmètre, le matériel nécessaire et des critères de réussite mesurables.</p>
+  </section>
+
+  <section aria-labelledby="rep-h">
+    <h2 id="rep-h">Reproduire</h2>
+    <div class="box">
+<pre><span class="c"># tests</span>
+cargo test --workspace --release
+<span class="c"># build MCU</span>
+cargo build --target thumbv7em-none-eabi --lib --no-default-features --features mesh_bloom_mcu --release
+<span class="c"># benchs K=10</span>
+cargo run --release --bin bench_payload_sweep
+cargo run --release --bin bench_mesh_signed
+cargo run --release --bin bench_r14_latency</pre>
     </div>
   </section>
 
-  <footer>OASIS · runtime Rust sous licence MIT · version pré-1.0, non certifiée pour le vol, sans audit externe à ce jour. Les mesures de performance proviennent d'un PC x86 sous Linux WSL2.</footer>
+  <section class="ask" aria-labelledby="ask-h">
+    <h2 id="ask-h">Pilote recherché · 4 à 8 semaines</h2>
+    <p><strong>Vous :</strong> un drone PX4/Pixhawk, un banc LoRa ou un labo embarqué. <strong>Moi :</strong> l'intégration, les logs bruts et des critères de réussite définis avant le test.</p>
+    <p>Contact : message LinkedIn avec votre plateforme et votre cas d'usage.</p>
+  </section>
+
+  <footer>OASIS · Rust · MIT · pré-1.0 · non certifié vol · sans audit externe</footer>
 </div>

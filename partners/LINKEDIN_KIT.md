@@ -41,6 +41,8 @@ renforce la crédibilité du projet.
 
 ## 4. Post de lancement (avec la vidéo `demo-mesh-3plat.mp4`)
 
+> ⚠️ Ne pas publier en l'état pour une cible technique. Dans la vidéo, le compteur `merges=1` reste figé (sortie `grep` « Binary file … matches »), la ligne `phone:` est vide côté PC et la courbe finale est synthétique. Réenregistrer d'abord (voir la réponse dans la session).
+
 > Un téléphone, un PC et trois drones partagent ce qu'ils apprennent, sans aucun serveur.
 >
 > Dans cette vidéo de 90 secondes, chaque appareil fait tourner son propre noyau OASIS. Le téléphone Android utilise ses vrais capteurs. Les drones sont simulés sous Webots. En 5 minutes, 78 résumés du téléphone ont été fusionnés côté drones et le téléphone a reçu 401 messages du réseau. Il n'y a ni cloud, ni broker, ni schéma à négocier.
