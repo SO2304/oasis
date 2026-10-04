@@ -5,10 +5,10 @@
 
 ## Verdict (one line)
 OASIS's `no_std` **crypto + R14 safety gate + mesh protocols run correctly on real
-RP2040 silicon** — the full T0–T6 suite PASSES, **3× reproducibly, on board B**.
-Board A booted and passed T0 but its full suite was not re-captured (see §7). Every
-number below comes from a raw log captured **on the chip** and archived with a
-SHA-256 in `SHA256SUMS`. Nothing here is simulated or estimated.
+RP2040 silicon** — the full T0–T6 suite PASSES, **3× reproducibly on BOTH boards
+(6 runs total, all green)**. Every number below comes from a raw log captured **on
+the chip** and archived with a SHA-256 in `SHA256SUMS`. Nothing here is simulated or
+estimated. (The project asked for 3 boards; only 2 were on hand — both pass fully.)
 
 ## 1. Hardware
 Two **RP2040** boards (VID:PID `2E8A:0003` in BOOTSEL), USB-connected to the PC.
@@ -28,18 +28,20 @@ clone's 12 MHz crystal (clock reads exactly 125 MHz), so the silicon itself is s
 
 ## 2. PASS/FAIL matrix
 
-| Test | What it checks | Board A | Board B (×3) |
+| Test | What it checks | Board A (×3) | Board B (×3) |
 |---|---|---|---|
 | **T0** | boot, 125 MHz clock, identity | **PASS** | **PASS** |
-| **T1** | ChaCha20-Poly1305, RFC 8439 §2.8.2 ct‖tag byte-for-byte + decrypt round-trip | — | **PASS** |
-| **T2** | X25519 public-key derivation, RFC 7748 §6.1 (Alice+Bob) | — | **PASS** |
-| **T3** | Ed25519 deterministic KAT: pubkey+sig+verify+**tamper rejected** | — | **PASS** |
-| **T4** | R14 gate: faults above threshold all blocked | — | **PASS** (50/50; also 200/200 archived) |
-| **T5** | mesh v8 (arrive+dedup), v9 (arrive+**tamper-reject**), v0A (arrive+**forge-reject**) | — | **PASS** |
-| **T6** | on-silicon timing (hardware TIMER) | — | **PASS** (see §3) |
+| **T1** | ChaCha20-Poly1305, RFC 8439 §2.8.2 ct‖tag byte-for-byte + decrypt round-trip | **PASS** | **PASS** |
+| **T2** | X25519 public-key derivation, RFC 7748 §6.1 (Alice+Bob) | **PASS** | **PASS** |
+| **T3** | Ed25519 deterministic KAT: pubkey+sig+verify+**tamper rejected** | **PASS** | **PASS** |
+| **T4** | R14 gate: faults above threshold all blocked | **PASS** (50/50) | **PASS** (50/50; also 200/200 archived) |
+| **T5** | mesh v8 (arrive+dedup), v9 (arrive+**tamper-reject**), v0A (arrive+**forge-reject**) | **PASS** | **PASS** |
+| **T6** | on-silicon timing (hardware TIMER) | **PASS** (see §3) | **PASS** (see §3) |
 
-Board B: runs 1/2/3 are byte-identical in verdicts (13 PASS lines each, SUITE PASS).
-Raw: `board_B_run{1,2,3}.log`. Board A T0: `board_A_T0.log`.
+All 6 runs (both boards × 3) are byte-identical in verdicts: 13 PASS lines each + SUITE
+PASS. Raw: `board_A_run{1,2,3}.log`, `board_B_run{1,2,3}.log`. Board A's T6 timing
+matches board B to the millisecond (R14 3.245 ms, v0A sign 341.3 ms), cross-validating
+the numbers across two independent chips.
 
 ## 3. On-silicon timing (T6) vs x86 reference
 
@@ -87,16 +89,14 @@ compared — the STM32F4 has an FPU and would land between these and x86.)
 ## 6. What is explicitly NOT tested
 - **LoRa radio** — the SX1262 path is untested here; T5 mesh ran **in-process on one
   chip** (two router instances), not over the air or even over a wire. No RF was involved.
-- **Board A full suite** — blocked by its older auto-run firmware (see §7).
 - **Energy / power draw**, **secure element (ATECC608B)**, **multi-node mesh over a
   link**, **flight / PX4**, **OTA**, **long-run soak**.
 
-## 7. Board A status
-Board A was flashed early with a first firmware revision that **auto-runs a ~6 min
-suite on boot** and therefore does not service the `b` (reboot-to-BOOTSEL) command
-while computing. Software recycling timed out. Completing board A needs a **manual
-BOOTSEL** (hold BOOTSEL, replug); the capture tooling will then flash `firmware_A.uf2`
-and record `board_A_run{1,2,3}.log` in ~3 min. Board A's T0 (boot/clock/id) is captured.
+## 7. Board A status — COMPLETE
+Board A initially ran an early auto-run firmware that ignored the `b` reboot command
+while computing, so software recycling could not reflash it. After a **manual BOOTSEL**
+(hold button, replug), board A was flashed with `firmware_A.uf2` and ran the full suite
+**3× — all PASS**, with timing identical to board B. Logs: `board_A_run{1,2,3}.log`.
 
 ## 8. Reproduce
 ```bash
