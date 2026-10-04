@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>OASIS — Liste de matériel POC LoRa-mesh</title>
+<style>
+  :root{
+    --ink:#15202b; --muted:#5b6b7b; --line:#d9e1e8; --soft:#f4f7f9;
+    --accent:#0b6e99; --accent2:#0a8a5f; --warn:#b4530a; --danger:#b00020;
+    --chip:#eef4f8;
+  }
+  *{box-sizing:border-box;}
+  html{font-size:11.2pt;}
+  body{font-family:"Segoe UI",-apple-system,Roboto,Helvetica,Arial,sans-serif;
+    color:var(--ink); line-height:1.5; margin:0; background:#fff;}
+  @page{size:A4; margin:16mm 14mm 16mm 14mm;}
+  h1,h2,h3{line-height:1.2; color:var(--ink);}
+  h1{font-size:25pt; margin:0 0 4px;}
+  h2{font-size:15.5pt; margin:26px 0 8px; padding-bottom:5px; border-bottom:2px solid var(--accent);}
+  h3{font-size:12.5pt; margin:18px 0 6px; color:var(--accent);}
+  p{margin:7px 0;}
+  .sub{color:var(--muted); font-size:11pt;}
+  .lede{font-size:11.5pt;}
+  a{color:var(--accent); text-decoration:none;}
+  code{font-family:"Cascadia Code",Consolas,monospace; background:var(--soft);
+    padding:1px 5px; border-radius:4px; font-size:9.6pt;}
+  table{width:100%; border-collapse:collapse; margin:10px 0; font-size:9.7pt;}
+  th,td{border:1px solid var(--line); padding:6px 8px; text-align:left; vertical-align:top;}
+  th{background:var(--accent); color:#fff; font-weight:600;}
+  tbody tr:nth-child(even){background:var(--soft);}
+  .num{text-align:right; white-space:nowrap;}
+  .center{text-align:center;}
+  .tag{display:inline-block; background:var(--chip); color:var(--accent);
+    border:1px solid #cfe3ee; border-radius:20px; padding:2px 10px; font-size:8.6pt;
+    font-weight:600; margin-right:6px;}
+  .cover{padding:40px 0 8px; border-bottom:3px solid var(--accent);}
+  .cover .meta{margin-top:14px; color:var(--muted); font-size:10pt;}
+  .callout{border-left:4px solid var(--accent); background:var(--soft);
+    padding:9px 14px; margin:12px 0; border-radius:0 6px 6px 0;}
+  .warn{border-left-color:var(--warn); background:#fdf4ec;}
+  .danger{border-left-color:var(--danger); background:#fcecef;}
+  .ok{border-left-color:var(--accent2); background:#eef8f3;}
+  .grid2{display:grid; grid-template-columns:1fr 1fr; gap:14px;}
+  ul,ol{margin:7px 0 7px 0; padding-left:22px;}
+  li{margin:3px 0;}
+  .total td{background:#eaf3f8 !important; font-weight:700;}
+  .pgbreak{page-break-before:always;}
+  .small{font-size:9pt; color:var(--muted);}
+  .wiretab td:first-child{font-weight:600;}
+  .chk{list-style:none; padding-left:4px;}
+  .chk li::before{content:"☐  "; color:var(--accent); font-weight:700;}
+  figure{margin:14px 0; text-align:center;}
+  figcaption{font-size:9pt; color:var(--muted); margin-top:6px;}
+  .swatch{display:inline-block; width:11px; height:11px; border-radius:2px;
+    border:1px solid #99a; vertical-align:middle; margin-right:4px;}
+  .footer{margin-top:30px; padding-top:10px; border-top:1px solid var(--line);
+    color:var(--muted); font-size:8.6pt;}
+  .price{font-variant-numeric:tabular-nums;}
+</style>
+</head>
+<body>
+
+<div class="cover">
+  <div class="tag">OASIS</div><div class="tag">POC matériel</div><div class="tag">EU868</div>
+  <h1>Liste de matériel — POC LoRa-mesh</h1>
+  <p class="lede sub">Banc de test 3 nœuds, supervisé depuis le PC. Tout est listé :
+  chaque module, chaque antenne, chaque câble, chaque fil de liaison.</p>
+  <div class="meta">
+    Projet : OASIS · vertical IoT LoRa-mesh &nbsp;|&nbsp;
+    Cible : 3 nœuds Raspberry Pi Pico + SX1262 868 MHz, reliés au PC par USB &nbsp;|&nbsp;
+    Câblage : breadboard + jumpers, brochage = driver <code>sx1262.rs</code><br>
+    Document : OASIS_POC_BOM &nbsp;·&nbsp; v1 &nbsp;·&nbsp; 2026-06-15 &nbsp;·&nbsp;
+    rédigé pour montage, monitoring et correction assistés
+  </div>
+</div>
+
+<h2>0. À quoi sert ce banc et comment je le supervise</h2>
+<p>Ce POC matérialise <strong>une seule tranche</strong> d'OASIS : le nœud LoRa-mesh
+(pas la face drone/PX4, pas le daemon téléphone). L'objectif est de sortir du
+« logiciel vert » et de répondre à la seule question qui compte&nbsp;: <em>est-ce
+que le driver SX1262 que nous venons d'écrire parle réellement à la puce, émet un
+paquet signé, et un autre nœud le reçoit puis le vérifie&nbsp;?</em></p>
+
+<p><strong>Modèle de supervision.</strong> Les 3 nœuds sont alimentés et lus
+<strong>par le PC via USB</strong>. Chaque Pico apparaît comme un port série
+(COM sous Windows). Le firmware de chaque nœud écrit ses traces sur ce port
+(init radio, TX, RX, vérif de signature, airtime, dédup). Côté PC, un moniteur
+série redirige chaque flux vers un fichier journal (<code>node_A.log</code>,
+<code>node_B.log</code>, <code>node_C.log</code>). <strong>Je lis ces fichiers</strong>
+pour diagnostiquer, corriger le firmware/driver, et te guider à chaque étape — c'est
+la boucle « monitor → corriger → superviser ».</p>
+
+<div class="callout warn">
+  <strong>Honnêteté (lis-moi avant d'acheter).</strong> Cette liste couvre le
+  <strong>matériel</strong>. Le <strong>firmware de nœud</strong> qui fait tourner le
+  driver + la mesh + écrit les traces USB <strong>n'est pas encore écrit</strong>
+  (voir §8). Acheter ces pièces ≠ test prêt à lancer. De plus, deux détails du
+  driver doivent être confirmés/complétés selon le module choisi (oscillateur TCXO,
+  commutateur RF) — voir §7. Je signale tout, rien n'est caché.
+</div>
+
+<h3>Topologie du banc</h3>
+<figure>
+<svg width="700" height="250" viewBox="0 0 700 250" xmlns="http://www.w3.org/2000/svg" font-family="Segoe UI,Arial" font-size="11">
+  <defs>
+    <marker id="ar" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">
+      <path d="M0,0 L7,3 L0,6 Z" fill="#0b6e99"/>
+    </marker>
+  </defs>
+  <!-- nodes -->
+  <g>
+    <rect x="20" y="20" width="150" height="58" rx="8" fill="#eef4f8" stroke="#0b6e99"/>
+    <text x="95" y="40" text-anchor="middle" font-weight="700">Nœud A</text>
+    <text x="95" y="56" text-anchor="middle" font-size="9">Pico + SX1262</text>
+    <text x="95" y="69" text-anchor="middle" font-size="9">+ antenne 868</text>
+    <rect x="20" y="96" width="150" height="58" rx="8" fill="#eef4f8" stroke="#0b6e99"/>
+    <text x="95" y="116" text-anchor="middle" font-weight="700">Nœud B (relais)</text>
+    <text x="95" y="132" text-anchor="middle" font-size="9">Pico + SX1262</text>
+    <text x="95" y="145" text-anchor="middle" font-size="9">+ antenne 868</text>
+    <rect x="20" y="172" width="150" height="58" rx="8" fill="#eef4f8" stroke="#0b6e99"/>
+    <text x="95" y="192" text-anchor="middle" font-weight="700">Nœud C</text>
+    <text x="95" y="208" text-anchor="middle" font-size="9">Pico + SX1262</text>
+    <text x="95" y="221" text-anchor="middle" font-size="9">+ antenne 868</text>
+  </g>
+  <!-- radio links -->
+  <text x="250" y="60" font-size="9" fill="#0a8a5f">~ radio LoRa 868 MHz ~</text>
+  <path d="M175,124 C 210,100 210,76 175,52" fill="none" stroke="#0a8a5f" stroke-dasharray="4 3"/>
+  <path d="M175,124 C 210,148 210,172 175,196" fill="none" stroke="#0a8a5f" stroke-dasharray="4 3"/>
+  <!-- USB to hub -->
+  <g stroke="#0b6e99" stroke-width="1.6" marker-end="url(#ar)">
+    <path d="M170,49 L300,49 L300,118 L360,118" fill="none"/>
+    <path d="M170,125 L360,125" fill="none"/>
+    <path d="M170,201 L300,201 L300,132 L360,132" fill="none"/>
+  </g>
+  <text x="250" y="140" font-size="8.5" fill="#0b6e99">3× USB (data + alim)</text>
+  <!-- hub -->
+  <rect x="360" y="96" width="120" height="58" rx="8" fill="#fff7e9" stroke="#b4530a"/>
+  <text x="420" y="120" text-anchor="middle" font-weight="700">Hub USB</text>
+  <text x="420" y="136" text-anchor="middle" font-size="9">alimenté (PSU)</text>
+  <!-- PC -->
+  <path d="M482,125 L548,125" fill="none" stroke="#0b6e99" stroke-width="1.6" marker-end="url(#ar)"/>
+  <rect x="550" y="86" width="130" height="78" rx="8" fill="#eef8f3" stroke="#0a8a5f"/>
+  <text x="615" y="110" text-anchor="middle" font-weight="700">PC</text>
+  <text x="615" y="127" text-anchor="middle" font-size="8.6">3 ports COM série</text>
+  <text x="615" y="141" text-anchor="middle" font-size="8.6">→ node_*.log</text>
+  <text x="615" y="155" text-anchor="middle" font-size="8.6" fill="#0a8a5f">Claude lit + corrige</text>
+</svg>
+<figcaption>Chaque nœud communique par radio LoRa et reste branché au PC par USB pour
+l'alimentation et les traces. Le hub alimenté évite les chutes de tension lors des
+salves d'émission.</figcaption>
+</figure>
+
+<h2 class="pgbreak">1. Liste de matériel complète (3 nœuds)</h2>
+<p class="small">Prix indicatifs en EUR TTC, détail à vérifier au moment de l'achat
+(disponibilité et brochage variables selon le vendeur). « Qté » = quantité totale
+pour le banc 3 nœuds.</p>
+
+<table>
+  <thead>
+    <tr><th style="width:26px">#</th><th>Article</th><th class="center" style="width:38px">Qté</th>
+      <th>Spécification exacte</th><th>Exemple concret</th>
+      <th class="num" style="width:54px">€ / u.</th><th class="num" style="width:54px">€ tot.</th></tr>
+  </thead>
+  <tbody>
+    <tr><td colspan="7" style="background:#dcebf3;font-weight:700">Calcul (MCU)</td></tr>
+    <tr><td>1</td><td><strong>Raspberry Pi Pico H</strong></td><td class="center">3</td>
+      <td>RP2040, Cortex-M0+, headers mâles pré-soudés, micro-USB. Le « H » = pas de
+      soudure. (Pico 2 / Pico 2 H acceptés — cible <code>thumbv6m</code>.)</td>
+      <td>Raspberry Pi Pico H</td><td class="num price">6</td><td class="num price">18</td></tr>
+    <tr><td colspan="7" style="background:#dcebf3;font-weight:700">Radio LoRa</td></tr>
+    <tr><td>2</td><td><strong>Module SX1262 868 MHz</strong></td><td class="center">3</td>
+      <td>Puce <strong>SX1262</strong> (pas SX1276/8), bande <strong>868 MHz</strong>,
+      interface <strong>SPI</strong>, 3,3 V, broches au pas 2,54 mm (breadboard),
+      <strong>commutateur RF interne (DIO2)</strong>, connecteur d'antenne SMA ou
+      IPEX. <em>Préférer un module à quartz (XTAL) — voir §7.</em></td>
+      <td>Waveshare Core1262-868M, ou breakout « SX1262 868 SMA »</td>
+      <td class="num price">15</td><td class="num price">45</td></tr>
+    <tr><td>3</td><td><strong>Antenne 868 MHz</strong></td><td class="center">3</td>
+      <td>Bande 868 MHz (≈ 2–3 dBi), connecteur <strong>identique au module</strong>
+      (SMA mâle le plus courant). Fouet ou souple.</td>
+      <td>Antenne SMA 868 MHz</td><td class="num price">4</td><td class="num price">12</td></tr>
+    <tr><td>3b</td><td>Pigtail IPEX→SMA <span class="small">(seulement si module IPEX)</span></td>
+      <td class="center">3</td>
+      <td>Uniquement si le module a un connecteur u.FL/IPEX et non SMA. Court (10 cm).</td>
+      <td>Pigtail u.FL → SMA femelle</td><td class="num price">3</td><td class="num price">(9)</td></tr>
+    <tr><td colspan="7" style="background:#dcebf3;font-weight:700">Câblage de liaison Pico ↔ SX1262</td></tr>
+    <tr><td>4</td><td><strong>Breadboard</strong></td><td class="center">3</td>
+      <td>Plaque d'essai 400 à 830 points. Une par nœud (ou 1 grande pour tout le banc).</td>
+      <td>Breadboard 400 pts</td><td class="num price">4</td><td class="num price">12</td></tr>
+    <tr><td>5</td><td><strong>Fils jumper Mâle–Mâle</strong></td><td class="center">1 lot (40)</td>
+      <td>Dupont 2,54 mm, 10–20 cm. <strong>9 fils par nœud × 3 = 27</strong> nécessaires
+      (voir §3) ; lot de 40 = marge + rechange.</td>
+      <td>Pack 40 jumpers M-M</td><td class="num price">5</td><td class="num price">5</td></tr>
+    <tr><td>5b</td><td>Fils jumper M–F et F–F <span class="small">(rechange)</span></td>
+      <td class="center">1 lot ch.</td>
+      <td>Pour adapter si un module a des broches femelles, ou pour rallonger. Confort
+      de dépannage.</td>
+      <td>Pack 40 M-F + 40 F-F</td><td class="num price">5</td><td class="num price">5</td></tr>
+    <tr><td colspan="7" style="background:#dcebf3;font-weight:700">Liaison PC, alimentation, monitoring</td></tr>
+    <tr><td>6</td><td><strong>Câble USB micro-USB (DONNÉES)</strong></td><td class="center">3</td>
+      <td><strong>Câble de données</strong>, PAS « charge seule » (le piège n°1).
+      USB-A ↔ micro-USB B, ≈ 1 m. Un par Pico.</td>
+      <td>Câble micro-USB data 1 m</td><td class="num price">3</td><td class="num price">9</td></tr>
+    <tr><td>7</td><td><strong>Hub USB alimenté</strong></td><td class="center">1</td>
+      <td>≥ 4 ports, <strong>avec son propre adaptateur secteur (PSU)</strong>, USB 2.0+.
+      L'alimentation externe évite les brown-outs quand plusieurs SX1262 émettent.</td>
+      <td>Hub USB 4 ports alimenté + PSU</td><td class="num price">18</td><td class="num price">18</td></tr>
+    <tr><td colspan="7" style="background:#dcebf3;font-weight:700">Aides au diagnostic / supervision</td></tr>
+    <tr><td>8</td><td><strong>Multimètre</strong></td><td class="center">1</td>
+      <td>Continuité + tension DC. Vérifier le 3,3 V et la continuité des 9 liaisons
+      avant la mise sous tension. Indispensable pour corriger un câblage.</td>
+      <td>Multimètre numérique basique</td><td class="num price">12</td><td class="num price">12</td></tr>
+    <tr><td>9</td><td>Étiquettes / ruban de masquage</td><td class="center">1</td>
+      <td>Marquer les nœuds A/B/C et les extrémités de fils. Évite de mélanger les nœuds.</td>
+      <td>Ruban + marqueur</td><td class="num price">1</td><td class="num price">1</td></tr>
+    <tr><td>10</td><td>Bracelet antistatique (ESD) <span class="small">(recommandé)</span></td>
+      <td class="center">1</td>
+      <td>Protège le RP2040 et le SX1262 lors des manipulations.</td>
+      <td>Bracelet ESD</td><td class="num price">4</td><td class="num price">4</td></tr>
+    <tr><td>11</td><td>Analyseur logique 8 voies <span class="small">(optionnel, puissant)</span></td>
+      <td class="center">1</td>
+      <td>Pour « sniffer » le SPI si l'init radio coince — visualise SCK/MOSI/MISO/NSS et
+      confirme que les octets du driver sortent. Très utile pour corriger le driver.</td>
+      <td>Analyseur logique 24 MHz (compatible sigrok/PulseView)</td>
+      <td class="num price">10</td><td class="num price">10</td></tr>
+    <tr class="total"><td colspan="6">Total indicatif (hors options 10–11, hors pigtail 3b)</td>
+      <td class="num price">≈ 136 €</td></tr>
+    <tr class="total"><td colspan="6">Total avec options 10–11</td>
+      <td class="num price">≈ 150 €</td></tr>
+  </tbody>
+</table>
+
+<div class="callout ok">
+  <strong>Zéro soudure.</strong> Avec un <em>Pico H</em> (headers pré-soudés) et un
+  module SX1262 livré avec ses broches soudées, tout se monte sur breadboard sans fer
+  à souder. Si le module est livré « broches non soudées », ajoute un fer + soudure
+  (~15 €) ou choisis une variante avec headers pré-soudés.
+</div>
+
+<h2 class="pgbreak">2. Inventaire exhaustif des câbles et connecteurs</h2>
+<p>« N'oublie pas le moindre câble » — voici la liste à plat de <strong>tout ce qui
+relie quoi que ce soit</strong> sur le banc.</p>
+
+<table>
+  <thead><tr><th>Liaison</th><th class="center">Qté</th><th>Type exact</th><th>Rôle</th></tr></thead>
+  <tbody>
+    <tr><td>PC → hub</td><td class="center">1</td><td>Câble USB-A ↔ (type du hub : souvent USB-A ou USB-B), fourni avec le hub</td><td>Lien montant + données des 3 nœuds</td></tr>
+    <tr><td>Hub → secteur</td><td class="center">1</td><td>Adaptateur secteur du hub (fourni)</td><td>Alimentation externe du hub</td></tr>
+    <tr><td>Hub → Pico (×3)</td><td class="center">3</td><td>Câble micro-USB <strong>data</strong>, USB-A ↔ micro-USB B, ≈1 m</td><td>Alim 5 V + port série de chaque nœud</td></tr>
+    <tr><td>Pico ↔ SX1262 : SCK</td><td class="center">3</td><td>Jumper M-M (<span class="swatch" style="background:#f4c020"></span>jaune conseillé)</td><td>Horloge SPI</td></tr>
+    <tr><td>Pico ↔ SX1262 : MOSI</td><td class="center">3</td><td>Jumper M-M (<span class="swatch" style="background:#2faa55"></span>vert)</td><td>Données Pico → radio</td></tr>
+    <tr><td>Pico ↔ SX1262 : MISO</td><td class="center">3</td><td>Jumper M-M (<span class="swatch" style="background:#2f7fd0"></span>bleu)</td><td>Données radio → Pico</td></tr>
+    <tr><td>Pico ↔ SX1262 : NSS</td><td class="center">3</td><td>Jumper M-M (<span class="swatch" style="background:#e8821e"></span>orange)</td><td>Chip-select (actif bas)</td></tr>
+    <tr><td>Pico ↔ SX1262 : BUSY</td><td class="center">3</td><td>Jumper M-M (<span class="swatch" style="background:#ffffff"></span>blanc)</td><td>Radio occupée</td></tr>
+    <tr><td>Pico ↔ SX1262 : DIO1</td><td class="center">3</td><td>Jumper M-M (<span class="swatch" style="background:#8a5cd0"></span>violet)</td><td>IRQ TX/RX done</td></tr>
+    <tr><td>Pico ↔ SX1262 : RESET</td><td class="center">3</td><td>Jumper M-M (<span class="swatch" style="background:#9aa3ad"></span>gris)</td><td>Reset matériel</td></tr>
+    <tr><td>Pico ↔ SX1262 : VCC 3,3 V</td><td class="center">3</td><td>Jumper M-M (<span class="swatch" style="background:#d83434"></span>rouge)</td><td>Alimentation radio</td></tr>
+    <tr><td>Pico ↔ SX1262 : GND</td><td class="center">3</td><td>Jumper M-M (<span class="swatch" style="background:#222"></span>noir)</td><td>Masse commune</td></tr>
+    <tr><td>SX1262 → antenne (×3)</td><td class="center">3</td><td>Connecteur SMA (ou IPEX + pigtail 3b)</td><td>Sortie RF — <strong>toujours connectée avant TX</strong></td></tr>
+  </tbody>
+</table>
+<p class="small"><strong>Sous-total fils de liaison radio :</strong> 9 jumpers M-M × 3 nœuds =
+<strong>27 jumpers</strong> (le lot de 40 couvre + rechange). Les couleurs ne sont qu'une
+convention pour repérer les signaux et corriger vite ; elles n'ont aucun effet
+électrique.</p>
+
+<h2>3. Brochage par nœud — Pico ↔ SX1262</h2>
+<p>Brochage <strong>identique à la documentation du driver</strong>
+(<code>oasis-lora-transport/src/sx1262.rs</code>). Le driver est générique : ces broches
+sont des arguments passés au firmware, donc le firmware doit déclarer <em>exactement</em>
+ce brochage. Numéros de broches physiques du Raspberry Pi Pico.</p>
+
+<table class="wiretab">
+  <thead><tr><th>Signal</th><th>Pico — GPIO</th><th>Pico — broche physique</th><th>SX1262</th><th>Couleur</th></tr></thead>
+  <tbody>
+    <tr><td>SPI SCK</td><td>GP10</td><td>broche 14</td><td>SCK / CLK</td><td><span class="swatch" style="background:#f4c020"></span>jaune</td></tr>
+    <tr><td>SPI MOSI</td><td>GP11</td><td>broche 15</td><td>MOSI / DIN</td><td><span class="swatch" style="background:#2faa55"></span>vert</td></tr>
+    <tr><td>SPI MISO</td><td>GP12</td><td>broche 16</td><td>MISO / DOUT</td><td><span class="swatch" style="background:#2f7fd0"></span>bleu</td></tr>
+    <tr><td>NSS (CS)</td><td>GP13</td><td>broche 17</td><td>NSS / CS</td><td><span class="swatch" style="background:#e8821e"></span>orange</td></tr>
+    <tr><td>BUSY</td><td>GP14</td><td>broche 19</td><td>BUSY</td><td><span class="swatch" style="background:#ffffff"></span>blanc</td></tr>
+    <tr><td>DIO1 (IRQ)</td><td>GP15</td><td>broche 20</td><td>DIO1</td><td><span class="swatch" style="background:#8a5cd0"></span>violet</td></tr>
+    <tr><td>RESET</td><td>GP16</td><td>broche 21</td><td>NRST / RST</td><td><span class="swatch" style="background:#9aa3ad"></span>gris</td></tr>
+    <tr><td>Alim 3,3 V</td><td>3V3 (OUT)</td><td>broche 36</td><td>VCC / 3V3</td><td><span class="swatch" style="background:#d83434"></span>rouge</td></tr>
+    <tr><td>Masse</td><td>GND</td><td>broche 38 (ou 18/23/…)</td><td>GND</td><td><span class="swatch" style="background:#222"></span>noir</td></tr>
+  </tbody>
+</table>
+
+<div class="callout danger">
+  <strong>3,3 V uniquement.</strong> Le SX1262 n'est PAS tolérant 5 V. Alimente la radio
+  depuis la broche <strong>3V3 (OUT, broche 36)</strong> du Pico, jamais depuis VBUS/VSYS
+  (5 V) ni broche 40. Une erreur ici détruit la puce.
+</div>
+
+<figure>
+<svg width="640" height="250" viewBox="0 0 640 250" xmlns="http://www.w3.org/2000/svg" font-family="Segoe UI,Arial" font-size="10">
+  <rect x="40" y="35" width="150" height="180" rx="10" fill="#f4f7f9" stroke="#15202b"/>
+  <text x="115" y="25" text-anchor="middle" font-weight="700">Raspberry Pi Pico</text>
+  <rect x="450" y="35" width="150" height="180" rx="10" fill="#f4f7f9" stroke="#15202b"/>
+  <text x="525" y="25" text-anchor="middle" font-weight="700">SX1262 868</text>
+  <text x="525" y="232" text-anchor="middle" font-size="9" fill="#0a8a5f">→ antenne SMA</text>
+  <!-- pin rows -->
+  <g>
+    <!-- left labels -->
+    <g text-anchor="end">
+      <text x="185" y="55">GP10</text><text x="185" y="73">GP11</text>
+      <text x="185" y="91">GP12</text><text x="185" y="109">GP13</text>
+      <text x="185" y="127">GP14</text><text x="185" y="145">GP15</text>
+      <text x="185" y="163">GP16</text><text x="185" y="181">3V3</text>
+      <text x="185" y="199">GND</text>
+    </g>
+    <!-- right labels -->
+    <g text-anchor="start">
+      <text x="455" y="55">SCK</text><text x="455" y="73">MOSI</text>
+      <text x="455" y="91">MISO</text><text x="455" y="109">NSS</text>
+      <text x="455" y="127">BUSY</text><text x="455" y="145">DIO1</text>
+      <text x="455" y="163">NRST</text><text x="455" y="181">VCC</text>
+      <text x="455" y="199">GND</text>
+    </g>
+    <!-- wires -->
+    <g stroke-width="2" fill="none">
+      <line x1="190" y1="51" x2="450" y2="51" stroke="#f4c020"/>
+      <line x1="190" y1="69" x2="450" y2="69" stroke="#2faa55"/>
+      <line x1="190" y1="87" x2="450" y2="87" stroke="#2f7fd0"/>
+      <line x1="190" y1="105" x2="450" y2="105" stroke="#e8821e"/>
+      <line x1="190" y1="123" x2="450" y2="123" stroke="#cfcfcf"/>
+      <line x1="190" y1="141" x2="450" y2="141" stroke="#8a5cd0"/>
+      <line x1="190" y1="159" x2="450" y2="159" stroke="#9aa3ad"/>
+      <line x1="190" y1="177" x2="450" y2="177" stroke="#d83434"/>
+      <line x1="190" y1="195" x2="450" y2="195" stroke="#222"/>
+    </g>
+  </g>
+</svg>
+<figcaption>Les 9 liaisons d'un nœud. Le commutateur RF (DIO2) et l'horloge TCXO
+(DIO3) sont internes au module et pilotés par logiciel — pas de fil dédié (voir §7).</figcaption>
+</figure>
+
+<h2 class="pgbreak">4. Côté PC — monitoring et supervision</h2>
+<p>C'est ce qui me permet de « voir » le banc et de corriger.</p>
+<ol>
+  <li><strong>Branchement.</strong> Hub alimenté → PC ; les 3 Picos → hub. Au flash,
+  chaque Pico apparaît comme un volume USB (mode BOOTSEL) ; en fonctionnement, comme un
+  <strong>port série COM</strong> (USB CDC).</li>
+  <li><strong>Identification.</strong> Note quel COM = quel nœud (Gestionnaire de
+  périphériques → Ports COM). Étiquette physiquement A/B/C.</li>
+  <li><strong>Journalisation.</strong> Un moniteur série par nœud, redirigé vers un
+  fichier que je lis :
+  <br><code>pio device monitor -p COM5 -b 115200 | Tee-Object node_A.log</code>
+  <br>(ou un court script <code>pyserial</code>). 115200 bauds, 8N1.</li>
+  <li><strong>Ce que le firmware émet</strong> (à implémenter, §8) : init radio OK/KO,
+  fréquence/SF/BW appliqués, chaque TX (taille, airtime µs, budget duty-cycle restant),
+  chaque RX (RSSI/SNR, octets), résultat <code>process()</code> mesh (ARRIVED /
+  Drop+raison), rejets de signature v0A, compteurs Bloom.</li>
+  <li><strong>Boucle de supervision.</strong> Tu me partages les <code>node_*.log</code> ;
+  je diagnostique (ex. « init renvoie Driver(\"busy pin\") → BUSY mal câblé ou TCXO non
+  configuré »), je corrige le firmware/driver, on reflashe, on relit.</li>
+</ol>
+
+<h2>5. Montage et jalons de test</h2>
+<p>Progression honnête : chaque jalon ne démarre que si le précédent est vert dans les
+journaux.</p>
+<table>
+  <thead><tr><th>Jalon</th><th>Matériel actif</th><th>But</th><th>Preuve dans les logs</th></tr></thead>
+  <tbody>
+    <tr><td><strong>M1</strong> — 1 nœud</td><td>1 Pico + 1 SX1262 + antenne</td>
+      <td>Le driver parle à la puce : reset, <code>init()</code> OK, lecture d'un registre/status cohérent.</td>
+      <td><code>init OK</code>, version/status SPI plausible (pas 0x00/0xFF).</td></tr>
+    <tr><td><strong>M2</strong> — 2 nœuds</td><td>+ 2ᵉ Pico/SX1262</td>
+      <td>Un paquet signé v0A émis par A est reçu par B et <strong>vérifié</strong>.</td>
+      <td>A : <code>TX ok, airtime …</code> · B : <code>RX … ARRIVED</code> + signature OK.</td></tr>
+    <tr><td><strong>M3</strong> — 3 nœuds (mesh)</td><td>les 3 nœuds</td>
+      <td>Multi-hop + dédup : A hors de portée de C, B relaie ; C reçoit une fois (Bloom).</td>
+      <td>B : <code>relay</code> · C : <code>ARRIVED hops=…</code> · pas de doublon.</td></tr>
+  </tbody>
+</table>
+<p class="small">Astuce portée (M3) : pour forcer le relais, éloigne A et C (autres pièces /
+étages) ou réduis la puissance TX et masque les antennes — le but est que A↔C ne passe
+pas en direct, seulement via B.</p>
+
+<h2>6. Sécurité et pièges classiques</h2>
+<div class="callout danger">
+  <strong>Jamais d'émission sans antenne.</strong> Émettre sans antenne (ou sans charge
+  50 Ω) renvoie la puissance dans l'étage PA du SX1262 et peut l'endommager.
+  <strong>Visse l'antenne avant la première mise sous tension</strong> et ne la retire
+  jamais tant qu'un nœud peut émettre.
+</div>
+<ul>
+  <li><strong>Câble « charge seule ».</strong> Le piège n°1 : aucun port COM n'apparaît.
+  Utilise des câbles micro-USB <em>données</em>.</li>
+  <li><strong>Masse commune.</strong> Pico et SX1262 doivent partager le GND (déjà via le
+  fil noir) ; pas d'alimentation séparée flottante.</li>
+  <li><strong>3,3 V strict</strong> pour la radio (cf. §3).</li>
+  <li><strong>Réglementaire EU868.</strong> Reste à 868 MHz, ≤ 14 dBm (25 mW PIRE) et
+  respecte le duty-cycle 1 % — c'est déjà ce que calcule/limite le module
+  <code>airtime</code>/<code>DutyCycleThrottler</code> côté logiciel.</li>
+  <li><strong>ESD.</strong> Touche une masse / porte le bracelet avant de manipuler les
+  cartes.</li>
+</ul>
+
+<h2 class="pgbreak">7. Notes de compatibilité (issues du driver que j'ai écrit)</h2>
+<p>Deux détails matériels conditionnent le bon fonctionnement avec le driver actuel.
+Je les expose car ils orientent le <strong>choix du module</strong> (article #2).</p>
+
+<h3>7.1 Oscillateur : XTAL vs TCXO — <span style="color:var(--warn)">point d'attention</span></h3>
+<p>Beaucoup de modules SX1262 embarquent un <strong>TCXO</strong> alimenté/piloté via
+<strong>DIO3</strong>. Dans ce cas, l'init <em>doit</em> appeler
+<code>SetDIO3AsTcxoCtrl</code> (tension + délai de stabilisation) <strong>avant</strong>
+la calibration, sinon la PLL ne verrouille pas et la radio ne démarre pas. Le driver
+actuel <strong>ne le fait pas encore</strong>. Conséquence :</p>
+<ul>
+  <li><strong>Module à quartz (XTAL)</strong> → fonctionne avec le driver tel quel.
+  <em>À privilégier pour le premier test.</em></li>
+  <li><strong>Module à TCXO</strong> → il faudra ajouter <code>SetDIO3AsTcxoCtrl</code>
+  au driver (petite tâche firmware, ~10 lignes). Je la ferai pendant la bring-up si tu
+  prends un module TCXO.</li>
+</ul>
+
+<h3>7.2 Commutateur RF : interne (DIO2) vs externe (TXEN/RXEN)</h3>
+<p>Le driver suppose le <strong>commutateur RF interne</strong> du SX1262 (piloté par
+DIO2, schéma de référence Semtech). Certains modules (ex. Ebyte E22) exposent des broches
+<strong>TXEN/RXEN</strong> externes : ils demandent 2 GPIO de plus <em>et</em> du code de
+pilotage du commutateur, non présent dans le driver. <strong>Choisis un module à
+commutateur interne DIO2</strong> pour rester aligné avec le driver et le brochage à 9
+fils du §3.</p>
+
+<div class="callout">
+  <strong>En résumé pour l'achat (article #2) :</strong> SX1262 · 868 MHz · SPI · 3,3 V ·
+  headers 2,54 mm · <strong>commutateur RF interne (DIO2)</strong> · de préférence
+  <strong>XTAL</strong> (sinon je complète le driver pour le TCXO) · connecteur SMA (ou
+  IPEX + pigtail).
+</div>
+
+<h2>8. Ce qui n'est PAS dans cette liste (à produire avant le test)</h2>
+<p>Le matériel ne suffit pas. Pour lancer le POC supervisé, il manque — côté
+<strong>logiciel, gratuit</strong> :</p>
+<ol>
+  <li><strong>Le firmware de nœud</strong> (le vrai chaînon manquant) : un binaire
+  <code>no_std</code> RP2040 qui (a) instancie le driver <code>Sx1262Driver</code> avec un
+  HAL <em>embedded-hal 1.0</em> (ex. <code>rp-hal</code>/<code>embassy-rp</code>), (b) fait
+  tourner la mesh (<code>MeshRouter</code> v0A), (c) écrit les traces sur l'USB série.
+  <em>Il n'existe pas encore</em> : <code>oasis-mcu-demo</code> utilise embedded-hal 0.2.7
+  et n'importe pas le driver. C'est la prochaine tâche logicielle.</li>
+  <li><strong>Compléments driver éventuels</strong> : <code>SetDIO3AsTcxoCtrl</code> (si
+  module TCXO), pilotage TXEN/RXEN (si commutateur externe) — cf. §7.</li>
+  <li><strong>Chaîne d'outils PC</strong> : <code>rustup</code> + cible
+  <code>thumbv6m-none-eabi</code> + <code>elf2uf2-rs</code> ou <code>probe-rs</code> +
+  un moniteur série. Gratuit, pas un achat.</li>
+</ol>
+<div class="callout ok">
+  <strong>Ordre conseillé.</strong> 1) Commander le matériel (cette liste). 2) Pendant la
+  livraison, j'écris le firmware de nœud + complète le driver si besoin. 3) À réception :
+  montage §3, vérif multimètre, jalons M1→M2→M3 avec monitoring §4. Tu m'envoies les
+  journaux, je corrige en boucle.
+</div>
+
+<h2 class="pgbreak">Annexe — Liste d'achat à cocher</h2>
+<ul class="chk">
+  <li>3 × Raspberry Pi Pico <strong>H</strong> (headers pré-soudés, micro-USB)</li>
+  <li>3 × Module <strong>SX1262 868 MHz</strong> SPI, 3,3 V, headers 2,54 mm,
+      commutateur RF interne (DIO2), XTAL de préférence, connecteur SMA/IPEX</li>
+  <li>3 × Antenne <strong>868 MHz</strong> (connecteur identique au module)</li>
+  <li>(si module IPEX) 3 × pigtail u.FL → SMA</li>
+  <li>3 × Breadboard (400–830 points)</li>
+  <li>1 × Lot 40 jumpers <strong>Mâle–Mâle</strong> (besoin : 27)</li>
+  <li>1 × Lot jumpers M–F + 1 × lot F–F (rechange)</li>
+  <li>3 × Câble <strong>micro-USB DONNÉES</strong> (~1 m) — pas « charge seule »</li>
+  <li>1 × <strong>Hub USB alimenté</strong> ≥ 4 ports + son adaptateur secteur</li>
+  <li>1 × Multimètre (continuité + DC)</li>
+  <li>1 × Ruban de masquage + marqueur (étiquetage A/B/C)</li>
+  <li>(recommandé) 1 × Bracelet antistatique</li>
+  <li>(optionnel) 1 × Analyseur logique 8 voies (debug SPI)</li>
+  <li>(si module sans headers) fer à souder + soudure</li>
+</ul>
+
+<div class="footer">
+  OASIS — POC LoRa-mesh · liste de matériel v1 · 2026-06-15 · établie pour un banc 3 nœuds
+  supervisé depuis le PC. Brochage aligné sur <code>oasis-lora-transport/src/sx1262.rs</code>.
+  Prix indicatifs, à vérifier à l'achat. Aucune référence produit n'est sponsorisée ; ce
+  sont des exemples concrets à confronter au datasheet du vendeur. Le firmware de nœud et
+  d'éventuels compléments de driver restent à produire (§8).
+</div>
+
+</body>
+</html>

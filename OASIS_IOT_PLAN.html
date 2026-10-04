@@ -1,0 +1,257 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>OASIS — Plan produit IoT &amp; maturité embarquée</title>
+<style>
+  @page { size: A4; margin: 17mm 16mm 16mm 16mm; }
+  * { box-sizing: border-box; }
+  html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body { font-family: "Segoe UI","Helvetica Neue",Arial,sans-serif; font-size: 10.5pt; line-height: 1.45; color: #1a1a1a; margin: 0; }
+  h1,h2,h3,h4 { color: #0b3d4f; line-height: 1.2; }
+  h1 { font-size: 24pt; margin: 0 0 4pt; }
+  h2 { font-size: 15pt; margin: 22pt 0 6pt; padding-bottom: 3pt; border-bottom: 2px solid #0b3d4f; page-break-after: avoid; }
+  h3 { font-size: 12pt; margin: 14pt 0 4pt; page-break-after: avoid; }
+  p { margin: 4pt 0; } ul,ol { margin: 4pt 0; padding-left: 18pt; } li { margin: 2pt 0; }
+  code,.mono { font-family: "Consolas",monospace; font-size: 9pt; background: #f2f4f5; padding: 0 2px; border-radius: 2px; }
+  table { width: 100%; border-collapse: collapse; margin: 6pt 0; font-size: 9.2pt; page-break-inside: avoid; }
+  th,td { border: 1px solid #cfd8dc; padding: 3pt 5pt; text-align: left; vertical-align: top; }
+  th { background: #0b3d4f; color: #fff; font-weight: 600; }
+  tr:nth-child(even) td { background: #f6f8f9; }
+  .badge { font-size: 8pt; font-weight: 700; padding: 1px 5px; border-radius: 3px; color: #fff; white-space: nowrap; }
+  .ok { background: #1b7a3d; } .sim { background: #b07d00; } .stub { background: #9a4a00; }
+  .theater { background: #a01818; } .miss { background: #5a5a5a; }
+  .cover { text-align: center; padding-top: 58mm; page-break-after: always; }
+  .cover .sub { font-size: 13pt; color: #356; margin-top: 6pt; }
+  .cover .meta { margin-top: 38mm; font-size: 10pt; color: #444; }
+  .lead { font-size: 11pt; background: #eef4f6; border-left: 4px solid #0b3d4f; padding: 8pt 12pt; margin: 8pt 0; }
+  .warn { background: #fbeaea; border-left: 4px solid #a01818; padding: 8pt 12pt; margin: 8pt 0; }
+  .good { background: #eaf5ee; border-left: 4px solid #1b7a3d; padding: 8pt 12pt; margin: 8pt 0; }
+  .section { page-break-before: always; }
+  .small { font-size: 8.5pt; color: #555; }
+  .kpi { display: inline-block; border: 1px solid #cfd8dc; border-radius: 5px; padding: 5pt 9pt; margin: 3pt 4pt 3pt 0; font-size: 9pt; }
+  .kpi b { display:block; font-size: 13pt; color:#0b3d4f; }
+  footer { position: fixed; bottom: 6mm; left:0; right:0; text-align:center; font-size: 7.5pt; color:#999; }
+</style>
+</head>
+<body>
+
+<div class="cover">
+  <h1>OASIS</h1>
+  <div class="sub">Plan produit <b>IoT</b> &amp; dossier de maturité embarquée</div>
+  <div class="sub" style="font-size:11pt;color:#666;">Document interne — non commercial — transparence totale</div>
+  <div class="meta">
+    Cible : <b>nœud IoT embarqué</b> (Cortex-M / LoRa mesh)<br>
+    Date : 7 juin 2026 · Périmètre : dépôt <span class="mono">c:\dev\oasis</span> (état vérifié)<br>
+    Posture : honnêteté brutale — rien n'est caché ni embelli.
+  </div>
+</div>
+
+<!-- 0 -->
+<h2>0. Convention de lecture</h2>
+<p class="warn"><b>Ce document ne vend rien et ne cache rien.</b> Chaque capacité IoT est étiquetée selon ce qu'elle est réellement :</p>
+<p>
+<span class="badge ok">PROUVÉ-HW</span> validé sur matériel réel ·
+<span class="badge sim">SIMULÉ</span> simulation / x86 seulement ·
+<span class="badge stub">STUB</span> squelette, non fonctionnel ·
+<span class="badge theater">THÉÂTRE</span> revendiqué sans preuve ·
+<span class="badge miss">MANQUANT</span> absent
+</p>
+<p class="small">« Compile pour MCU » et « tourne en simulateur (Wokwi/Renode) » ≠ « tourne sur silicium ». Perf x86/WSL sauf mention. Sources : exécution réelle des tests + <span class="mono">IOT_READINESS.md</span> (audit 7 dimensions committé).</p>
+
+<!-- 1 -->
+<h2>1. Résumé exécutif (IoT)</h2>
+<p class="lead"><b>Verdict :</b> OASIS est un <b>runtime Rust embarqué pour nœud mesh IoT</b> — crypto réelle,
+preuves formelles, <span class="mono">no_std</span> propre, mesh signé, et désormais calcul d'airtime +
+throttle duty-cycle. <b>Mais ce n'est pas encore un nœud IoT déployable</b> : le driver radio LoRa est un
+stub, il n'y a <b>aucune gestion d'énergie</b>, et <b>rien n'a tourné sur silicium réel</b>. Le blocage est
+<b>matériel</b>, pas logiciel.</p>
+
+<div>
+  <span class="kpi"><b>no_std</b> RP2040 + STM32F4</span>
+  <span class="kpi"><b>444</b> tests verts</span>
+  <span class="kpi"><b>113</b> preuves Kani</span>
+  <span class="kpi"><b>2 Kio</b> Bloom MCU</span>
+  <span class="kpi"><b>0</b> boot silicium</span>
+  <span class="kpi"><b>0</b> ligne énergie</span>
+</div>
+
+<h3>Atouts IoT réels</h3>
+<ul>
+  <li><b>Cœur <span class="mono">no_std</span></b> compile pour Cortex-M0+ (RP2040) et M4F (STM32F4) ; mesh + crypto + porte d'entropie embarquables.</li>
+  <li><b>Crypto saine</b> : ChaCha20-Poly1305 (vecteur RFC 8439 exact), X25519, Ed25519.</li>
+  <li><b>Mesh multi-saut signé</b> (v8/v9/v0A) avec dédup Bloom et anti-rejeu (compteur persistant).</li>
+  <li><b>Airtime LoRa intègre-exact + throttle duty-cycle EU868</b> (no_std, testé) — conformité réglementaire.</li>
+  <li><b>Empreinte maîtrisée</b> : Bloom rétréci 64 Kio→2 Kio sur MCU via feature dédiée.</li>
+</ul>
+
+<h3>Bloqueurs IoT (sans détour)</h3>
+<ul>
+  <li><b>Driver radio SX1262 = STUB</b> → le lien WAN du nœud n'existe pas sur matériel.</li>
+  <li><b>Énergie = MANQUANT</b> → nœud sur batterie impossible (100 % CPU, RX permanent).</li>
+  <li><b>Zéro validation silicium</b> → tout est Wokwi/Renode/x86.</li>
+  <li><b>Élément sécurisé = STUB</b> → clés en RAM, pas de racine de confiance matérielle.</li>
+  <li><b>Ed25519 par-saut infaisable sur M0+</b> (~206 ms/vérif en simulateur).</li>
+</ul>
+
+<!-- 2 -->
+<h2 class="section">2. La cible : le nœud IoT OASIS</h2>
+<p>Produit visé : un <b>nœud embarqué autonome</b> (classe Cortex-M, RP2040/STM32) qui :</p>
+<ol>
+  <li><b>communique en mesh LoRa multi-saut signé</b> — résilient, sans cloud, anti-rejeu, insider-résistant ;</li>
+  <li><b>exécute un noyau bio-inspiré d'autonomie de bord</b> — porte d'entropie R14 (gel d'actuation si incertitude), réflexes &lt;1 ms, dégradation gracieuse (vitality) ;</li>
+  <li><b>tient dans des ressources contraintes</b> — <span class="mono">no_std</span>, Bloom 2 Kio, vecteurs zero-alloc ;</li>
+  <li><b>porte une identité à racine de confiance</b> — Ed25519 par-nœud, révocation signée par opérateur.</li>
+</ol>
+<p class="lead"><b>Cas d'usage de niche défendable :</b> capteurs/essaims contraints en environnement
+sans infrastructure (agriculture, industrie, défense), où ROS 2 est trop lourd et où l'on veut un
+« système nerveux » déterministe, faible mémoire, à mesh signé résistant au brouillage. <b>Hypothèse à
+valider sur matériel</b> — non prouvée tant que le silicium n'a pas parlé.</p>
+
+<!-- 3 -->
+<h2 class="section">3. Architecture embarquée</h2>
+<table>
+<tr><th>Crate</th><th>Rôle IoT</th><th style="width:24%">Cible / statut</th></tr>
+<tr><td><span class="mono">oasis-rt</span> (no_std)</td><td>Cœur : mesh v8/v9/v0A, dédup Bloom, spore crypto, porte R14, réflexes, vitality, vecteurs zero-alloc.</td><td>thumbv6m + thumbv7em <span class="badge sim">compile/Wokwi</span></td></tr>
+<tr><td><span class="mono">oasis-lora-transport</span></td><td>Transport LoRa : trait radio SX1262, FHSS, <b>airtime + duty-cycle</b>.</td><td>no_std — driver <span class="badge stub">STUB</span> ; airtime <span class="badge ok">testé</span></td></tr>
+<tr><td><span class="mono">oasis-mcu-demo</span></td><td>Firmware RP2040 (Cortex-M0+).</td><td><span class="badge sim">Wokwi</span></td></tr>
+<tr><td><span class="mono">oasis-renode-m11</span></td><td>Firmware STM32F4 (Cortex-M4F), mesh 2 nœuds UART.</td><td><span class="badge sim">Renode</span></td></tr>
+<tr><td><span class="mono">oasis-secure-element</span></td><td>Racine de confiance matérielle (ATECC608B).</td><td><span class="badge stub">STUB</span> (pas d'I2C)</td></tr>
+<tr><td><span class="mono">oasis-operator-key</span></td><td>Identité opérateur : commissioning, rotation, révocation (multisig).</td><td>no_std</td></tr>
+</table>
+<h3>Split std / no_std &amp; empreinte</h3>
+<ul>
+  <li>Modules dépendant de l'OS (<span class="mono">spinal</span>, <span class="mono">nerve</span>, <span class="mono">mavlink_min</span>) gardés derrière <span class="mono">#[cfg(feature="std")]</span> ; le reste (mesh, crypto, R14, synapse, tension, vec) est <span class="mono">no_std</span>.</li>
+  <li>Feature <span class="mono">mesh_bloom_mcu</span> : Bloom 64 Kio → 2 Kio (256 mots). Isolée aux crates MCU pour ne pas contaminer l'hôte (workspace exclut ces crates).</li>
+  <li>Tas RP2040 ~192 Kio (sur 264 Kio SRAM) — <b>déjà tendu</b> (M5 émotion ~131 Kio + M7 synapse ~34 Kio) ; peu de marge pour co-habiter avec une pile radio + capteurs.</li>
+</ul>
+
+<!-- 4 -->
+<h2 class="section">4. Maturité IoT — audit 7 dimensions</h2>
+<table>
+<tr><th style="width:24%">Dimension</th><th style="width:15%">Verdict</th><th>Vérité</th></tr>
+<tr><td>MCU / embarqué</td><td><span class="badge sim">SIMULÉ</span></td><td>compile + Wokwi/Renode ; <b>0 boot silicium</b> ; tailles flash/RAM non mesurées sur cible réelle.</td></tr>
+<tr><td>LoRa / sans-fil</td><td><span class="badge stub">STUB</span></td><td>SX1262 non implémenté ; FHSS = sim ; <b>airtime/duty-cycle codé &amp; testé</b> (logiciel).</td></tr>
+<tr><td>Mesh nœuds contraints</td><td><span class="badge sim">SIMULÉ</span></td><td>dédup/TTL réels ; la sim est <i>topologie</i>, pas <i>radio</i> (ignore l'airtime).</td></tr>
+<tr><td>Sécurité / racine de confiance</td><td><span class="badge stub">STUB</span></td><td>primitives solides ; élément sécurisé non câblé → clés en RAM.</td></tr>
+<tr><td>Ressources &amp; énergie</td><td><span class="badge miss">MANQUANT</span></td><td>0 occurrence sleep/WFI/duty/power/battery sur 159 fichiers.</td></tr>
+<tr><td>Sûreté edge / temps-réel</td><td><span class="badge sim">SIMULÉ</span></td><td>R14/réflexes/vitality prouvés en sim ; temps-réel mou (jitter ±4–54 %) ; watchdog présent.</td></tr>
+<tr><td>Production / flotte</td><td><span class="badge miss">MANQUANT</span></td><td>pas d'OTA, pas de provisioning à l'échelle, pas de passerelle/cloud, pas de télémétrie distante.</td></tr>
+</table>
+
+<!-- 5 -->
+<h2 class="section">5. Contraintes physiques IoT — chiffrées</h2>
+<p>Le cœur du dossier : ce que la physique impose à un nœud OASIS réel.</p>
+
+<h3>5.1 Airtime LoRa (mesuré, intègre-exact)</h3>
+<table>
+<tr><th>Réglage (BW 125 kHz, CR 4/5, CRC)</th><th>Airtime 24 o</th></tr>
+<tr><td>SF7</td><td>~61,7 ms</td></tr>
+<tr><td>SF9</td><td>~205,8 ms</td></tr>
+<tr><td>SF12 (longue portée)</td><td>~1 482 ms</td></tr>
+</table>
+<p class="small">Référence vérifiée : SF7 / 16 o = <b>51,456 ms</b> (formule Semtech, octet-exact). Implémenté <span class="mono">no_std</span>, sans flottant.</p>
+
+<h3>5.2 Duty-cycle réglementaire</h3>
+<p>EU868 impose 1 % ; émettre au-delà est <b>illégal</b>. OASIS dispose maintenant d'un <b>token bucket
+airtime</b> (<span class="mono">DutyCycleThrottler</span>, preset <span class="mono">eu868_1pct</span>) : un
+driver réel appelle <span class="mono">try_send()</span> avant chaque TX et attend si refusé. <span class="badge ok">testé</span> (la moitié logicielle de la conformité ; reste la moitié radio).</p>
+
+<h3>5.3 Le mesh à l'échelle se heurte à la radio</h3>
+<p class="warn">La sim « 200 nœuds, ~70 % de couverture » est une sim de <b>topologie</b>, pas de radio. En
+LoRa réel SF7, 200 nœuds × 2 msg/s ≈ <b>16,4 s d'airtime par seconde</b> — <b>physiquement impossible</b>.
+Conséquence produit : un mesh OASIS LoRa doit être <b>petit et bavard avec parcimonie</b> (peu de nœuds,
+faible débit), ou utiliser des sauts plus rapides/agrégation. À dimensionner avant tout déploiement.</p>
+
+<h3>5.4 Coût crypto sur MCU</h3>
+<table>
+<tr><th>Opération</th><th>x86</th><th>Cortex-M0+ (Renode)</th></tr>
+<tr><td>Ed25519 vérif (mesh v0A)</td><td>~127 µs</td><td><b>~206 ms (~1500×)</b></td></tr>
+<tr><td>Porte R14</td><td>~331 ns</td><td>~8 µs</td></tr>
+</table>
+<p>⇒ <b>signature Ed25519 par-saut infaisable</b> sur M0+ : la réserver aux <b>broadcasts d'autorité
+basse-fréquence</b> ; le mesh courant en v8/v9 (HMAC) pour le trafic fréquent.</p>
+
+<h3>5.5 Mémoire dédup (Bloom)</h3>
+<p>Bloom MCU 2 Kio : ~<b>1 600 insertions</b> avant FPR &gt; 1 % → auto-reset nécessaire (~1 200) sur nœud
+longue durée (à 1 msg/s ≈ 20 min/cycle). Câblé via <span class="mono">OASIS_MESH_AUTO_RESET</span> + avertissement si non configuré.</p>
+
+<h3>5.6 Énergie — le trou critique</h3>
+<p class="warn"><b>Aucune gestion d'énergie n'existe</b> (0 hit sleep/WFI/idle/duty/battery). À 1 kHz mesh, la
+signature v0A seule consomme ~250 mW sur un budget RP2040 ~200 mW ; RX LoRa permanent = pas d'autonomie
+batterie. <b>Sans cet ajout (Phase 1), « edge IoT sur batterie » est impossible</b> quel que soit le soin du code.</p>
+
+<!-- 6 -->
+<h2 class="section">6. Sécurité IoT &amp; identité</h2>
+<table>
+<tr><th>Aspect</th><th style="width:16%">Statut</th><th>Réalité</th></tr>
+<tr><td>Racine de confiance matérielle (ATECC608B)</td><td><span class="badge stub">STUB</span></td><td>contrat seulement, pas d'I2C → clés en RAM, vulnérables à l'ouverture du boîtier.</td></tr>
+<tr><td>Primitives crypto</td><td><span class="badge ok">PROUVÉ-HW</span></td><td>ChaCha20-Poly1305 (vecteur RFC), X25519, Ed25519 ; pas de crypto maison.</td></tr>
+<tr><td>Provisioning / onboarding</td><td><span class="badge stub">STUB</span></td><td>appairage QR manuel — inadapté à une flotte (10 = 10 scans humains).</td></tr>
+<tr><td>Anti-rejeu au redémarrage</td><td><span class="badge ok">corrigé</span></td><td>compteur mesh persisté/restauré (sinon rejeu après coupure).</td></tr>
+<tr><td>Résistance EMI (mesh non-AEAD)</td><td><span class="badge sim">SIMULÉ</span></td><td>12 o non signés / 98 → ~12 % de faux-accepts EMI ; <b>toujours envelopper la charge en AEAD</b> (tombe à ~3 %).</td></tr>
+<tr><td>Audit crypto externe</td><td><span class="badge miss">MANQUANT</span></td><td>aucun — requis avant tout usage critique.</td></tr>
+</table>
+
+<!-- 7 -->
+<h2 class="section">7. Feuille de route IoT chiffrée</h2>
+<table>
+<tr><th style="width:13%">Phase</th><th>Livrables IoT</th><th style="width:14%">Effort</th><th style="width:12%">Coût</th></tr>
+<tr><td><b>0 — Fait</b></td><td>no_std propre, mesh signé, anti-rejeu, auto-reset Bloom, <b>airtime + duty-cycle</b>, CI.</td><td>réalisé</td><td>0 $</td></tr>
+<tr><td><b>1 — Radio + énergie</b></td><td>Driver SX1262 réel (<span class="mono">sx126x-rs</span>/<span class="mono">lora-phy</span>) ; throttle duty-cycle câblé ; sleep/WFI CPU + RX sur interruption ; mesure consommation.</td><td>2–4 sem.</td><td>~80 $</td></tr>
+<tr><td><b>2 — Validation silicium</b></td><td>Flash RP2040 + STM32F4 ; mesures flash/RAM/énergie réelles ; driver ATECC608B I2C (racine de confiance) ; mesh 2 nœuds sur vraies radios + courbes PER/portée.</td><td>2–4 sem.</td><td>~40 $</td></tr>
+<tr><td><b>3 — Flotte</b></td><td>OTA signé (A/B + rollback), provisioning zéro-touch, passerelle (LoRa→IP) + store-and-forward, télémétrie ; audit crypto ; certif radio (FCC/CE).</td><td>3–6 mois</td><td>35–65 k$</td></tr>
+</table>
+
+<h3>Nomenclature matérielle (BOM) pour Phases 1–2</h3>
+<table>
+<tr><th>Poste</th><th style="width:18%">Coût</th><th>Note</th></tr>
+<tr><td>2× Waveshare Pico-LoRa-SX1262 (868 MHz)</td><td>~80 $</td><td>test mesh bidirectionnel</td></tr>
+<tr><td>RP2040 + STM32F4 + ATECC608B</td><td>~30 $</td><td>silicium + racine de confiance</td></tr>
+<tr><td>Programmateur SWD (ST-Link v2)</td><td>~10 $</td><td>flash + mesure (semihosting)</td></tr>
+<tr><td>(option) RTL-SDR</td><td>~30 $</td><td>vérifier TX/airtime/hop réel</td></tr>
+</table>
+<p class="lead"><b>Prototype IoT validé matériellement : ~120–150 $ + quelques semaines.</b> Le code est déjà
+à ~80 % ; ce qui manque est du <b>matériel + test</b>, pas du logiciel à réécrire.</p>
+
+<!-- 8 -->
+<h2 class="section">8. Risques IoT — autopsie anticipée</h2>
+<ol>
+  <li><b>Jamais validé sur silicium/radio</b> (le plus probable) : tout reste sim ; au premier déploiement,
+  timing/RF/brownout/airtime surprennent. <i>Mitigation :</i> Phases 1–2, ~120 $.</li>
+  <li><b>Budget énergie ignoré</b> : nœud batterie meurt en heures ; « edge IoT » impossible. <i>Mitigation :</i> idle CPU + RX sur interruption (Phase 1), mesurer.</li>
+  <li><b>Mesh sur-dimensionné</b> : ignorer l'airtime LoRa (16,4 s/s à 200 nœuds) → réseau saturé. <i>Mitigation :</i> petits clusters, faible débit, agrégation.</li>
+</ol>
+<p>Secondaires : racine de confiance non câblée (clés RAM), crypto non auditée, certif radio absente (illégal d'émettre dehors sans), mono-mainteneur.</p>
+
+<!-- 9 -->
+<h2 class="section">9. Recommandation IoT</h2>
+<div class="lead">
+<ol>
+  <li><b>Une seule tranche, bout-en-bout, sur matériel réel :</b> un <b>nœud capteur LoRa-mesh</b>
+  (driver SX1262 réel → airtime/duty-cycle → mesh signé v9 → mesure énergie). C'est le plus court chemin
+  de « prototype » à « ça marche dehors ».</li>
+  <li><b>Ajouter l'énergie dès le premier MCU réel</b> — mesurer, pas supposer.</li>
+  <li><b>Câbler la racine de confiance</b> (ATECC608B I2C) avant toute revendication de sécurité.</li>
+  <li><b>Dimensionner le mesh sur l'airtime réel</b>, pas sur la sim topologie.</li>
+  <li><b>Différer</b> audit crypto + certif jusqu'à une tranche prouvée.</li>
+</ol>
+</div>
+<p>OASIS est un <b>excellent socle embarqué de recherche</b>, livrable <i>en tant que prototype IoT</i>, avec
+un chemin clair et peu coûteux vers un nœud de niche réel — à condition d'accepter que la prochaine étape
+décisive soit du <b>matériel</b>, pas du code.</p>
+
+<!-- annexe -->
+<h2 class="section">Annexe — Hypothèses IoT à vérifier dans le monde réel</h2>
+<ul>
+  <li><b>Airtime</b> : épinglé sur 1 référence (SF7/16 o = 51,456 ms) ; autres SF/BW dérivés de la même formule (non testés un à un).</li>
+  <li><b>Perf MCU</b> (Ed25519 206 ms, R14 8 µs) : extrapolée de Renode/Wokwi ; vraies latences (wait-states, IRQ) inconnues avant flash réel.</li>
+  <li><b>Empreinte RAM/flash</b> : estimée ; le linker MCU réel + co-habitation radio/capteurs peuvent dépasser le budget.</li>
+  <li><b>Coûts/délais BOM</b> : indicatifs ; à valider (dispo/prix au moment de l'achat).</li>
+  <li><b>16,4 s airtime/s</b> : suppose SF7/125 kHz/64 o/2 msg/s — l'ordre de grandeur tient, le chiffre exact dépend des params radio choisis.</li>
+</ul>
+
+<footer>OASIS — Plan produit IoT &amp; maturité embarquée · Document interne, transparence totale · 7 juin 2026</footer>
+
+</body>
+</html>

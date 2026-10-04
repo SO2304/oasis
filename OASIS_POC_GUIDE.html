@@ -1,0 +1,316 @@
+<!doctype html>
+<html lang="fr"><head><meta charset="utf-8"><title>OASIS — Mode d'emploi POC IoT</title>
+<style>
+  @page { size: A4; margin: 16mm 15mm; }
+  * { box-sizing: border-box; }
+  html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body { font-family:"Segoe UI",Arial,sans-serif; font-size:10.3pt; line-height:1.42; color:#1a1a1a; margin:0; }
+  h1,h2,h3 { color:#0b3d4f; line-height:1.18; }
+  h1 { font-size:23pt; margin:0 0 3pt; } h2 { font-size:14.5pt; margin:18pt 0 5pt; border-bottom:2px solid #0b3d4f; padding-bottom:3pt; page-break-after:avoid; }
+  h3 { font-size:11.5pt; margin:12pt 0 3pt; page-break-after:avoid; }
+  p{margin:3pt 0;} ul,ol{margin:3pt 0;padding-left:17pt;} li{margin:1.5pt 0;}
+  code,.mono{font-family:Consolas,monospace;font-size:8.8pt;background:#f1f4f5;padding:0 2px;border-radius:2px;}
+  pre{background:#11202a;color:#d6eef2;font-family:Consolas,monospace;font-size:8.6pt;padding:7pt 9pt;border-radius:4px;overflow:hidden;white-space:pre-wrap;margin:5pt 0;}
+  .step{border:1px solid #cfd8dc;border-radius:6px;padding:8pt 10pt;margin:8pt 0;page-break-inside:avoid;}
+  .step h3{margin-top:0;}
+  .ok{color:#1b7a3d;font-weight:700;} .warn{color:#a01818;font-weight:700;}
+  .box-warn{background:#fbeaea;border-left:4px solid #a01818;padding:7pt 11pt;margin:7pt 0;}
+  .box-ok{background:#eaf5ee;border-left:4px solid #1b7a3d;padding:7pt 11pt;margin:7pt 0;}
+  .box-info{background:#eef4f6;border-left:4px solid #0b3d4f;padding:7pt 11pt;margin:7pt 0;}
+  table{width:100%;border-collapse:collapse;margin:5pt 0;font-size:9pt;page-break-inside:avoid;}
+  th,td{border:1px solid #cfd8dc;padding:3pt 5pt;text-align:left;vertical-align:top;} th{background:#0b3d4f;color:#fff;}
+  .crit{font-size:9pt;background:#f6f8f9;border:1px dashed #1b7a3d;border-radius:4px;padding:4pt 7pt;margin:4pt 0;}
+  .crit b{color:#1b7a3d;}
+  .fig{text-align:center;margin:6pt 0;} .fig svg{max-width:100%;height:auto;} .cap{font-size:8pt;color:#666;margin-top:1pt;}
+  .cover{text-align:center;padding-top:55mm;page-break-after:always;}
+  .section{page-break-before:always;} .small{font-size:8.3pt;color:#555;}
+  /* svg helpers */
+  .b{fill:#eef4f6;stroke:#0b3d4f;stroke-width:1.5;} .bg{fill:#eaf5ee;stroke:#1b7a3d;stroke-width:1.5;}
+  .ba{fill:#fff6e6;stroke:#b07d00;stroke-width:1.5;} .br{fill:#fbeaea;stroke:#a01818;stroke-width:1.5;}
+  .t{font:10px "Segoe UI",sans-serif;fill:#12303a;} .ts{font:8.5px "Segoe UI",sans-serif;fill:#444;}
+  .tw{font:9px "Segoe UI",sans-serif;fill:#fff;font-weight:bold;} .ar{stroke:#0b3d4f;stroke-width:1.6;fill:none;marker-end:url(#a);}
+  .ard{stroke:#a01818;stroke-width:1.4;fill:none;stroke-dasharray:4 3;marker-end:url(#ar);}
+</style></head><body>
+<svg width="0" height="0"><defs>
+  <marker id="a" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#0b3d4f"/></marker>
+  <marker id="ar" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#a01818"/></marker>
+</defs></svg>
+
+<div class="cover">
+  <h1>OASIS</h1>
+  <div style="font-size:13pt;color:#356;">Mode d'emploi POC IoT — pas à pas, illustré</div>
+  <div style="font-size:10.5pt;color:#666;margin-top:5pt;">Phase A : logiciel (lançable maintenant) · Phase B : matériel</div>
+  <div style="margin-top:36mm;font-size:10pt;color:#444;">
+    Document interne · transparence totale · 12 juin 2026<br>
+    Les schémas sont <b>dessinés</b> (pas des photos) ; le pinout est à vérifier contre tes cartes.
+  </div>
+</div>
+
+<!-- 0 -->
+<h2>0. À lire avant de commencer</h2>
+<div class="box-warn"><b>Deux vérités à accepter :</b>
+<ul style="margin-top:3pt">
+  <li><b>Phase A (logiciel) marche aujourd'hui</b> et prouve la <i>logique</i> du nœud (crypto, mesh, airtime, duty-cycle). Aucun matériel requis.</li>
+  <li><b>Phase B (matériel) n'est PAS encore exécutable :</b> le driver radio <span class="mono">SX1262</span> est un <b>stub</b>. Il faut d'abord <b>l'écrire</b> (~2–3 j, via <span class="mono">sx126x-rs</span>/<span class="mono">lora-phy</span>) <b>et</b> acheter le matériel (voir BOM). La Phase B ci-dessous est le <b>protocole à suivre une fois ces deux conditions remplies</b>.</li>
+</ul></div>
+<p class="small">Les illustrations sont des <b>schémas</b> (pas des photos d'un vrai banc). Les numéros de broches et commandes sont issus des datasheets/wikis — <b>vérifie-les contre tes cartes réelles</b> avant de brancher.</p>
+
+<!-- 1 overview -->
+<h2>1. Vue d'ensemble</h2>
+<div class="fig">
+<svg viewBox="0 0 540 150">
+  <rect class="bg" x="10" y="30" width="200" height="86" rx="6"/>
+  <text class="t" x="110" y="50" text-anchor="middle" font-weight="bold">PHASE A — Logiciel (PC)</text>
+  <text class="ts" x="110" y="68" text-anchor="middle">mesh_poc.exe · duty_cycle.exe</text>
+  <text class="ts" x="110" y="84" text-anchor="middle">sign → tramer → recevoir → vérifier</text>
+  <text class="ts" x="110" y="100" text-anchor="middle">+ airtime + duty-cycle</text>
+  <text class="t" x="110" y="113" text-anchor="middle" fill="#1b7a3d">prouve la LOGIQUE ✓</text>
+
+  <path class="ar" d="M214,73 L326,73"/>
+  <text class="ts" x="270" y="60" text-anchor="middle" fill="#a01818">⚠ écrire driver SX1262</text>
+  <text class="ts" x="270" y="88" text-anchor="middle" fill="#a01818">+ acheter matériel</text>
+
+  <rect class="ba" x="330" y="30" width="200" height="86" rx="6"/>
+  <text class="t" x="430" y="50" text-anchor="middle" font-weight="bold">PHASE B — Matériel</text>
+  <text class="ts" x="430" y="68" text-anchor="middle">3× Pico + SX1262, PPK2, RTL-SDR</text>
+  <text class="ts" x="430" y="84" text-anchor="middle">mesh réel · énergie · RF · racine de confiance</text>
+  <text class="t" x="430" y="105" text-anchor="middle" fill="#b07d00">prouve le NŒUD réel</text>
+</svg>
+<div class="cap">Fig. 1 — Deux phases. La A est lançable ; la B est conditionnée au driver + matériel.</div>
+</div>
+
+<!-- PHASE A -->
+<h2 class="section">PHASE A — POC logiciel (maintenant, sans matériel)</h2>
+
+<div class="step">
+<h3>A1. Prérequis</h3>
+<ul><li>Rust stable installé (<span class="mono">rustup</span>), <span class="mono">cargo --version</span> ≥ 1.80.</li>
+<li>Le dépôt OASIS (<span class="mono">c:\dev\oasis</span>).</li></ul>
+<div class="crit"><b>Critère :</b> <span class="mono">cargo --version</span> répond sans erreur.</div>
+</div>
+
+<div class="step">
+<h3>A2. Lancer le POC mesh end-to-end</h3>
+<pre>cd c:\dev\oasis\oasis-lora-transport
+cargo run --release --features std --example mesh_poc</pre>
+<div class="fig">
+<svg viewBox="0 0 540 132">
+  <rect class="b" x="8" y="40" width="120" height="58" rx="5"/>
+  <text class="t" x="68" y="60" text-anchor="middle" font-weight="bold">Nœud A</text>
+  <text class="ts" x="68" y="76" text-anchor="middle">origin_wrap()</text>
+  <text class="ts" x="68" y="90" text-anchor="middle">sign Ed25519 (v0A)</text>
+
+  <rect class="b" x="150" y="48" width="86" height="42" rx="5"/>
+  <text class="ts" x="193" y="66" text-anchor="middle">trame LoRa</text>
+  <text class="ts" x="193" y="80" text-anchor="middle">+ airtime</text>
+
+  <rect class="ba" x="252" y="48" width="92" height="42" rx="5"/>
+  <text class="ts" x="298" y="66" text-anchor="middle">radio</text>
+  <text class="ts" x="298" y="80" text-anchor="middle">SIMULÉE</text>
+
+  <rect class="bg" x="362" y="40" width="160" height="58" rx="5"/>
+  <text class="t" x="442" y="60" text-anchor="middle" font-weight="bold">Nœud B</text>
+  <text class="ts" x="442" y="76" text-anchor="middle">process() → vérifie sig</text>
+  <text class="t" x="442" y="92" text-anchor="middle" fill="#1b7a3d">ARRIVED ✓</text>
+
+  <path class="ar" d="M128,69 L150,69"/><path class="ar" d="M236,69 L252,69"/><path class="ar" d="M344,69 L362,69"/>
+  <path class="ard" d="M298,90 C298,118 460,118 460,100"/>
+  <text class="ts" x="380" y="125" text-anchor="middle" fill="#a01818">enveloppe FORGÉE → rejetée ✗</text>
+</svg>
+<div class="cap">Fig. 2 — Chaîne validée : signature → trame → radio simulée → réception → vérification ; la forge est rejetée.</div>
+</div>
+<p>Sortie attendue (réelle) :</p>
+<pre>[1] 2 noeuds Ed25519 (A=0xAA, B=0xBB), pubkeys croisees enregistrees.
+[2] Lien LoRa simule (SF7, BW code 4).
+[3] A signe + emet (28 o charge -> 117 o enveloppe, airtime 210.2 ms).
+[4] B recoit + VERIFIE la signature: ARRIVED (msg_id=0x100ba66a4ed81db5, hops=0).
+[5] Securite: enveloppe FORGEE rejetee (bad mesh signature). OK.
+[6] EU868 1%: 7/50 envois legaux a 1 msg/s (le reste throttle).</pre>
+<div class="crit"><b>Critères de succès (cocher) :</b> ☐ ligne [4] contient <b>ARRIVED</b> + <span class="mono">msg_id=</span> (signature Ed25519 vérifiée, sur lien <b>simulé</b>) · ☐ ligne [5] = <b>FORGEE rejetee (bad mesh signature)</b> · ☐ ligne [6] = <b>7/50</b> (test interne du throttler : 50 essais à 1/s depuis t=0). Si [4] dit « rejette le message legitime » ⇒ régression crypto à investiguer.</div>
+<p class="small"><b>Échecs courants :</b> oubli de <span class="mono">--features std</span> (l'exemple ne compile pas) ; ligne [4] = « rejette le message legitime » ⇒ régression crypto à investiguer.</p>
+</div>
+
+<div class="step">
+<h3>A3. Démo airtime / duty-cycle</h3>
+<pre>cargo run --release --example duty_cycle</pre>
+<p>Affiche le temps-on-air par SF (SF7 ≈ 61,7 ms, SF12 ≈ 1 482,75 ms pour 24 o) et le pacing EU868 1 %.</p>
+<div class="crit"><b>Critère :</b> SF12 &gt; SF7 (longue portée = plus lent) ; throttling visible (≪ 150 envois acceptés).</div>
+</div>
+
+<div class="box-ok"><b>Fin de Phase A.</b> Si A2 et A3 passent, la <b>logique</b> du nœud est prouvée. Tu peux passer commande du matériel en confiance. <b>Ne confonds pas ça avec « validé IoT » — la radio reste à prouver (Phase B).</b></div>
+
+<!-- PHASE B -->
+<h2 class="section">PHASE B — POC matériel (après driver + achat)</h2>
+<div class="box-warn"><b>Conditions de démarrage de la Phase B :</b> (1) driver <span class="mono">Sx1262Driver</span> réel écrit et testé en boucle locale ; (2) matériel reçu (3× Pico + 3× hat SX1262 868 MHz, sonde SWD, PPK2, RTL-SDR — cf. BOM). Sans (1), les radios ne transmettent rien.</div>
+<div class="box-warn"><b>⚠ INSTRUCTIONS NON TESTÉES — propositions schématiques.</b> Aucun pas B1–B7 n'a été exécuté par l'auteur ; tout vient des datasheets/wikis. Le driver SX1262 est un <b>stub bloquant</b> (<span class="mono">oasis-lora-transport/src/sx1262.rs:78</span> renvoie « init not yet implemented »). Vérifie chaque broche et chaque commande contre TON matériel avant de t'y fier.</div>
+<div class="box-info"><b>Légal &amp; réglementaire (avant toute émission) :</b> en bande ISM 868 MHz (EU) l'émission est réglementée — respecter le <b>1 % de duty-cycle</b> (ou FHSS), les limites d'<b>EIRP</b> (typiquement ≤ +14 dBm), et ne pas émettre en zone interdite. Aux US : bande <b>915 MHz</b>, contraintes différentes (masque spectral, dwell time). <b>Émettre hors règles est illégal.</b></div>
+
+<div class="step">
+<h3>B1. Flasher un Raspberry Pi Pico</h3>
+<div class="fig">
+<svg viewBox="0 0 540 120">
+  <rect class="b" x="20" y="34" width="150" height="60" rx="5"/>
+  <text class="t" x="95" y="54" text-anchor="middle" font-weight="bold">Raspberry Pi Pico</text>
+  <rect x="34" y="64" width="40" height="16" rx="3" fill="#a01818"/><text class="tw" x="54" y="76" text-anchor="middle">BOOTSEL</text>
+  <text class="ts" x="125" y="74" text-anchor="middle">USB</text>
+  <path class="ar" d="M170,64 L250,64"/>
+  <text class="ts" x="210" y="54" text-anchor="middle">câble USB</text>
+  <rect class="bg" x="252" y="34" width="120" height="60" rx="5"/>
+  <text class="t" x="312" y="58" text-anchor="middle">PC</text>
+  <text class="ts" x="312" y="74" text-anchor="middle">lecteur « RPI-RP2 »</text>
+  <path class="ar" d="M372,64 L452,64"/>
+  <rect class="ba" x="454" y="40" width="78" height="48" rx="5"/>
+  <text class="ts" x="493" y="60" text-anchor="middle">glisser</text>
+  <text class="ts" x="493" y="74" text-anchor="middle">firmware.uf2</text>
+</svg>
+<div class="cap">Fig. 3 — Maintenir BOOTSEL en branchant l'USB → un lecteur « RPI-RP2 » apparaît → y déposer le <span class="mono">.uf2</span>.</div>
+</div>
+<p><b>Générer le firmware</b> (depuis le crate RP2040) :</p>
+<pre># installer une fois : outil UF2 + la cible MCU
+cargo install elf2uf2-rs
+rustup target add thumbv6m-none-eabi
+cd c:\dev\oasis\oasis-mcu-demo
+cargo build --release            # cible thumbv6m auto-selectionnee (.cargo/config.toml)
+# le firmware = le binaire du crate (src/main.rs) ; les autres [[bin]] sont des bench
+elf2uf2-rs target/thumbv6m-none-eabi/release/oasis-mcu-demo firmware.uf2</pre>
+<div class="crit"><b>Critère :</b> après dépôt du <span class="mono">.uf2</span>, le Pico reboote et émet sur l'UART/USB-série les logs du noyau (les mêmes qu'en simulateur Wokwi).</div>
+<p class="small"><b>À vérifier :</b> nom exact du binaire (<span class="mono">ls target/thumbv6m-none-eabi/release/</span>) ; pour le debug/mesure RAM, brancher la sonde SWD (SWCLK/SWDIO).</p>
+</div>
+
+<div class="step">
+<h3>B2. Monter le SX1262 + antenne</h3>
+<div class="fig">
+<svg viewBox="0 0 540 168">
+  <rect class="ba" x="150" y="14" width="240" height="40" rx="4"/>
+  <text class="t" x="270" y="38" text-anchor="middle" font-weight="bold">Hat Waveshare Pico-LoRa-SX1262 (868 MHz)</text>
+  <line x1="396" y1="20" x2="430" y2="6" stroke="#0b3d4f" stroke-width="2"/><text class="ts" x="445" y="8">ANT 868</text>
+  <rect class="b" x="150" y="70" width="240" height="40" rx="4"/>
+  <text class="t" x="270" y="94" text-anchor="middle" font-weight="bold">Raspberry Pi Pico (RP2040)</text>
+  <!-- stacking arrows -->
+  <path class="ar" d="M200,70 L200,56"/><path class="ar" d="M340,70 L340,56"/>
+  <text class="ts" x="270" y="64" text-anchor="middle">empilage par headers (SPI)</text>
+  <!-- pin table -->
+  <text class="ts" x="20" y="132" font-weight="bold">SPI / contrôle (câblage canonique sx1262.rs — vérifier le wiki de TA carte) :</text>
+  <text class="ts" x="20" y="146">SCK→GP10 · MOSI→GP11 · MISO→GP12 · NSS/CS→GP13 · BUSY→GP14 · DIO1→GP15 · RESET→GP16 · 3V3 · GND</text>
+</svg>
+<div class="cap">Fig. 4 — Le hat s'empile sur le Pico (bus SPI). Brancher l'antenne 868 MHz <b>avant</b> toute émission.</div>
+</div>
+<div class="box-warn"><b>Ne JAMAIS émettre sans antenne</b> (risque de dommage de l'étage PA). Les broches ci-dessus suivent le <b>câblage canonique de <span class="mono">oasis-rt/src/sx1262.rs</span></b> ; <b>confirme-les sur le wiki exact de ta carte Waveshare</b> (et au multimètre) avant de brancher, puis passe-les au driver <span class="mono">Sx1262Driver</span>.</div>
+</div>
+
+<div class="step">
+<h3>B3. Lien point-à-point (2 nœuds)</h3>
+<p class="warn">⚠ Antenne 868 connectée · MÊMES fréquence/SF/BW sur les 2 nœuds · vérifier le pinout au multimètre (aucun court 3V3↔GND) AVANT d'alimenter.</p>
+<div class="fig">
+<svg viewBox="0 0 540 96">
+  <circle class="b" cx="90" cy="48" r="30"/><text class="t" x="90" y="52" text-anchor="middle" font-weight="bold">A</text>
+  <circle class="bg" cx="450" cy="48" r="30"/><text class="t" x="450" y="52" text-anchor="middle" font-weight="bold">B</text>
+  <path class="ar" d="M122,48 L416,48"/>
+  <text class="ts" x="270" y="38" text-anchor="middle">enveloppe signée v0A sur LoRa réel</text>
+  <text class="ts" x="270" y="64" text-anchor="middle">mesurer : RSSI/SNR, PER, latence</text>
+</svg>
+<div class="cap">Fig. 5 — A émet, B reçoit et vérifie. Test d'abord à 1 m (sanity), puis en portée croissante.</div>
+</div>
+<div class="crit"><b>Critère :</b> B affiche <b>ARRIVED</b> (signature OK) avec RSSI/SNR plausibles ; refaire à distance croissante et tracer PER vs distance.</div>
+</div>
+
+<div class="step">
+<h3>B4. Mesh multi-saut (3 nœuds) — le test clé</h3>
+<p class="warn">⚠ Antennes 868 sur les 3 nœuds · mêmes fréquence/SF/BW partout.</p>
+<div class="fig">
+<svg viewBox="0 0 540 132">
+  <circle cx="70" cy="66" r="58" fill="none" stroke="#cfd8dc" stroke-dasharray="3 3"/>
+  <circle cx="270" cy="66" r="58" fill="none" stroke="#cfd8dc" stroke-dasharray="3 3"/>
+  <circle cx="470" cy="66" r="58" fill="none" stroke="#cfd8dc" stroke-dasharray="3 3"/>
+  <circle class="b" cx="70" cy="66" r="24"/><text class="t" x="70" y="70" text-anchor="middle" font-weight="bold">A</text>
+  <circle class="ba" cx="270" cy="66" r="24"/><text class="t" x="270" y="70" text-anchor="middle" font-weight="bold">B</text>
+  <circle class="bg" cx="470" cy="66" r="24"/><text class="t" x="470" y="70" text-anchor="middle" font-weight="bold">C</text>
+  <path class="ar" d="M94,66 L246,66"/><path class="ar" d="M294,66 L446,66"/>
+  <path class="ard" d="M94,40 C230,-6 320,-6 446,40"/>
+  <text class="ts" x="270" y="14" text-anchor="middle" fill="#a01818">A et C hors de portée directe</text>
+  <text class="ts" x="170" y="58" text-anchor="middle">relais</text><text class="ts" x="370" y="58" text-anchor="middle">relais</text>
+</svg>
+<div class="cap">Fig. 6 — Placer B entre A et C, A et C hors portée directe. Un message d'A atteint C <b>uniquement si B relaie</b> (TTL/forward de <span class="mono">mesh.rs</span>).</div>
+</div>
+<div class="crit"><b>Critère (cœur du POC) :</b> C reçoit le message d'A <b>via B</b> (hops ≥ 1) ; couper B ⇒ C ne reçoit plus. Vérifier la <b>dédup</b> (pas de tempête de rebroadcast).</div>
+</div>
+
+<div class="step">
+<h3>B5. Conformité RF (RTL-SDR)</h3>
+<p class="warn">⚠ Antenne sur le nœud émetteur · le RTL-SDR écoute (ne transmet pas).</p>
+<div class="fig">
+<svg viewBox="0 0 540 120">
+  <rect x="30" y="20" width="300" height="80" rx="4" fill="#0b1418"/>
+  <line x1="40" y1="92" x2="320" y2="92" stroke="#46707d"/><text class="ts" x="180" y="110" text-anchor="middle">fréquence → 868 MHz</text>
+  <text x="36" y="32" font="8px Consolas" fill="#7fd6e6">waterfall</text>
+  <path d="M120,30 L140,30 L150,88 L130,88 Z" fill="#39c0d8" opacity="0.85"/>
+  <path d="M200,34 L218,34 L228,80 L210,80 Z" fill="#39c0d8" opacity="0.6"/>
+  <rect class="ba" x="360" y="34" width="160" height="54" rx="5"/>
+  <text class="ts" x="440" y="54" text-anchor="middle">vérifier : fréquence,</text>
+  <text class="ts" x="440" y="68" text-anchor="middle">airtime ≈ calc., 1 % duty,</text>
+  <text class="ts" x="440" y="82" text-anchor="middle">saut FHSS</text>
+</svg>
+<div class="cap">Fig. 7 — Le RTL-SDR « voit » les chirps LoRa : confirmer la fréquence, comparer l'airtime mesuré au calcul (<span class="mono">airtime.rs</span>), et vérifier que le 1 % est respecté.</div>
+</div>
+<div class="crit"><b>Critère :</b> airtime observé ≈ valeur calculée (±10 %) ; pas d'émission au-delà du budget 1 % ; sauts FHSS visibles si activés.</div>
+</div>
+
+<div class="step">
+<h3>B6. Mesure d'énergie (PPK2) — le juge de paix IoT</h3>
+<div class="fig">
+<svg viewBox="0 0 540 150">
+  <rect class="bg" x="20" y="20" width="70" height="34" rx="4"/><text class="ts" x="55" y="41" text-anchor="middle">PC/USB</text>
+  <path class="ar" d="M90,37 L120,37"/>
+  <rect class="ba" x="122" y="18" width="90" height="38" rx="4"/><text class="t" x="167" y="34" text-anchor="middle" font-weight="bold">PPK2</text><text class="ts" x="167" y="48" text-anchor="middle">ampèremètre</text>
+  <path class="ar" d="M212,37 L242,37"/>
+  <rect class="b" x="244" y="18" width="90" height="38" rx="4"/><text class="ts" x="289" y="41" text-anchor="middle">nœud OASIS</text>
+  <!-- current profile -->
+  <line x1="30" y1="138" x2="520" y2="138" stroke="#999"/><text class="ts" x="520" y="150" text-anchor="end">temps</text>
+  <line x1="30" y1="138" x2="30" y2="74" stroke="#999"/><text class="ts" x="14" y="100" transform="rotate(-90 14,100)" text-anchor="middle">courant</text>
+  <path d="M30,132 L150,132 L150,112 L260,112 L260,86 L300,86 L300,112 L420,112 L420,132 L520,132" fill="none" stroke="#0b3d4f" stroke-width="1.8"/>
+  <text class="ts" x="90" y="128">sleep (µA)</text><text class="ts" x="205" y="108">RX (~120 mW)</text><text class="ts" x="280" y="80">TX (~150 mW)</text>
+</svg>
+<div class="cap">Fig. 8 — PPK2 en série entre l'alim et le nœud. Profil attendu : sommeil très bas, RX moyen, pic à l'émission. C'est ce qui dit si le nœud peut vivre sur batterie.</div>
+</div>
+<div class="crit"><b>Critère (ÉCHEC ATTENDU aujourd'hui) :</b> mesurer RX (~120 mW) et TX (~150 mW). <b>Le régime « sleep » sera ABSENT</b> — le code n'a pas encore de gestion d'énergie. Le but de ce test est justement de <b>chiffrer ce trou</b> et de servir de référence avant le travail énergie (Phase 1).</div>
+</div>
+
+<div class="step">
+<h3>B7. [DIFFÉRÉ — Phase 2] Racine de confiance (ATECC608B, I2C)</h3>
+<div class="fig">
+<svg viewBox="0 0 540 96">
+  <rect class="b" x="40" y="30" width="120" height="44" rx="5"/><text class="ts" x="100" y="56" text-anchor="middle">nœud (MCU)</text>
+  <rect class="bg" x="360" y="30" width="140" height="44" rx="5"/><text class="ts" x="430" y="50" text-anchor="middle">ATECC608B</text><text class="ts" x="430" y="64" text-anchor="middle">élément sécurisé</text>
+  <path class="ar" d="M160,44 L360,44"/><text class="ts" x="260" y="38" text-anchor="middle">I2C : SDA / SCL</text>
+  <path class="ar" d="M160,60 L360,60"/><text class="ts" x="260" y="74" text-anchor="middle">3V3 / GND</text>
+</svg>
+<div class="cap">Fig. 9 — L'élément sécurisé sur le bus I2C : génère/stocke la clé privée du nœud <b>hors RAM</b>.</div>
+</div>
+<div class="crit"><b>Critère :</b> la clé d'identité du nœud vit dans l'ATECC608B (jamais exposée en RAM) ; <span class="mono">oasis-secure-element</span> (aujourd'hui stub) implémente le séquencement I2C réel.</div>
+</div>
+
+<!-- recap -->
+<h2 class="section">Récapitulatif des critères de succès</h2>
+<table>
+<tr><th>Étape</th><th>Prouve</th><th>Critère de réussite</th></tr>
+<tr><td>A2 mesh_poc</td><td>logique crypto+mesh</td><td>ARRIVED + forge rejetée</td></tr>
+<tr><td>A3 duty_cycle</td><td>airtime + conformité (calc.)</td><td>throttling visible</td></tr>
+<tr><td>B1 flash</td><td>boot silicium réel</td><td>logs noyau sur série</td></tr>
+<tr><td>B3 2 nœuds</td><td>lien LoRa réel</td><td>ARRIVED + RSSI/SNR + PER</td></tr>
+<tr><td>B4 3 nœuds</td><td><b>mesh multi-saut</b></td><td>C reçoit via B ; couper B ⇒ plus de réception</td></tr>
+<tr><td>B5 RTL-SDR</td><td>conformité RF réelle</td><td>airtime mesuré ≈ calc. ; 1 % respecté</td></tr>
+<tr><td>B6 PPK2</td><td>énergie</td><td>3 régimes mesurés ; autonomie estimée</td></tr>
+<tr><td>B7 ATECC608B</td><td>racine de confiance</td><td>clé hors RAM</td></tr>
+</table>
+
+<h2>Dépannage rapide &amp; rappel d'honnêteté</h2>
+<ul>
+  <li><b>A2 ne compile pas :</b> ajouter <span class="mono">--features std</span>.</li>
+  <li><b>Pico non détecté :</b> maintenir BOOTSEL pendant le branchement ; vérifier le câble (data, pas charge seule).</li>
+  <li><b>Rien reçu en B3 :</b> driver non écrit (stub), antenne absente, fréquences/SF différents entre nœuds, ou mauvais pinout SPI.</li>
+  <li><b>B6 montre une conso constante élevée :</b> attendu — pas de sleep dans le code aujourd'hui (à corriger).</li>
+</ul>
+<div class="box-warn"><b>Rappel :</b> Phase A verte = logique prouvée, <b>pas</b> « IoT validé ». La preuve réelle est la Phase B sur silicium + radio. Le binaire logiciel est un <b>pré-vol</b>, pas un vol.</div>
+
+<div style="text-align:center;font-size:7.5pt;color:#999;margin-top:14pt;">OASIS — Mode d'emploi POC IoT · schémas dessinés, à vérifier contre le matériel réel · 12 juin 2026</div>
+</body></html>

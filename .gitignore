@@ -1,0 +1,81 @@
+# Rust
+oasis-rt/target/
+**/target/
+**/*.rs.bk
+Cargo.lock.bak
+
+# Node / TypeScript
+node_modules/
+dist/
+*.tsbuildinfo
+.vitest-reports/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+.pytest_cache/
+
+# Webots runtime
+webots/factory_*.log
+webots/oasis_flight.log
+webots/factory_shared/
+webots/flight.log
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# OS-specific
+Thumbs.db
+desktop.ini
+
+# Secrets / local config
+.env
+.env.local
+*.key
+*.pem
+
+# Logs
+*.log
+!CHANGELOG.log
+
+# Claude memory / session artifacts
+.claude/
+.oasis/
+
+# Archives — regenerable snapshots, never commit (root *.zip backups are redundant
+# with their on-disk source directories; ~300 MB removed from the tree)
+*.zip
+*.7z
+*.tar
+*.tar.gz
+*.tgz
+
+# Media / demo recordings — host externally, do not commit
+*.mp4
+*.mov
+
+# Abandoned Webots simulation DATA + binary state dumps (kept on disk, not source)
+webots/**/*.csv
+webots/**/*.bin
+webots/**/*.out
+phone_brain/*.bin
+
+# PX4 SITL runtime artifacts (dumped into a crate dir when running SITL there)
+*.ulg
+*.bson
+oasis-rt/dataman
+oasis-rt/eeprom/
+oasis-rt/log/
+oasis-rt/mavlink/
+
+# drone_bridge file-based IPC dir (portable default of the $OASIS_SHARED path)
+oasis_shared/
+
+# Prebuilt/compiled binaries — never commit (regenerable via cargo build)
+oasis-lab-pack/binaries/

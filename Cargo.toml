@@ -1,0 +1,50 @@
+# OASIS — Cargo workspace (virtual manifest)
+#
+# Unifies the HOST/std crates under a single resolver + lockfile so shared
+# dependencies (ed25519-compact, sha2, getrandom, …) resolve to one version
+# and `cargo test --workspace` covers them in one shot.
+#
+# The three MCU crates are deliberately EXCLUDED, not members, for two reasons:
+#   1. They build only for embedded triples (thumbv6m / thumbv7em) selected by
+#      their own `.cargo/config.toml`, which a workspace-root invocation ignores.
+#   2. They UNCONDITIONALLY enable `oasis-rt/mesh_bloom_mcu` in [dependencies].
+#      If co-resolved with the host crates in a `cargo build --workspace`, Cargo
+#      feature unification would shrink the host mesh Bloom filter from 64 KiB to
+#      2 KiB — the exact silent-downsizing leak fixed on 2026-05-11. Excluding
+#      them is a structural guarantee that the leak cannot recur.
+# Build the MCU crates from their own directory: `cd oasis-mcu-demo && cargo build`.
+
+[workspace]
+resolver = "2"
+
+members = [
+    "oasis-rt",
+    "oasis-secure-element",
+    "oasis-operator-key",
+    "oasis-trl-harness",
+]
+
+exclude = [
+    "oasis-mcu-demo",       # thumbv6m-none-eabi (RP2040); forces mesh_bloom_mcu
+    "oasis-renode-m11",     # thumbv7em-none-eabihf (STM32F4); forces mesh_bloom_mcu
+    "oasis-lora-transport", # forces mesh_bloom_mcu; must not co-resolve with host crates
+]
+
+# Build profiles MUST live at the workspace root — Cargo ignores [profile.*] in
+# member crates (it emits a warning). Moved here from oasis-rt/Cargo.toml so the
+# release LTO settings (under which the K=10 benchmarks were measured) and the
+# MCU `minsize` profile keep applying.
+[profile.release]
+opt-level = 3
+lto = true
+
+# Size-optimized profile for MCU / edge deployment: `cargo build --profile minsize`.
+[profile.minsize]
+inherits = "release"
+opt-level = "z"          # size over speed
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = "symbols"
+debug = false
+incremental = false
