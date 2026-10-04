@@ -53,9 +53,8 @@ a { color: inherit; }
 .callsign b { color: var(--ink); font-weight: 500; }
 
 /* video */
-.video { aspect-ratio: 16 / 9; max-width: 100%; background: var(--surface); border: 1px dashed var(--line); display: grid; place-items: center; text-align: center; padding: 1.5rem; gap: 0.5rem; }
-.video p { color: var(--muted); font-size: 0.95rem; }
-.hud { font: 500 0.8rem/1.5 var(--mono); color: var(--muted); display: flex; flex-wrap: wrap; gap: 0.25rem 1.25rem; justify-content: center; }
+.video { display: block; width: 100%; max-width: 100%; aspect-ratio: 16 / 9; background: #000; border: 1px solid var(--line); }
+.hud { font: 500 0.8rem/1.5 var(--mono); color: var(--muted); display: flex; flex-wrap: wrap; gap: 0.25rem 1.25rem; }
 
 /* ledger */
 .ledger-wrap { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); }
@@ -118,21 +117,20 @@ code { font-family: var(--mono); font-size: 0.85em; }
   </header>
 
   <section id="demo" aria-labelledby="demo-h">
-    <span class="eyebrow">Démonstration</span>
-    <h2 id="demo-h">Mission autonome sur PX4 SITL</h2>
-    <div class="video" role="img" aria-label="Emplacement de la vidéo de démonstration">
-      <div>
-        <h3>Vidéo de démonstration à intégrer</h3>
-        <p>Armement automatique, décollage, mission à 4 waypoints et maintien d'altitude, pilotés par OASIS via MAVLink.</p>
-      </div>
-      <div class="hud">
-        <span>ALT 1.94 m / consigne 2.00 m</span>
-        <span>ERR ±6 cm</span>
-        <span>WP 4/4</span>
-        <span>ARMED by external command</span>
-      </div>
+    <span class="eyebrow">Démonstration · 90 s</span>
+    <h2 id="demo-h">Trois plateformes partagent leur expérience sans serveur</h2>
+    <video class="video" controls muted playsinline preload="metadata" poster="demo-poster.jpg">
+      <source src="demo-mesh-3plat.mp4" type="video/mp4">
+      Votre navigateur ne lit pas cette vidéo.
+    </video>
+    <div class="hud">
+      <span>1 téléphone Android, capteurs réels</span>
+      <span>1 PC</span>
+      <span>3 drones simulés (Webots)</span>
+      <span>78 fusions téléphone → drones en 5 min</span>
+      <span>401 messages reçus par le téléphone</span>
     </div>
-    <p>Ces valeurs viennent d'une exécution complète sur PX4 SITL avec jMAVSim. C'est un simulateur. Aucun vol sur un Pixhawk réel n'a encore eu lieu.</p>
+    <p>Chaque appareil fait tourner son propre noyau OASIS. Ils échangent directement des résumés de ce qu'ils ont appris, sans cloud, sans serveur et sans broker. Le téléphone fonctionne avec ses vrais capteurs (IMU, baromètre, luminosité). Les drones sont simulés. Le graphique « perte de capteur » à la fin de la vidéo est une illustration construite à partir des données de test, pas une mesure en vol. L'enregistrement est antérieur à la version actuelle, qui compte 443 tests.</p>
   </section>
 
   <section id="preuves" aria-labelledby="preuves-h">
@@ -154,6 +152,7 @@ code { font-family: var(--mono); font-size: 0.85em; }
           <tr><td>Mesh signé Ed25519, résistant à un nœud compromis</td><td class="ev">10 tests, dont le rejet d'une origine usurpée</td><td><span class="tag proven">PROUVÉ</span></td></tr>
           <tr><td>MAVLink v2 : CRC, signature, anti-rejeu</td><td class="ev">29 tests et 300 trames PX4 réelles</td><td><span class="tag proven">PROUVÉ</span></td></tr>
           <tr><td>Compilation pour microcontrôleur</td><td class="ev">Cortex-M (<code>thumbv7em</code>, RP2040, STM32F4), 0 erreur</td><td><span class="tag proven">PROUVÉ</span></td></tr>
+          <tr><td>Mesh fédéré téléphone, PC et drones, sans serveur</td><td class="ev">Vidéo ci-dessus : téléphone Android réel, drones simulés sous Webots</td><td><span class="tag sim">SIMULÉ</span></td></tr>
           <tr><td>Armement, décollage et mission 4 waypoints pilotés par OASIS</td><td class="ev">Journaux PX4 SITL + jMAVSim, 1 exécution complète</td><td><span class="tag sim">SIMULÉ</span></td></tr>
           <tr><td>Essaim de 200 drones, déduplication</td><td class="ev"><code>sim_200_drones</code> : 84,8 % de doublons éliminés (topologie réseau sans modèle radio)</td><td><span class="tag sim">SIMULÉ</span></td></tr>
           <tr><td>Tolérance aux pertes UDP</td><td class="ev">98 % de livraison à 30 % de perte uniforme avec FEC</td><td><span class="tag sim">SIMULÉ</span></td></tr>
