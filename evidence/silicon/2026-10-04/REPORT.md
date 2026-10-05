@@ -5,18 +5,19 @@
 
 ## Verdict (one line)
 OASIS's `no_std` **crypto + R14 safety gate + mesh protocols run correctly on real
-RP2040 silicon** — the full T0–T6 suite PASSES, **3× reproducibly on BOTH boards
-(6 runs total, all green)**. Every number below comes from a raw log captured **on
-the chip** and archived with a SHA-256 in `SHA256SUMS`. Nothing here is simulated or
-estimated. (The project asked for 3 boards; only 2 were on hand — both pass fully.)
+RP2040 silicon** — the full T0–T6 suite PASSES, **3× reproducibly on all THREE RP2040
+boards (9 runs total, all green)**. Every number below comes from a raw log captured
+**on the chip** and archived with a SHA-256 in `SHA256SUMS`. Nothing here is simulated
+or estimated. (Board C — a 3rd Pico — was added 2026-10-05 and passes identically.)
 
 ## 1. Hardware
-Two **RP2040** boards (VID:PID `2E8A:0003` in BOOTSEL), USB-connected to the PC.
+Three **RP2040** boards (VID:PID `2E8A:0003` in BOOTSEL), USB-connected to the PC.
 
 | Board | USB serial (hardware) | Firmware USB serial | Clock (measured) | Notes |
 |---|---|---|---|---|
 | A | `E0C9125B0D9B` | `A` (firmware-baked) | 125 000 000 Hz | **clone** (see below) |
 | B | `E0C9125B0D9B` | `B` (firmware-baked) | 125 000 000 Hz | **clone** |
+| C | (not recorded) | `C` (firmware-baked) | 125 000 000 Hz | 3rd Pico, flashed 2026-10-05 |
 
 **Clone caveat (honest):** both boards report the **identical** hardware USB serial
 `E0C9125B0D9B` — genuine Raspberry Pi Picos would differ. They are almost certainly
@@ -28,20 +29,20 @@ clone's 12 MHz crystal (clock reads exactly 125 MHz), so the silicon itself is s
 
 ## 2. PASS/FAIL matrix
 
-| Test | What it checks | Board A (×3) | Board B (×3) |
-|---|---|---|---|
-| **T0** | boot, 125 MHz clock, identity | **PASS** | **PASS** |
-| **T1** | ChaCha20-Poly1305, RFC 8439 §2.8.2 ct‖tag byte-for-byte + decrypt round-trip | **PASS** | **PASS** |
-| **T2** | X25519 public-key derivation, RFC 7748 §6.1 (Alice+Bob) | **PASS** | **PASS** |
-| **T3** | Ed25519 deterministic KAT: pubkey+sig+verify+**tamper rejected** | **PASS** | **PASS** |
-| **T4** | R14 gate: faults above threshold all blocked | **PASS** (50/50) | **PASS** (50/50; also 200/200 archived) |
-| **T5** | mesh v8 (arrive+dedup), v9 (arrive+**tamper-reject**), v0A (arrive+**forge-reject**) | **PASS** | **PASS** |
-| **T6** | on-silicon timing (hardware TIMER) | **PASS** (see §3) | **PASS** (see §3) |
+| Test | What it checks | A ×3 | B ×3 | C ×3 |
+|---|---|---|---|---|
+| **T0** | boot, 125 MHz clock, identity | **PASS** | **PASS** | **PASS** |
+| **T1** | ChaCha20-Poly1305, RFC 8439 §2.8.2 ct‖tag byte-for-byte + decrypt round-trip | **PASS** | **PASS** | **PASS** |
+| **T2** | X25519 public-key derivation, RFC 7748 §6.1 (Alice+Bob) | **PASS** | **PASS** | **PASS** |
+| **T3** | Ed25519 deterministic KAT: pubkey+sig+verify+**tamper rejected** | **PASS** | **PASS** | **PASS** |
+| **T4** | R14 gate: faults above threshold all blocked (50/50; B also 200/200 archived) | **PASS** | **PASS** | **PASS** |
+| **T5** | mesh v8 (arrive+dedup), v9 (arrive+**tamper-reject**), v0A (arrive+**forge-reject**) | **PASS** | **PASS** | **PASS** |
+| **T6** | on-silicon timing (hardware TIMER) | **PASS** | **PASS** | **PASS** |
 
-All 6 runs (both boards × 3) are byte-identical in verdicts: 13 PASS lines each + SUITE
-PASS. Raw: `board_A_run{1,2,3}.log`, `board_B_run{1,2,3}.log`. Board A's T6 timing
-matches board B to the millisecond (R14 3.245 ms, v0A sign 341.3 ms), cross-validating
-the numbers across two independent chips.
+All **9 runs (3 boards × 3)** are byte-identical in verdicts: 13 PASS lines each + SUITE
+PASS. Raw: `board_{A,B,C}_run{1,2,3}.log`. T6 timing matches across all three independent
+chips to the millisecond (R14 fault 3.245 ms, v9 wrap 0.726 ms, v0A sign 341.3 ms, v0A
+verify 176.5 ms) — strong cross-validation that the numbers are real, not noise.
 
 ## 3. On-silicon timing (T6) vs x86 reference
 
@@ -92,11 +93,12 @@ compared — the STM32F4 has an FPU and would land between these and x86.)
 - **Energy / power draw**, **secure element (ATECC608B)**, **multi-node mesh over a
   link**, **flight / PX4**, **OTA**, **long-run soak**.
 
-## 7. Board A status — COMPLETE
-Board A initially ran an early auto-run firmware that ignored the `b` reboot command
-while computing, so software recycling could not reflash it. After a **manual BOOTSEL**
-(hold button, replug), board A was flashed with `firmware_A.uf2` and ran the full suite
-**3× — all PASS**, with timing identical to board B. Logs: `board_A_run{1,2,3}.log`.
+## 7. Boards added via manual BOOTSEL
+Board A initially ran an early auto-run firmware that ignored the `b` reboot command,
+so software recycling could not reflash it; after a **manual BOOTSEL** it was flashed
+with `firmware_A.uf2` and passed 3×. **Board C** (a 3rd, previously unflashed Pico) was
+later put in BOOTSEL, flashed with `firmware_C.uf2`, and passed the full suite 3× —
+timing identical to A and B. Logs: `board_{A,C}_run{1,2,3}.log`.
 
 ## 8. Reproduce
 ```bash
@@ -120,5 +122,5 @@ Control bytes: `r` = run suite, `b` = reboot to BOOTSEL. Log line format:
 `OASIS|<board>|<test>|PASS|FAIL|<value>|<unit>|<git_hash>`.
 
 ## 9. Evidence files (hashes in `SHA256SUMS`)
-`board_A_T0.log`, `board_B_T0.log`, `board_B_T0toT4_200faults.log`,
-`board_B_run{1,2,3}.log`, `firmware_A.uf2`, `firmware_B.uf2`, `SHA256SUMS`.
+`board_{A,B,C}_run{1,2,3}.log` (9 full-suite runs), `board_A_T0.log`, `board_B_T0.log`,
+`board_B_T0toT4_200faults.log`, `firmware_{A,B,C}.uf2`, `SHA256SUMS`.
