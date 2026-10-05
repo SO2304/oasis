@@ -1,0 +1,230 @@
+<title>OASIS Technical Brief</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@112,800&family=IBM+Plex+Sans:wght@400;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: an engineering datasheet in one 62rem column; numbered sections because a reader cites them ("see §5"); orange only for the pilot ask */
+:root {
+  --bg: #eef1f4;
+  --surface: #ffffff;
+  --ink: #14202e;
+  --muted: #566476;
+  --line: #d3dae2;
+  --accent: #e2531d;
+  --proven: #1f7a4d;
+  --sim: #2c5fa8;
+  --todo: #9a6a12;
+  --display: "Archivo", "Arial Narrow", system-ui, sans-serif;
+  --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f151c; --surface: #17202a; --ink: #e6ebf0; --muted: #98a5b4; --line: #2a3644;
+    --accent: #f06a35; --proven: #4cc38a; --sim: #79a6e8; --todo: #e0ad4f;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f151c; --surface: #17202a; --ink: #e6ebf0; --muted: #98a5b4; --line: #2a3644;
+  --accent: #f06a35; --proven: #4cc38a; --sim: #79a6e8; --todo: #e0ad4f;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font: 400 0.95rem/1.55 var(--body); padding-inline: 16px; padding-block: 0; }
+/* Deterrent only: discourages casual copy-paste of the brief. Contact stays selectable. */
+.wrap { -webkit-user-select: none; user-select: none; }
+.wrap .contact { -webkit-user-select: text; user-select: text; }
+.wrap { max-width: 62rem; margin: 0 auto; display: grid; gap: 2.5rem; padding-block: 2.5rem 3rem; }
+h1, h2 { font-family: var(--display); font-stretch: 112%; font-weight: 800; margin: 0; line-height: 1.15; text-wrap: balance; }
+h1 { font-size: clamp(1.6rem, 4vw, 2.3rem); }
+h2 { font-size: 1.2rem; display: flex; gap: 0.6rem; align-items: baseline; }
+h2 span { font: 500 0.8rem/1 var(--mono); color: var(--muted); }
+h3 { margin: 0; font: 600 0.95rem/1.3 var(--body); }
+p { margin: 0; max-width: 72ch; }
+section { display: grid; gap: 0.8rem; }
+header { display: grid; gap: 0.7rem; }
+.sub { font-size: 1.05rem; color: var(--muted); max-width: 72ch; }
+.meta { display: flex; flex-wrap: wrap; gap: 0.4rem 1.25rem; font: 400 0.8rem/1.4 var(--mono); color: var(--muted); border-top: 1px solid var(--line); padding-top: 0.8rem; }
+.meta b { color: var(--ink); font-weight: 500; }
+.note { font-size: 0.82rem; color: var(--muted); }
+
+.box { background: var(--surface); border: 1px solid var(--line); overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; }
+th, td { text-align: left; padding: 0.55rem 0.85rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+tr:last-child th, tr:last-child td { border-bottom: 0; }
+thead th { font: 500 0.72rem/1.3 var(--mono); text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+tbody th { font-weight: 600; width: 13rem; }
+td.n, th.n { font-family: var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+td small { color: var(--muted); }
+.wide { min-width: 40rem; }
+
+.tag { display: inline-block; font: 500 0.68rem/1 var(--mono); letter-spacing: 0.06em; padding: 0.3rem 0.45rem; border: 1px solid currentColor; white-space: nowrap; }
+.tag.proven { color: var(--proven); }
+.tag.sim { color: var(--sim); }
+.tag.todo { color: var(--todo); }
+
+.layers { display: grid; gap: 0; border: 1px solid var(--line); background: var(--surface); }
+.layer { display: grid; grid-template-columns: 11rem 1fr; gap: 1rem; padding: 0.75rem 0.9rem; border-bottom: 1px solid var(--line); }
+.layer:last-child { border-bottom: 0; }
+.layer > * { min-width: 0; }
+.layer b { font: 500 0.8rem/1.4 var(--mono); }
+.layer p { font-size: 0.9rem; }
+@media (max-width: 34rem) { .layer { grid-template-columns: 1fr; gap: 0.25rem; } }
+
+.two { display: grid; grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr)); gap: 1.25rem; }
+.two > * { min-width: 0; }
+ul { margin: 0; padding-left: 1.1rem; display: grid; gap: 0.3rem; }
+.finding { border-left: 3px solid var(--todo); padding: 0.2rem 0 0.2rem 0.9rem; }
+.ask { border: 1.5px solid var(--accent); padding: 1.1rem 1.25rem; display: grid; gap: 0.6rem; }
+.ask h2 { color: var(--accent); }
+footer { font-size: 0.8rem; color: var(--muted); border-top: 1px solid var(--line); padding-top: 1rem; }
+</style>
+
+<div class="wrap">
+
+  <header>
+    <h1>OASIS: a signed multi-hop mesh kernel for low-cost sensor nodes</h1>
+    <p class="sub">Rust, <code>no_std</code>. Per-node Ed25519 origin signatures, replay protection and revocation for multi-hop mesh networks, running on a Cortex-M0+ (RP2040) with 119 KB of flash. Validated on silicon. Not yet audited, not certified, not power-optimised.</p>
+    <div class="meta">
+      <span><b>pre-1.0</b> · single maintainer</span>
+      <span>last silicon run <b>2026-10-06</b></span>
+      <span><b>3 × RP2040</b> · 9/9 suite runs green</span>
+      <span>host: <b>444</b> unit tests · <b>113</b> Kani harnesses</span>
+    </div>
+  </header>
+
+  <section aria-labelledby="s1">
+    <h2 id="s1"><span>§1</span>Problem</h2>
+    <p>Most low-cost sensor meshes authenticate traffic with a key shared by every node. Capturing one node gives an attacker that key, and with it the ability to impersonate any other node, inject commands in their name and replay old traffic. Cheap nodes deployed in the field are exactly the ones that get lost, stolen or opened.</p>
+    <p>OASIS gives each node its own signing identity. A captured node can sign only as itself, can be revoked, and cannot replay other nodes' messages.</p>
+  </section>
+
+  <section aria-labelledby="s2">
+    <h2 id="s2"><span>§2</span>Threat model</h2>
+    <div class="box">
+      <table class="wide">
+        <thead><tr><th>Threat</th><th>Mechanism</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr><th>External forgery of mesh traffic</th><td>Keyed MAC on the mesh header (v9)</td><td><span class="tag proven">ON SILICON</span></td></tr>
+          <tr><th>Insider impersonation (captured node signs as another)</th><td>Per-node Ed25519 origin signature, verified at every hop (v0A)</td><td><span class="tag proven">ON SILICON</span></td></tr>
+          <tr><th>Replay of captured traffic</th><td>Message-id dedup at mesh layer · monotonic counter with 128-bit sliding window at transport layer (host tests)</td><td><span class="tag proven">ON SILICON</span> <small>mesh dedup</small></td></tr>
+          <tr><th>Flooding / routing loops</th><td>TTL, hop count, dedup cache (Bloom auto-reset: host tests)</td><td><span class="tag proven">ON SILICON</span></td></tr>
+          <tr><th>Eavesdropping, payload tampering</th><td>ChaCha20-Poly1305 AEAD with X25519 / Noise-KK key agreement</td><td><span class="tag proven">ON SILICON</span> <small>primitives</small></td></tr>
+          <tr><th>Compromised node stays in the network</th><td>Operator-signed revocation envelopes</td><td><span class="tag sim">HOST TESTS</span></td></tr>
+          <tr><th>Replay after power loss (counter reset)</th><td>Persisted transmit counter</td><td><span class="tag todo">NOT VALIDATED ON SILICON</span></td></tr>
+          <tr><th>Key extraction from a captured node</th><td>None on RP2040 (no secure boot, no flash encryption). Planned: RP2350 OTP + signed boot, or a secure element</td><td><span class="tag todo">OPEN</span></td></tr>
+          <tr><th>Side channels, fault injection</th><td>Not evaluated</td><td><span class="tag todo">OPEN</span></td></tr>
+          <tr><th>Post-quantum adversary</th><td>Not addressed</td><td><span class="tag todo">OPEN</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section aria-labelledby="s3">
+    <h2 id="s3"><span>§3</span>Architecture</h2>
+    <div class="layers">
+      <div class="layer"><b>Application</b><p>Sensor payloads, commands, or MAVLink v2 traffic (CRC, signing, replay checks) when bridged to a PX4 autopilot.</p></div>
+      <div class="layer"><b>Safety gate (R14)</b><p>Entropy-based gate: no actuation while sensor-derived uncertainty is above a threshold. Sensor loss raises entropy and freezes actuation.</p></div>
+      <div class="layer"><b>Transport security</b><p>AEAD envelopes, ephemeral and static Diffie-Hellman for forward secrecy and sender authentication, replay window, signed revocation. Standard primitives only, no custom cryptography.</p></div>
+      <div class="layer"><b>Mesh</b><p>Multi-hop flooding with TTL and dedup. Three header modes: unsigned (trusted bus), keyed MAC (external attacker), per-node signature (insider). The mesh header is authenticated; payload integrity is the transport layer's job.</p></div>
+      <div class="layer"><b>Link</b><p>Transport trait. Wired UART validated on silicon. LoRa SX1262 driver written and tested against a mock; not yet on radio hardware. Airtime calculator and EU868 duty-cycle throttle implemented.</p></div>
+    </div>
+  </section>
+
+  <section aria-labelledby="s4">
+    <h2 id="s4"><span>§4</span>Silicon validation (RP2040, Cortex-M0+ @ 125 MHz)</h2>
+    <p>Three boards, the full on-chip suite run three times on each. Every value below comes from raw logs captured on the chip and archived with SHA-256 hashes, together with the firmware images.</p>
+    <div class="box">
+      <table class="wide">
+        <thead><tr><th>Test</th><th>Pass criterion</th><th class="n">Result</th></tr></thead>
+        <tbody>
+          <tr><th>T0 clock</th><td>Core clock measured against the hardware timer, within ±1 % of configuration</td><td class="n">124.999 MHz · 9/9</td></tr>
+          <tr><th>T1 AEAD</th><td>ChaCha20-Poly1305, RFC 8439 §2.8.2 vector, byte-exact, plus decrypt round-trip</td><td class="n">9/9</td></tr>
+          <tr><th>T2 X25519</th><td>RFC 7748 §6.1 public keys, byte-exact</td><td class="n">9/9</td></tr>
+          <tr><th>T3 Ed25519</th><td>Known-answer key and signature (cross-checked with an independent library), verify, tamper rejected</td><td class="n">9/9</td></tr>
+          <tr><th>T4 safety gate</th><td>50/50 injected faults blocked and 0/50 nominal cases blocked</td><td class="n">9/9</td></tr>
+          <tr><th>T5 mesh</th><td>Delivery and dedup (unsigned); MAC-covered tamper rejected for the MAC reason; forged origin rejected for the signature reason</td><td class="n">9/9</td></tr>
+          <tr><th>T6 timing</th><td>Hardware-timer medians, see §5</td><td class="n">9/9</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="two">
+      <div>
+        <h3>Three-node relay over a physical link</h3>
+        <ul>
+          <li>A → B → C over wired UART, per-node signatures verified at B and at C, same message id end-to-end</li>
+          <li>Replay: second copy dropped at the first hop, never relayed</li>
+          <li>Forged origin injected mid-path: dropped by the next node</li>
+          <li>TTL exhaustion: delivered, not forwarded</li>
+          <li>600-packet burst: no crash on any node</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Fault injection, 200 packets</h3>
+        <ul>
+          <li>Wire noise up to 20 % bit-flip and 15 % drop: all corruption caught by the frame CRC, before the verifier</li>
+          <li>Single-bit flips injected before the CRC: every flip in a signed field was rejected (34 by crypto, 4 by the parser)</li>
+          <li>No crash, no reset on any board</li>
+        </ul>
+      </div>
+    </div>
+    <p class="finding">Finding from that test: 12/50 flips landed in payload or hop fields and were accepted. The mesh layer authenticates the header only. Payload integrity requires the AEAD layer above it, which is how the stack is meant to be deployed.</p>
+  </section>
+
+  <section aria-labelledby="s5">
+    <h2 id="s5"><span>§5</span>Cost of security on a $1 MCU</h2>
+    <div class="box">
+      <table class="wide">
+        <thead><tr><th>Operation</th><th class="n">RP2040 (measured)</th><th class="n">x86 host</th><th>Implication</th></tr></thead>
+        <tbody>
+          <tr><th>Mesh wrap, keyed MAC</th><td class="n">0.73 ms</td><td class="n">431 ns</td><td>Routine traffic</td></tr>
+          <tr><th>Per-node signature (sign)</th><td class="n">341 ms</td><td class="n">251 µs</td><td>Low-rate authority messages only</td></tr>
+          <tr><th>Per-node signature (verify)</th><td class="n">176 ms</td><td class="n">135 µs</td><td>Per hop, per signed message</td></tr>
+          <tr><th>Safety-gate evaluation</th><td class="n">3.2 ms</td><td class="n">331 ns</td><td>Soft-float on M0+ (no FPU)</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note">Medians, hardware timer, consistent across the three boards. Host figures: K=10 medians, Linux. The M0+ has no FPU and no 64-bit multiplier; a Cortex-M33 (RP2350) or M4 target is expected to be several times faster, not yet measured.</p>
+  </section>
+
+  <section aria-labelledby="s6">
+    <h2 id="s6"><span>§6</span>Footprint and energy</h2>
+    <div class="box">
+      <table>
+        <tbody>
+          <tr><th>Flash</th><td class="n">119 KB</td><td>Full test firmware, linked ELF</td></tr>
+          <tr><th>RAM</th><td class="n">~34 KB / router</td><td>Heap-backed; requires an allocator. 160 KB heap reserved in the test firmware. Not suitable for 32–64 KB RAM parts without a reduced dedup window.</td></tr>
+          <tr><th>Sleep current</th><td class="n">not measured</td><td>No low-power mode implemented yet</td></tr>
+          <tr><th>Energy per signed message</th><td class="n">≈ 28 mJ (est.)</td><td>Estimate from datasheet active current × measured sign time. Higher than one LoRa SF7 transmission (≈ 16 mJ, est.). Signing, not the radio, dominates the energy budget on this MCU.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section aria-labelledby="s7">
+    <h2 id="s7"><span>§7</span>Not done yet</h2>
+    <div class="box">
+      <table class="wide">
+        <thead><tr><th>Item</th><th>Plan</th></tr></thead>
+        <tbody>
+          <tr><th>LoRa on hardware</th><td>SX1262 on 3 nodes, range and packet-error curves</td></tr>
+          <tr><th>Power</th><td>Sleep between ticks, interrupt-driven RX, current measured with a power profiler</td></tr>
+          <tr><th>Key protection</th><td>RP2350 signed boot and OTP key storage; secure-element option</td></tr>
+          <tr><th>Low-power target</th><td>STM32WL (MCU and LoRa radio in one chip)</td></tr>
+          <tr><th>Counter persistence</th><td>Transmit counter survives power loss, validated on silicon</td></tr>
+          <tr><th>Flight</th><td>Pixhawk quadcopter; so far PX4 SITL only (arm, takeoff, 4-waypoint mission)</td></tr>
+          <tr><th>External review</th><td>Independent cryptographic audit</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="ask" aria-labelledby="s8">
+    <h2 id="s8"><span>§8</span>Pilot partners</h2>
+    <p>Looking for 2–3 teams deploying sensor nodes or drone fleets in the field, for a 6-week pilot on their hardware. You bring the platform and the use case; I bring the integration, raw logs and pass/fail criteria agreed before the test.</p>
+    <p>The evidence pack (raw logs, hashes, firmware images, full test report) is shared with pilot partners.</p>
+    <p class="contact">Contact: direct message on LinkedIn.</p>
+  </section>
+
+  <footer>OASIS · Rust · pre-1.0 · not certified · no external audit · figures dated 2026-10-06</footer>
+</div>
