@@ -90,8 +90,9 @@ compared — the STM32F4 has an FPU and would land between these and x86.)
 ## 6. What is explicitly NOT tested
 - **LoRa radio** — the SX1262 path is untested here; T5 mesh ran **in-process on one
   chip** (two router instances), not over the air or even over a wire. No RF was involved.
-- **Energy / power draw**, **secure element (ATECC608B)**, **multi-node mesh over a
-  link**, **flight / PX4**, **OTA**, **long-run soak**.
+- **Energy / power draw**, **secure element (ATECC608B)**, **flight / PX4**, **OTA**,
+  **long-run soak**.
+- (Multi-node mesh **over a wired UART link** IS now tested — see §10. Still not over RF.)
 
 ## 7. Boards added via manual BOOTSEL
 Board A initially ran an early auto-run firmware that ignored the `b` reboot command,
@@ -123,4 +124,30 @@ Control bytes: `r` = run suite, `b` = reboot to BOOTSEL. Log line format:
 
 ## 9. Evidence files (hashes in `SHA256SUMS`)
 `board_{A,B,C}_run{1,2,3}.log` (9 full-suite runs), `board_A_T0.log`, `board_B_T0.log`,
-`board_B_T0toT4_200faults.log`, `firmware_{A,B,C}.uf2`, `SHA256SUMS`.
+`board_B_T0toT4_200faults.log`, `firmware_{A,B,C}.uf2`, `uart_mesh_A-B-C.log`,
+`firmware_uart_{A,B,C}.uf2`, `SHA256SUMS`.
+
+## 10. Wired-UART mesh relay A→B→C (2026-10-05)
+Separate firmware `oasis-silicon-test/src/bin/uart_mesh.rs`: each node runs a v0A
+`MeshRouter`, links over **UART0** (TX=GP0 pin1, RX=GP1 pin2, 115200 8N1), verifies the
+Ed25519 origin signature at every hop, and relays forwarded envelopes. Wiring:
+A.GP0→B.GP1, B.GP0→C.GP1, common GND. **This is a wired UART link, NOT LoRa** — no radio.
+
+Result (`uart_mesh_A-B-C.log`): originating on A produced one v0A envelope (105 B) that
+traversed A→B→C on the wire, same `msg_id=10830354352046574055` at all three nodes,
+`hops` 0→1 across the relay, **`sig=verified` at B and at C**:
+```
+A| ORIGINATED msg_id(ctr)=0,len=105
+B| ARRIVED    msg_id=…055, hops=0, sig=verified, forward=true
+B| RELAYED    msg_id=…055, hops=0
+C| ARRIVED    msg_id=…055, hops=1, sig=verified, forward=true
+```
+This is OASIS's first real inter-node communication on hardware: multi-hop v0A mesh with
+per-hop Ed25519 verification over a physical link. Forgery rejection itself is covered by
+T5 (`v0A_forge_rejected=true`, same verify path).
+
+**Honest finding during bring-up:** the firmware first used UART1 (GP4) for TX; UART1
+**failed internal hardware loopback** on this silicon (`uart1_internal_lbe_rx=0`) while
+UART0 passed (`=6`), so the link was moved to UART0 only. Root cause of a dead first
+attempt was firmware/peripheral, not the wiring — isolated via the on-chip LBE self-test,
+not guesswork.
