@@ -320,11 +320,10 @@ fn main() -> ! {
                         l
                     }
                     DfOut::CrcFail => {
-                        // Wire corruption caught at the framer (CRC8). Throttle logs.
+                        // Wire corruption caught at the framer (CRC8).
                         crc_fails = crc_fails.wrapping_add(1);
-                        if crc_fails % 10 == 1 {
-                            io.log("FRAMER_CRC_FAIL", format_args!("count={}", crc_fails));
-                        }
+                        // Log every failure so the archived log carries the exact total.
+                        io.log("FRAMER_CRC_FAIL", format_args!("count={}", crc_fails));
                         0
                     }
                     DfOut::Pending => 0,

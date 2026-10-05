@@ -70,21 +70,22 @@ footer { font-size: 0.8rem; color: var(--muted); }
 
   <header>
     <h1>OASIS : couche d'autonomie et mesh signé au-dessus de PX4</h1>
-    <p class="sub">Runtime <b>Rust</b>, <b>no_std</b>, interface <b>MAVLink v2</b>. Gate R14 : aucune actuation si l'entropie capteurs dépasse le seuil. Pré-1.0. <b>Je cherche un partenaire pour le premier test sur hardware réel.</b></p>
+    <p class="sub">Runtime <b>Rust</b>, <b>no_std</b>, interface <b>MAVLink v2</b>. Gate R14 : aucune actuation si l'entropie capteurs dépasse le seuil. Pré-1.0. Crypto et mesh validés sur RP2040. <b>Je cherche un partenaire pour le premier test radio LoRa et le premier vol réel.</b></p>
   </header>
 
   <section aria-labelledby="spec-h">
     <h2 id="spec-h">Spécifications</h2>
     <div class="box">
       <table>
-        <tr><th>Cible</th><td>x86_64 Linux/Windows · Android (Termux) · <code>thumbv6m</code> RP2040 · <code>thumbv7em</code> STM32F4 <small>(compile, pas encore booté sur silicium)</small></td></tr>
+        <tr><th>Cible</th><td>x86_64 Linux/Windows · Android (Termux) · <code>thumbv6m</code> RP2040 <small>(testé sur 3 cartes)</small> · <code>thumbv7em</code> STM32F4 <small>(compile seulement)</small></td></tr>
         <tr><th>Interface</th><td>MAVLink v2 : CRC, signature, anti-rejeu · OFFBOARD, PARAM_SET, waypoints</td></tr>
         <tr><th>Crypto</th><td>ChaCha20-Poly1305 (vecteur RFC 8439 exact) · X25519 · Noise-KK · Ed25519 <small>(pas de crypto maison)</small></td></tr>
-        <tr><th>Mesh</th><td>multi-hop, TTL, dédup Bloom · v9 HMAC-SHA256 · v0A Ed25519 par nœud (résiste à un insider) · fenêtre anti-rejeu 128 bits</td></tr>
+        <tr><th>Mesh</th><td>multi-hop, TTL, dédup Bloom · v9 HMAC-SHA256 · v0A Ed25519 par nœud (résiste à un insider) · fenêtre anti-rejeu 128 bits <small>(v9/v0A authentifient l'en-tête ; l'intégrité du contenu vient de la couche AEAD)</small></td></tr>
         <tr><th>Vérification</th><td>443 tests · 113 harnais Kani (CBMC)</td></tr>
         <tr><th>Gate R14</th><td>p50 331 ns · p99 360 ns · 1000/1000 fautes bloquées</td></tr>
         <tr><th>Pub/sub 16 o</th><td>162 ns <small>vs rclcpp intra 4 562 ns (28×) · rclcpp DDS 45 243 ns (279×)</small></td></tr>
         <tr><th>Pub/sub 1 Mo</th><td>48,8 µs <small>vs rclcpp intra 183 µs (3,75×)</small></td></tr>
+        <tr><th>RP2040 125 MHz</th><td>Ed25519 sign 341 ms · verify 176 ms · wrap v9 0,73 ms · R14 3,2 ms <small>(Cortex-M0+ sans FPU, médianes sur puce, 3 cartes)</small></td></tr>
         <tr><th>Mesh wrap</th><td>v8 123 ns · v9 431 ns · v0A 251 µs <small>(Ed25519 réservé aux broadcasts d'autorité)</small></td></tr>
       </table>
     </div>
@@ -99,7 +100,9 @@ footer { font-size: 0.8rem; color: var(--muted); }
         <ul>
           <li>Tests et preuves Kani ci-dessus</li>
           <li>300 trames PX4 capturées, parsées et vérifiées</li>
-          <li>Daemon sur téléphone Android, capteurs réels (IMU, baro, lux)</li>
+          <li>RP2040, 3 cartes × 3 runs : ChaCha20 (RFC 8439), X25519 (RFC 7748), Ed25519, forge v0A rejetée</li>
+          <li>Relais mesh v0A A → B → C sur liaison UART filaire, signature vérifiée à chaque saut</li>
+          <li>Sur UART : rejeu, forge et TTL rejetés ; 200 trames bruitées sans crash</li>
         </ul>
       </div>
       <div class="col sim">
@@ -107,14 +110,14 @@ footer { font-size: 0.8rem; color: var(--muted); }
         <ul>
           <li>PX4 SITL : arm, takeoff, 4 waypoints, alt 1,94 m pour 2,00 m</li>
           <li>200 nœuds : 84,8 % de doublons droppés (topologie, sans airtime)</li>
-          <li>MCU sous Wokwi / Renode</li>
+          <li>Daemon Android, capteurs réels (run long non archivé)</li>
         </ul>
       </div>
       <div class="col todo">
         <h3>Manquant</h3>
         <ul>
           <li>Vol Pixhawk réel</li>
-          <li>Driver SX1262 (stub) et gestion d'énergie</li>
+          <li>Radio LoRa sur matériel (driver SX1262 testé sur mock) et gestion d'énergie</li>
           <li>Secure element, OTA, audit crypto externe</li>
         </ul>
       </div>
@@ -128,6 +131,8 @@ footer { font-size: 0.8rem; color: var(--muted); }
 cargo test --workspace --release
 <span class="c"># build MCU</span>
 cargo build --target thumbv7em-none-eabi --lib --no-default-features --features mesh_bloom_mcu --release
+<span class="c"># firmware de test silicium RP2040 (logs bruts + SHA-256 : evidence/silicon/)</span>
+cd oasis-silicon-test &amp;&amp; OASIS_BOARD_ID=A cargo build --release
 <span class="c"># benchs K=10</span>
 cargo run --release --bin bench_payload_sweep
 cargo run --release --bin bench_mesh_signed

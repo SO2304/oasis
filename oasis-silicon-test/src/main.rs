@@ -100,6 +100,8 @@ fn main() -> ! {
     .unwrap();
     let sysclk_hz = clocks.system_clock.freq().to_Hz();
     let timer = hal::Timer::new(pac.TIMER, &mut pac.RESETS, &clocks);
+    let core = pac::CorePeripherals::take().unwrap();
+    let measured_hz = measure_core_hz(core.SYST, &timer);
 
     let usb_bus = UsbBusAllocator::new(hal::usb::UsbBus::new(
         pac.USBCTRL_REGS,
@@ -129,7 +131,7 @@ fn main() -> ! {
                 hal::rom_data::reset_to_usb_boot(0, 0);
             }
             if rx[..n].contains(&b'r') {
-                run_suite(&mut io, &timer, sysclk_hz);
+                run_suite(&mut io, &timer, sysclk_hz, measured_hz);
             }
         }
     }
@@ -263,14 +265,37 @@ fn timeit<F: FnMut()>(io: &mut Io, timer: &hal::Timer, k: usize, m: usize, mut f
     (a[k / 2], a[0], a[k - 1])
 }
 
+/// Count core cycles (SysTick, core clock) across a 100 ms window of the 1 MHz
+/// hardware TIMER. Both clocks derive from the same 12 MHz crystal, so this
+/// checks the PLL configuration actually took effect, not crystal accuracy.
+fn measure_core_hz(mut syst: cortex_m::peripheral::SYST, timer: &hal::Timer) -> u32 {
+    use cortex_m::peripheral::syst::SystClkSource;
+    const WINDOW_US: u64 = 100_000; // 12.5 M cycles at 125 MHz, below the 24-bit wrap
+    syst.set_clock_source(SystClkSource::Core);
+    syst.set_reload(0x00FF_FFFF);
+    syst.clear_current();
+    syst.enable_counter();
+    let start = timer.get_counter().ticks();
+    while timer.get_counter().ticks() == start {}
+    let t0 = timer.get_counter().ticks();
+    let s0 = cortex_m::peripheral::SYST::get_current();
+    while timer.get_counter().ticks().wrapping_sub(t0) < WINDOW_US {}
+    let s1 = cortex_m::peripheral::SYST::get_current();
+    syst.disable_counter();
+    let cycles = s0.wrapping_sub(s1) & 0x00FF_FFFF; // SysTick counts down
+    (cycles as u64 * 1_000_000 / WINDOW_US) as u32
+}
+
 // ── the suite ────────────────────────────────────────────────────────────────
-fn run_suite(io: &mut Io, timer: &hal::Timer, sysclk_hz: u32) {
+fn run_suite(io: &mut Io, timer: &hal::Timer, sysclk_hz: u32, measured_hz: u32) {
+    // T0: the configured clock must match the clock measured against TIMER (±1 %).
+    let clk_ok = measured_hz.abs_diff(sysclk_hz) <= sysclk_hz / 100;
     emit(
         io,
         "T0",
-        true,
-        format_args!("clk={}Hz,usb_serial={}", sysclk_hz, BOARD_ID),
-        "info",
+        clk_ok,
+        format_args!("clk_cfg={}Hz,clk_measured={}Hz,usb_serial={}", sysclk_hz, measured_hz, BOARD_ID),
+        "clock",
     );
 
     // ── T1: ChaCha20-Poly1305, RFC 8439 §2.8.2 ──
@@ -375,11 +400,32 @@ fn run_suite(io: &mut Io, timer: &hal::Timer, sysclk_hz: u32) {
                 blocked += 1;
             }
         }
+        // Negative control: nominal ticks (all sensors alive, low readings) must
+        // NOT be blocked, otherwise a gate that blocks everything would pass.
+        // Host probe over 1000 nominal cases: signal max 0.919 < 0.95.
+        let mut false_blocks = 0u32;
+        let mut nominal_rng = Lcg(0x0bad_5eed_1234_5678);
+        for nominal_id in 0..T4_FAULTS {
+            io.poll();
+            let mut agent = agent_new(nominal_id % 9);
+            let mut vit = VitalityState::new();
+            for _ in 0..11 {
+                inject_sensory(&mut agent, 0.1 + 0.05 * nominal_rng.f());
+            }
+            vit.update(&[(true, Vitality::Important)]);
+            let signal = (agent.entropy + vit.entropy_contribution).min(1.0);
+            if signal > 0.95 {
+                false_blocks += 1;
+            }
+        }
         emit(
             io,
             "T4",
-            blocked == T4_FAULTS as u32,
-            format_args!("blocked={}/{},threshold=0.95", blocked, T4_FAULTS),
+            blocked == T4_FAULTS as u32 && false_blocks == 0,
+            format_args!(
+                "blocked={}/{},nominal_false_blocks={}/{},threshold=0.95",
+                blocked, T4_FAULTS, false_blocks, T4_FAULTS
+            ),
             "r14",
         );
     }
@@ -407,10 +453,16 @@ fn run_suite(io: &mut Io, timer: &hal::Timer, sysclk_hz: u32) {
             let mut b9 = MeshRouter::new_signed(fp_b, MeshMacKey([0x42u8; 32]));
             let e9 = a9.origin_wrap(b"oasis-v9");
             let v9_arrived = matches!(b9.process(&e9), MeshDecision::Arrived { .. });
+            // Flip a byte of msg_id (covered by the v9 MAC; offset 6..14) and send
+            // it to a fresh receiver with an empty dedup cache. Re-sending to b9
+            // would be dropped as "duplicate" whatever the MAC says. The payload
+            // itself is NOT covered by the v9 MAC (nor by v0A): its integrity must
+            // come from the AEAD layer above the mesh.
+            drop(b9);
             let mut e9t = e9.clone();
-            let last = e9t.len() - 1;
-            e9t[last] ^= 0x01;
-            let v9_tamper = matches!(b9.process(&e9t), MeshDecision::Drop(_));
+            e9t[8] ^= 0x01;
+            let mut fresh9 = MeshRouter::new_signed(fp_b, MeshMacKey([0x42u8; 32]));
+            let v9_tamper = matches!(fresh9.process(&e9t), MeshDecision::Drop("bad mesh mac"));
             emit(io, "T5", v9_arrived && v9_tamper, format_args!("v9_arrived={},v9_tamper_rejected={}", v9_arrived, v9_tamper), "mesh");
         }
         {
@@ -434,12 +486,12 @@ fn run_suite(io: &mut Io, timer: &hal::Timer, sysclk_hz: u32) {
                 let mut forger = MeshRouter::new_ed25519_signed(fp_a, seed_bad, MeshPubRegistry::new());
                 forger.origin_wrap(b"forged")
             };
-            let v0a_forge_rejected = matches!(b0.process(&e_forged), MeshDecision::Drop(_));
+            let v0a_forge_rejected = matches!(b0.process(&e_forged), MeshDecision::Drop("bad mesh signature"));
             emit(io, "T5", v0a_arrived && v0a_forge_rejected, format_args!("v0A_arrived={},v0A_forge_rejected={}", v0a_arrived, v0a_forge_rejected), "mesh");
         }
     }
 
-    // ── T6: on-silicon timing (hardware TIMER, K=10 batched) ──
+    // ── T6: on-silicon timing (hardware TIMER, K=5 batches) ──
     begin(io, "T6");
     {
         // R14 one-fault signal compute
