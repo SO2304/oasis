@@ -153,6 +153,7 @@ fn main() -> ! {
     let mut deframer = Deframer::new();
     let mut rx_total: u32 = 0;
     let mut frame_total: u32 = 0;
+    let mut crc_fails: u32 = 0;
     io.log("BOOT", format_args!("uart-mesh fp={} UART0 tx=GP0 rx=GP1 @115200", BOARD_ID));
 
     loop {
@@ -172,7 +173,10 @@ fn main() -> ! {
             if rx[..n].contains(&b's') {
                 io.log(
                     "STATUS",
-                    format_args!("rx_bytes={},frames={}", rx_total, frame_total),
+                    format_args!(
+                        "rx_bytes={},frames={},crc_fails={}",
+                        rx_total, frame_total, crc_fails
+                    ),
                 );
             }
             if rx[..n].contains(&b'l') {
@@ -234,6 +238,51 @@ fn main() -> ! {
                 }
                 io.log("SPAM_DONE", format_args!("sent={}", count));
             }
+            // ── Noise sweep (fault injection). 300 fresh packets (new msg_id each,
+            //    bypassing anti-replay) across 3 escalating corruption levels. The
+            //    wire frame is corrupted on a COPY just before TX; A never panics.
+            if rx[..n].contains(&b'N') {
+                let seed =
+                    unsafe { (*pac::TIMER::ptr()).timerawl().read().bits() } ^ 0x1357_9BDF;
+                let mut fi = FaultInjector::new(seed);
+                let (mut txd, mut dropped, mut truncd) = (0u32, 0u32, 0u32);
+                // 50 packets/phase (not the spec's 100): each packet costs a ~341 ms
+                // v0A Ed25519 sign on the FPU-less M0+, so 300 would take ~2 min.
+                for pkt in 1..=150u32 {
+                    let level = if pkt <= 50 {
+                        NoiseLevel::Normal
+                    } else if pkt <= 100 {
+                        NoiseLevel::Medium
+                    } else {
+                        NoiseLevel::Extreme
+                    };
+                    match pkt {
+                        1 => io.log("SWEEP", format_args!("Phase 1/3 (Normal,50)")),
+                        51 => io.log("SWEEP", format_args!("Phase 2/3 (Medium,50)")),
+                        101 => io.log("SWEEP", format_args!("Phase 3/3 (Extreme,50)")),
+                        _ => {}
+                    }
+                    let env = router.origin_wrap(b"OASIS-noise"); // fresh msg_id -> no dedup
+                    let mut wire = [0u8; MAX_ENV + 8];
+                    let wlen = frame_into(&mut wire, &env);
+                    match fi.apply_noise(&mut wire[..wlen], level) {
+                        None => dropped += 1, // simulated lost TX
+                        Some(txl) => {
+                            if txl != wlen {
+                                truncd += 1;
+                            }
+                            uart0.write_full_blocking(&wire[..txl]);
+                            txd += 1;
+                        }
+                    }
+                    io.poll();
+                    cortex_m::asm::delay(6_250_000); // ~50 ms @125 MHz
+                }
+                io.log(
+                    "SWEEP_DONE",
+                    format_args!("tx={},tx_dropped={},truncated={}", txd, dropped, truncd),
+                );
+            }
         }
 
         // UART0 RX (GP1) → deframe → process → log → relay on UART0 TX (GP0).
@@ -241,34 +290,48 @@ fn main() -> ! {
         if let Ok(n) = uart0.read_raw(&mut tmp) {
             rx_total = rx_total.wrapping_add(n as u32);
             for i in 0..n {
-                if let Some(env) = deframer.push(tmp[i]) {
-                    frame_total = frame_total.wrapping_add(1);
-                    // Copy out so the deframer borrow ends before we TX.
-                    let mut owned = [0u8; MAX_ENV];
-                    let elen = env.len();
-                    owned[..elen].copy_from_slice(env);
-                    match router.process(&owned[..elen]) {
-                        MeshDecision::Arrived {
-                            msg_id,
-                            hops_seen,
-                            forward,
-                            envelope,
-                        } => {
-                            io.log(
-                                "ARRIVED",
-                                format_args!(
-                                    "msg_id={},hops={},sig=verified,forward={}",
-                                    msg_id, hops_seen, forward
-                                ),
-                            );
-                            if forward {
-                                send_framed(&mut uart0, &envelope);
-                                io.log("RELAYED", format_args!("msg_id={},hops={}", msg_id, hops_seen));
-                            }
+                let mut owned = [0u8; MAX_ENV];
+                let elen = match deframer.push(tmp[i]) {
+                    DfOut::Frame(env) => {
+                        frame_total = frame_total.wrapping_add(1);
+                        let l = env.len();
+                        owned[..l].copy_from_slice(env); // copy out; deframer borrow ends here
+                        l
+                    }
+                    DfOut::CrcFail => {
+                        // Wire corruption caught at the framer (CRC8). Throttle logs.
+                        crc_fails = crc_fails.wrapping_add(1);
+                        if crc_fails % 10 == 1 {
+                            io.log("FRAMER_CRC_FAIL", format_args!("count={}", crc_fails));
                         }
-                        MeshDecision::Drop(reason) => {
-                            io.log("DROP", format_args!("{}", reason));
+                        0
+                    }
+                    DfOut::Pending => 0,
+                };
+                if elen == 0 {
+                    continue;
+                }
+                match router.process(&owned[..elen]) {
+                    MeshDecision::Arrived {
+                        msg_id,
+                        hops_seen,
+                        forward,
+                        envelope,
+                    } => {
+                        io.log(
+                            "ARRIVED",
+                            format_args!(
+                                "msg_id={},hops={},sig=verified,forward={}",
+                                msg_id, hops_seen, forward
+                            ),
+                        );
+                        if forward {
+                            send_framed(&mut uart0, &envelope);
+                            io.log("RELAYED", format_args!("msg_id={},hops={}", msg_id, hops_seen));
                         }
+                    }
+                    MeshDecision::Drop(reason) => {
+                        io.log("DROP", format_args!("{}", reason));
                     }
                 }
             }
@@ -346,6 +409,91 @@ fn send_framed(uart: &mut Uart0, env: &[u8]) {
     uart.write_full_blocking(&[crc8(env)]);
 }
 
+/// Build the on-the-wire frame (SYNC+len+env+crc8) into `out`, return its length.
+/// Used by the fault-injection sweep so the frame bytes can be corrupted before TX.
+fn frame_into(out: &mut [u8], env: &[u8]) -> usize {
+    let len = env.len() as u16;
+    out[0] = 0x55;
+    out[1] = 0xAA;
+    out[2] = (len & 0xFF) as u8;
+    out[3] = (len >> 8) as u8;
+    out[4..4 + env.len()].copy_from_slice(env);
+    out[4 + env.len()] = crc8(env);
+    4 + env.len() + 1
+}
+
+// ── Fault injection (no_std, no external RNG crate) ──────────────────────────
+/// Xorshift32 PRNG. Seeded from the free-running RP2040 TIMER (variation per run)
+/// XOR a fixed constant; deterministic given the same seed.
+struct Rng(u32);
+impl Rng {
+    fn new(seed: u32) -> Self {
+        Rng(if seed == 0 { 0x1357_9BDF } else { seed })
+    }
+    fn next(&mut self) -> u32 {
+        let mut x = self.0;
+        x ^= x << 13;
+        x ^= x >> 17;
+        x ^= x << 5;
+        self.0 = x;
+        x
+    }
+    fn pct(&mut self, p: u8) -> bool {
+        (self.next() % 100) < p as u32
+    }
+    fn upto(&mut self, n: u32) -> u32 {
+        if n == 0 {
+            0
+        } else {
+            self.next() % n
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+enum NoiseLevel {
+    Normal,
+    Medium,
+    Extreme,
+}
+
+struct FaultInjector {
+    rng: Rng,
+}
+impl FaultInjector {
+    fn new(seed: u32) -> Self {
+        FaultInjector { rng: Rng::new(seed) }
+    }
+    /// Corrupt the on-the-wire frame `buf` in place. Returns the (possibly
+    /// truncated) length to transmit, or `None` if the frame is dropped entirely.
+    fn apply_noise(&mut self, buf: &mut [u8], level: NoiseLevel) -> Option<usize> {
+        let len = buf.len();
+        if len == 0 {
+            return Some(0);
+        }
+        // (corrupt%, max bit-flips, truncate%, drop%)
+        let (corrupt_pct, max_flips, trunc_pct, drop_pct) = match level {
+            NoiseLevel::Normal => (0u8, 0u32, 0u8, 0u8),
+            NoiseLevel::Medium => (5, 1, 2, 0),
+            NoiseLevel::Extreme => (20, 4, 0, 15),
+        };
+        if drop_pct > 0 && self.rng.pct(drop_pct) {
+            return None; // simulate a lost TX
+        }
+        if corrupt_pct > 0 && self.rng.pct(corrupt_pct) {
+            let flips = 1 + self.rng.upto(max_flips); // 1..=max_flips bit flips
+            for _ in 0..flips {
+                let idx = self.rng.upto(len as u32) as usize;
+                buf[idx] ^= 1u8 << (self.rng.upto(8) as u8);
+            }
+        }
+        if trunc_pct > 0 && self.rng.pct(trunc_pct) {
+            return Some((1 + self.rng.upto(len as u32) as usize).min(len)); // cut the tail
+        }
+        Some(len)
+    }
+}
+
 const MAX_ENV: usize = 300;
 struct Deframer {
     state: u8,
@@ -357,7 +505,7 @@ impl Deframer {
     fn new() -> Self {
         Deframer { state: 0, len: 0, idx: 0, buf: [0; MAX_ENV] }
     }
-    fn push(&mut self, b: u8) -> Option<&[u8]> {
+    fn push(&mut self, b: u8) -> DfOut<'_> {
         match self.state {
             0 => {
                 if b == 0x55 {
@@ -383,12 +531,20 @@ impl Deframer {
             }
             5 => {
                 self.state = 0;
-                if crc8(&self.buf[..self.len]) == b {
-                    return Some(&self.buf[..self.len]);
-                }
+                return if crc8(&self.buf[..self.len]) == b {
+                    DfOut::Frame(&self.buf[..self.len])
+                } else {
+                    DfOut::CrcFail // corruption caught at the framer
+                };
             }
             _ => self.state = 0,
         }
-        None
+        DfOut::Pending
     }
+}
+
+enum DfOut<'a> {
+    Frame(&'a [u8]),
+    CrcFail,
+    Pending,
 }

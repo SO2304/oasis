@@ -175,3 +175,31 @@ Console commands added to `uart_mesh.rs` (`uart_mesh_attacks.log`,
 - **Replay needs pacing:** sending the two copies back-to-back overran B's 32-byte RX
   FIFO (2nd frame lost) while B was busy logging; a ~300 ms gap between copies makes the
   `DROP duplicate` deterministic. Dedup *logic* was already proven in T5.
+
+## 12. Fault-injection noise sweep (2026-10-05)
+`uart_mesh.rs` adds a `FaultInjector` (Xorshift32 PRNG seeded from the RP2040 TIMER —
+no external RNG crate) and a `N`-triggered sweep that corrupts the **on-the-wire frame
+copy** just before TX across 3 escalating levels, then transmits from A over the UART
+chain. `NoiseLevel`: Normal (0/0), Medium (~5% bit-flip, ~2% truncate), Extreme (~20%
+flip 1–4 bytes, ~15% drop TX). Log: `uart_mesh_noise_sweep.log`.
+
+Run (150 packets, 50/phase — reduced from the spec's 100/phase because each packet is a
+~341 ms v0A Ed25519 sign on the M0+, so 300 ≈ 2 min; each has a fresh msg_id to bypass
+dedup):
+
+| Metric | Value |
+|---|---|
+| A: transmitted / TX-dropped / truncated | 142 / 8 / 2 |
+| B: clean frames relayed (`ARRIVED`, distinct msg_ids) | 124 |
+| B: **framer CRC failures** (corruption caught) | 15 |
+| B: bad-signature (verifier reached) | **0** |
+| C: survivors received | 124 |
+| Crash (panic/HardFault) | **none** (no BOOTSEL, all COMs alive) |
+
+**Key finding (0 bullshit):** the CRC8 **framer absorbed 100 % of the wire corruption**
+(15 CRC fails), so the **Ed25519 verifier was never reached by noise** (0 bad-sig) — the
+intended defense-in-depth. To stress the *verifier* specifically you must corrupt the
+envelope **pre-CRC** (bypassing the framer); pure wire noise is caught one layer earlier.
+A (the transmitter) never panicked despite corrupting/dropping its own output; B's parser
++ framer survived the full escalating sweep with no crash. Honest scope unchanged: still
+a **wired UART link, not LoRa**; the mesh runs on `embedded-alloc`, not zero-alloc.
