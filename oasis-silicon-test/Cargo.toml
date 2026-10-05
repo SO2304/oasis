@@ -1,0 +1,34 @@
+[package]
+name = "oasis-silicon-test"
+version = "0.1.0"
+edition = "2021"
+description = "On-silicon test firmware for OASIS (RP2040) — emits parsable PASS/FAIL log lines over USB-CDC. NOT part of the host workspace."
+
+# Standalone crate (excluded from the root workspace): builds ONLY for the
+# RP2040 (thumbv6m-none-eabi). Staged bring-up:
+#   stage A (this file, minimal): rp2040-hal + USB-CDC, prints T0 (boot/ID).
+#   stage B (later): add oasis-rt (no_std) + embedded-alloc for T1..T8.
+
+[dependencies]
+cortex-m = "0.7"
+cortex-m-rt = "0.7"
+rp2040-hal = { version = "0.10", features = ["rt", "critical-section-impl"] }
+rp2040-boot2 = "0.3"
+usb-device = "0.3"
+usbd-serial = "0.2"
+embedded-alloc = "0.5"
+# The crate under test, as a no_std MCU build (no std/os_random; mesh_v10 on for v0A).
+oasis-rt = { path = "../oasis-rt", default-features = false, features = ["mesh_bloom_mcu", "mesh_v10"] }
+# Same Ed25519 primitive oasis-rt uses — for the T3 deterministic KAT.
+ed25519-compact = { version = "2", default-features = false, features = ["x25519"] }
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+debug = false
+panic = "abort"
+
+[profile.dev]
+opt-level = "z"
+panic = "abort"

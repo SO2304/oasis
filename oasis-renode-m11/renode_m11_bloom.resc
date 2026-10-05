@@ -1,0 +1,24 @@
+:name: OASIS M11 Bloom dedup demo (2 STM32F4 nodes)
+:description: A sends the same v0A envelope twice; B verifies first,
+:description: drops second as duplicate via the per-node Bloom filter.
+
+mach clear
+
+emulation CreateUARTHub "bus_ab"
+
+mach create "node_a"
+machine LoadPlatformDescription @platforms/boards/stm32f4_discovery.repl
+sysbus.usart1 CreateFileBackend $ORIGIN/log_bloom_a.txt true
+connector Connect sysbus.usart2 bus_ab
+sysbus LoadELF $ORIGIN/target/thumbv7em-none-eabihf/release/sender_twice
+cpu VectorTableOffset 0x08000000
+
+mach create "node_b"
+machine LoadPlatformDescription @platforms/boards/stm32f4_discovery.repl
+sysbus.usart1 CreateFileBackend $ORIGIN/log_bloom_b.txt true
+connector Connect sysbus.usart2 bus_ab
+sysbus LoadELF $ORIGIN/target/thumbv7em-none-eabihf/release/bloom_check
+cpu VectorTableOffset 0x08000000
+
+emulation RunFor "00:00:20"
+quit

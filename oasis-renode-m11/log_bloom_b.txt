@@ -1,0 +1,5 @@
+[Node B / Bloom-check] dedup demo
+  router ready, awaiting 2 frames on USART2
+  frame1 -> Arrived (msg_id=0x100ba66a4ed81db5)
+  frame2 -> Drop("duplicate")
+[Node B] BLOOM DEDUP TEST COMPLETE

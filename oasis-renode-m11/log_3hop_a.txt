@@ -1,0 +1,12 @@
+
+[Node A / Sender] OASIS M11 Federated Resonance demo
+  target : thumbv7em-none-eabihf (Cortex-M4F, STM32F407)
+  sim    : Renode (multi-node, UART bridged)
+  [dbg] before pubkey derivation
+  [dbg] pk_b derived
+  [dbg] router built
+  [dbg] envelope signed, len=125
+  envelope: magic=SPORE\x0A len=125 payload='M11 federated-resonance demo payload'
+  sig_head: [f5 f1 0f 1e 95 11 81 9b]
+  SENT 131 bytes on USART2 (6-byte frame hdr + 125-byte envelope)
+[Node A] M11 SEND COMPLETE

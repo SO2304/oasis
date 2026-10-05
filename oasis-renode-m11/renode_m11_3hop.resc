@@ -1,0 +1,38 @@
+:name: OASIS M11 multi-hop chain (3 STM32F4 nodes)
+:description: A signs v0A envelope, B forwards (decrement TTL, increment hops),
+:description: C verifies origin sig still holds. Two UART hubs in series.
+
+mach clear
+
+# Two virtual wires: A→B and B→C.
+emulation CreateUARTHub "bus_ab"
+emulation CreateUARTHub "bus_bc"
+
+# ── Node A (sender) — USART2 only ──────────────────────────────────
+mach create "node_a"
+machine LoadPlatformDescription @platforms/boards/stm32f4_discovery.repl
+sysbus.usart1 CreateFileBackend $ORIGIN/log_3hop_a.txt true
+connector Connect sysbus.usart2 bus_ab
+sysbus LoadELF $ORIGIN/target/thumbv7em-none-eabihf/release/sender
+cpu VectorTableOffset 0x08000000
+
+# ── Node B (forwarder) — USART2 in, USART3 out ─────────────────────
+mach create "node_b"
+machine LoadPlatformDescription @platforms/boards/stm32f4_discovery.repl
+sysbus.usart1 CreateFileBackend $ORIGIN/log_3hop_b.txt true
+connector Connect sysbus.usart2 bus_ab
+connector Connect sysbus.usart3 bus_bc
+sysbus LoadELF $ORIGIN/target/thumbv7em-none-eabihf/release/forwarder
+cpu VectorTableOffset 0x08000000
+
+# ── Node C (terminal) — USART2 only ────────────────────────────────
+mach create "node_c"
+machine LoadPlatformDescription @platforms/boards/stm32f4_discovery.repl
+sysbus.usart1 CreateFileBackend $ORIGIN/log_3hop_c.txt true
+connector Connect sysbus.usart2 bus_bc
+sysbus LoadELF $ORIGIN/target/thumbv7em-none-eabihf/release/final_recv
+cpu VectorTableOffset 0x08000000
+
+# Run
+emulation RunFor "00:00:20"
+quit

@@ -1,0 +1,7 @@
+# Wokwi VS Code extension manifest for the OASIS TRL 6 demo firmware.
+# Points at the release ELF built from this crate for the RP2040 target.
+# Run: "Wokwi: Start Simulator" command in VS Code with this file open.
+[wokwi]
+version = 1
+firmware = "target/thumbv6m-none-eabi/release/oasis-mcu-demo"
+elf = "target/thumbv6m-none-eabi/release/oasis-mcu-demo"

@@ -1,0 +1,9 @@
+
+[Node C / Terminal] OASIS M11 multi-hop receiver
+  USART2 = inbound from B
+  router built, awaiting forwarded frame
+  RX 125 bytes  TTL=7 hops=1
+  origin_fp = aa00000000000000
+  [VERIFIED] msg_id=0x100ba66a4ed81db5 hops_seen=1 forward=true
+  ORIGIN-SIG SURVIVED THE RELAY — multi-hop attestation OK
+[Node C] M11 MULTI-HOP RECV COMPLETE — VERIFIED

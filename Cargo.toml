@@ -28,6 +28,7 @@ exclude = [
     "oasis-mcu-demo",       # thumbv6m-none-eabi (RP2040); forces mesh_bloom_mcu
     "oasis-renode-m11",     # thumbv7em-none-eabihf (STM32F4); forces mesh_bloom_mcu
     "oasis-lora-transport", # forces mesh_bloom_mcu; must not co-resolve with host crates
+    "oasis-silicon-test",   # thumbv6m-none-eabi (RP2040) on-silicon test firmware
 ]
 
 # Build profiles MUST live at the workspace root — Cargo ignores [profile.*] in

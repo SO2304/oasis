@@ -1,0 +1,9 @@
+# OASIS-RT rustfmt — tuned to respect R10 (files < 400 lines).
+# Very generous widths preserve compact single-line idioms prevalent in the
+# kernel. R10 is structural; fmt must not violate it.
+max_width = 200
+fn_call_width = 180
+array_width = 180
+chain_width = 120
+struct_lit_width = 120
+single_line_if_else_max_width = 120

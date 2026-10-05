@@ -1,0 +1,139 @@
+[package]
+name = "oasis-rt"
+version = "0.3.0"
+edition = "2021"
+
+[lib]
+name = "oasis_rt"
+path = "src/lib.rs"
+
+[dependencies]
+ed25519-compact = { version = "2.2.0", default-features = false, features = ["x25519"] }
+# serde: no_std + alloc. `derive` is used only by main.rs (std binary).
+# Library modules use serde_json::Value; both crates ship with `alloc` feature
+# that makes them work without the OS. Changed 2026-04-22 during MCU port.
+serde = { version = "1", default-features = false, features = ["derive", "alloc"] }
+serde_json = { version = "1", default-features = false, features = ["alloc"] }
+sha2 = { version = "0.11.0", default-features = false }
+# RustCrypto AEAD, audited. ChaCha20-Poly1305 per RFC 8439.
+# Chosen over AES-GCM for: constant-time on all targets (no AES-NI dep),
+# smaller attack surface, same security level (128-bit tag).
+chacha20poly1305 = { version = "0.10", default-features = false, features = ["alloc"] }
+# OS-provided CSPRNG (getrandom(2) on Linux, BCryptGenRandom on Windows, getentropy on macOS).
+# Required for proper random nonce generation in AEAD. Without this, nonce collision
+# risk is elevated by weak entropy sources. Optional to allow MCU builds to supply
+# their own RNG via the `random_nonce` injection point (not yet exposed).
+getrandom = { version = "0.2", optional = true }
+# libm: provides f64 trig (sin, cos, atan2), sqrt, exp, ln, powi for no_std.
+# core has `f64` but not its method impls — those live in std. libm fills
+# the gap. ~10 KB code, well-audited, no further deps.
+libm = "0.2"
+
+[dev-dependencies]
+# Serializes tests that mutate process-wide env vars (OASIS_SIGNING_KEY, OASIS_ED25519_SEED).
+# Without this, parallel test execution causes intermittent failures in federation suite.
+serial_test = "3"
+
+[features]
+default = ["std", "std_env", "os_random", "mesh_v10"]
+# mesh_v10: activates SPORE\x0A Ed25519 per-node mesh signing. Uses only
+# the baseline Ed25519 API of ed25519-compact (KeyPair::from_seed,
+# PublicKey::verify, etc.) which is always available regardless of cargo
+# features. We intentionally do NOT pull `ed25519-compact/ed25519` (which
+# adds RustCrypto trait impls via the `signature` crate v2.2; that crate
+# is not no_std-clean and would break MCU builds). This makes mesh_v10
+# safely compilable on thumbv6m-none-eabi alongside no_std.
+mesh_v10 = []
+# std: enables the standard library. When disabled, oasis-rt becomes
+# a no_std crate using `alloc` for heap types (Vec, String, Box).
+# MCU targets: `cargo build --no-default-features --release`
+std = []
+# std_env: enables env-var based config helpers (PainConfig::from_env).
+# Disable for no_std/MCU builds: `cargo build --no-default-features --release`
+std_env = []
+# os_random: pulls in `getrandom` for AEAD nonce generation. When disabled,
+# `spore_crypto::encrypt_envelope` is NOT available. MCU targets must disable
+# this and provide their own nonce construction via a future user-injectable
+# RNG hook (not yet exposed). Added 2026-04-22 during MCU port.
+os_random = ["dep:getrandom", "ed25519-compact/random", "ed25519-compact/std"]
+# mesh_bloom_mcu: shrinks the mesh dedup Bloom filter from 64 KiB (default)
+# to 2 KiB per router. Cost: 1% FPR threshold drops from ~52 k to ~1.6 k
+# inserts, so operators on small-RAM targets must reset much more often.
+# Use on Cortex-M-class MCUs where 64 KiB is impractical.
+# `cargo build --features mesh_bloom_mcu --release`
+mesh_bloom_mcu = []
+
+# Build profiles live at the workspace root (../Cargo.toml). Cargo ignores
+# [profile.*] declared in a non-root member crate.
+
+[[bin]]
+name = "spore_send"
+path = "src/bin/spore_send.rs"
+
+[[bin]]
+name = "drone_bridge"
+path = "src/bin/drone_bridge.rs"
+
+[[bin]]
+name = "bench_r14_latency"
+path = "src/bin/bench_r14_latency.rs"
+
+[[bin]]
+name = "mavlink_adapter"
+path = "src/bin/mavlink_adapter.rs"
+
+[[bin]]
+name = "bench_spore_loss"
+path = "src/bin/bench_spore_loss.rs"
+
+[[bin]]
+name = "udp_loss_proxy"
+path = "src/bin/udp_loss_proxy.rs"
+
+[[bin]]
+name = "spore_recv_v2"
+path = "src/bin/spore_recv_v2.rs"
+
+[[bin]]
+name = "oasis_keygen"
+path = "src/bin/oasis_keygen.rs"
+
+[[bin]]
+name = "oasis_fingerprint"
+path = "src/bin/oasis_fingerprint.rs"
+
+[[bin]]
+name = "spore_revoke"
+path = "src/bin/spore_revoke.rs"
+
+[[bin]]
+name = "bench_mechanisms_soak"
+path = "src/bin/bench_mechanisms_soak.rs"
+
+[[bin]]
+name = "bench_mesh"
+path = "src/bin/bench_mesh.rs"
+
+[[bin]]
+name = "sim_200_drones"
+path = "src/bin/sim_200_drones.rs"
+
+[[bin]]
+name = "sim_scenarios"
+path = "src/bin/sim_scenarios.rs"
+
+[[bin]]
+name = "oasis_autodetect"
+path = "src/bin/oasis_autodetect.rs"
+
+[[bin]]
+name = "bench_full_stack"
+path = "src/bin/bench_full_stack.rs"
+
+[[bin]]
+name = "bench_mesh_signed"
+path = "src/bin/bench_mesh_signed.rs"
+
+[[bin]]
+name = "bench_payload_sweep"
+path = "src/bin/bench_payload_sweep.rs"

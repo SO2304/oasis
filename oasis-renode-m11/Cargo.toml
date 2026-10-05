@@ -1,0 +1,72 @@
+[package]
+name = "oasis-renode-m11"
+version = "0.1.0"
+edition = "2021"
+
+# M11 "Federated Resonance" demo under Renode.
+# Two STM32F4 (Cortex-M4F) nodes wired UART-to-UART. Node A signs a
+# SPORE v0A envelope via oasis-rt mesh_v10 and transmits the bytes.
+# Node B receives, parses, verifies the Ed25519 signature with the
+# sender's pubkey from its registry, and prints the decision.
+# Proves the full mesh signing protocol crosses a real UART wire
+# between two separate MCUs at the instruction level.
+
+[dependencies]
+# OASIS kernel: no_std + mesh_v10 (now compiles on thumbv7em without
+# the signature crate) + tight Bloom filter for MCU.
+oasis-rt = { path = "../oasis-rt", default-features = false, features = ["mesh_bloom_mcu", "mesh_v10"] }
+
+# Direct Ed25519 access for pubkey hydration on the receive side.
+ed25519-compact = { version = "2.2.0", default-features = false, features = ["x25519"] }
+
+# Cortex-M4F runtime + HAL for STM32F4 (Discovery board = STM32F407)
+cortex-m = "0.7"
+cortex-m-rt = "0.7"
+stm32f4xx-hal = { version = "0.22", features = ["stm32f407"] }
+
+# Heap allocator — oasis-rt allocates Vec<u8> in origin_wrap/process.
+embedded-alloc = "0.6"
+
+# Panic on halt — simple, enough for the demo.
+panic-halt = "0.2"
+
+# Runtime support
+nb = "1"
+
+[[bin]]
+name = "sender"
+path = "src/bin/sender.rs"
+
+[[bin]]
+name = "receiver"
+path = "src/bin/receiver.rs"
+
+[[bin]]
+name = "forwarder"
+path = "src/bin/forwarder.rs"
+
+[[bin]]
+name = "final_recv"
+path = "src/bin/final_recv.rs"
+
+[[bin]]
+name = "sender_twice"
+path = "src/bin/sender_twice.rs"
+
+[[bin]]
+name = "bloom_check"
+path = "src/bin/bloom_check.rs"
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = "symbols"
+debug = false
+overflow-checks = false
+
+[profile.dev]
+opt-level = 1
+debug = true
+panic = "abort"

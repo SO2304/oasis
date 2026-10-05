@@ -198,7 +198,7 @@ Performance trade across the 3 mesh variants (Linux WSL, K=10 medians):
 | 7/7 rclcpp core primitives matched | pub/sub + services + actions + tf2 + timer + parameters + params-events (8/8 incl. tf) | ✅ |
 | Real hardware test (Pixhawk + quad) | **none** | ❌ |
 | External crypto audit | **none** | ❌ |
-| Real MCU hardware boot | **none** — compile pass only | ❌ |
+| Real MCU hardware boot | full T0–T6 suite (ChaCha20-Poly1305 RFC 8439, X25519 RFC 7748, Ed25519 sign/verify/tamper, R14 gate, mesh v8/v9/v0A incl. forge-reject, on-silicon timing) **PASS 3× on THREE RP2040 boards** (9/9 runs green, identical timing across all three). Plus a **wired-UART A→B→C v0A mesh relay** across 3 boards with per-hop Ed25519 verification (`uart_mesh.rs`, §10 of the report). ⚠️ Not over-the-air — **no LoRa radio**; no energy/secure-element/flight; T8 flash-persistence not done. See `evidence/silicon/2026-10-04/REPORT.md` | ✅ |
 
 ---
 

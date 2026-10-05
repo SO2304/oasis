@@ -1,0 +1,10 @@
+# RP2040 (Cortex-M0+) build config for the on-silicon test firmware.
+[build]
+target = "thumbv6m-none-eabi"
+
+[target.thumbv6m-none-eabi]
+# cortex-m-rt provides link.x; --nmagic avoids page-aligned padding on flash.
+rustflags = [
+  "-C", "link-arg=--nmagic",
+  "-C", "link-arg=-Tlink.x",
+]

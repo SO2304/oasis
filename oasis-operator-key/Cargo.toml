@@ -1,0 +1,42 @@
+[package]
+name = "oasis-operator-key"
+version = "0.1.0"
+edition = "2021"
+
+# Operator key management — the trust root that authorizes revocations,
+# rotations, and node commissioning. Sits ABOVE the SE layer: each node
+# trusts an OperatorAuthority; the OperatorAuthority is what signs the
+# RevocationList envelopes, the rotation transitions, and the
+# commissioning records.
+#
+# Without this layer, an attacker who steals the single operator seed
+# can forge revocations / atomize legitimate fleet members at will.
+# This module gives the operator three defenses:
+#
+#   1. Multisig (k-of-n) — no single seed compromise = fleet compromise
+#   2. Rotation with signed transition — the trust root can move to a
+#      new keypair without a flag day, only the current authority can
+#      authorize the change
+#   3. Commissioning lock — once a node ships, its op_pub is sticky
+#      (only changeable via valid rotation envelope)
+
+[dependencies]
+# IMPORTANT: do NOT unconditionally enable `mesh_bloom_mcu`. See the
+# matching note in oasis-secure-element/Cargo.toml — feature unification
+# would silently downsize the mesh Bloom on every host consumer of this
+# crate. Forwarded as an opt-in feature below.
+oasis-rt = { path = "../oasis-rt", default-features = false, features = ["mesh_v10"] }
+ed25519-compact = { version = "2.2.0", default-features = false, features = ["x25519"] }
+
+[dev-dependencies]
+oasis-rt = { path = "../oasis-rt", features = ["std", "mesh_v10"] }
+
+[features]
+default = []
+std = ["oasis-rt/std"]
+# Forward the small-Bloom MCU optimization. MCU applications opt in
+# explicitly; host applications get the 64 KiB Bloom by default.
+mesh_bloom_mcu = ["oasis-rt/mesh_bloom_mcu"]
+
+[lib]
+path = "src/lib.rs"
