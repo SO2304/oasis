@@ -228,3 +228,26 @@ B's verifier. Run (`SWEEP_DONE tx=196, phase4_crypto=50`):
    premise: it's ~76% true; ~24% is accepted and exposes the unsigned-payload property.)
 
 No crash across all 200 packets; all three boards alive throughout.
+
+---
+
+## 13. ERRATUM (2026-10-06) — three test-quality defects found by independent review
+
+An independent review of this run found that three on-chip tests **passed for
+the wrong reason**. These are defects in the *tests*, not in the OASIS
+crypto/R14/mesh logic (which was not modified):
+
+- **T0 clock** — printed `PASS` from a hard-coded `125000000Hz` config constant;
+  it never measured the clock, so it could not have failed.
+- **T5 v9** — tampered the inner payload byte (which the v9 HMAC does not cover);
+  the resulting drop was `"duplicate"` (dedup), not `"bad mesh mac"`. The MAC
+  verifier was never actually exercised.
+- **T4 R14 gate** — counted only blocked high-signal faults, with no negative
+  control; a gate that blocks everything would also have scored 50/50.
+
+All three were corrected and **re-verified on the same 3 boards on 2026-10-06**
+(3 × 3 = 9 runs, 9/9 green): T0 now measures the core clock over a 100 ms window
+(±1 %), T5-v9 asserts `Drop("bad mesh mac")` against a fresh router, T4 adds a
+negative control (`nominal_false_blocks=0/50`). Corrected evidence + full
+write-up: **`../2026-10-06/REPORT.md`**. The "9/9 PASS" headline of §1–§4 above
+therefore stands only as corrected by that re-run — read the two reports together.
