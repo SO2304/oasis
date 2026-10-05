@@ -203,3 +203,28 @@ envelope **pre-CRC** (bypassing the framer); pure wire noise is caught one layer
 A (the transmitter) never panicked despite corrupting/dropping its own output; B's parser
 + framer survived the full escalating sweep with no crash. Honest scope unchanged: still
 a **wired UART link, not LoRa**; the mesh runs on `embedded-alloc`, not zero-alloc.
+
+### 12b. Phase 4 — pre-CRC single-bit flip (stress the Ed25519 verifier directly)
+Added Phase 4 (packets 151–200): flip **one** random bit in the envelope **before**
+`frame_into`, so the frame CRC8 is valid over the corrupted bytes and the packet reaches
+B's verifier. Run (`SWEEP_DONE tx=196, phase4_crypto=50`):
+
+| Phase-4 outcome on B (50 pkts) | Count | Where the bit landed |
+|---|---|---|
+| `DROP bad mesh signature` | 27 | signature [25..89] or msg_id [6..14] |
+| `DROP unknown sender` | 7 | origin_fp [14..22] (fp no longer in registry) |
+| `DROP bad mesh magic` | 4 | magic [0..6] (parser reject) |
+| **ACCEPTED (`ARRIVED`)** | **12** | **ttl/hops/inner-payload — NOT signed by v0A** |
+
+**Two findings, both real on silicon:**
+1. **The Ed25519 verifier holds under active tampering** — 34 crypto rejects (27 bad-sig
+   + 7 unknown-sender) whenever the flip hit a *signed* field. The verifier is qualified.
+2. **v0A does NOT authenticate the payload.** 12/50 flips were **accepted** because they
+   landed in the inner payload / ttl / hops, which the v0A signature (over
+   `magic||msg_id||origin_fp` only) does not cover. At the mesh layer a MitM can mutate
+   payload bytes undetected — safe **only** if the payload carries its own integrity
+   (the AEAD/spore layer above v0A). A plaintext payload over v0A is tamperable.
+   (This is the honest correction to the Phase-4 prompt's "corrupted → crypto fail"
+   premise: it's ~76% true; ~24% is accepted and exposes the unsigned-payload property.)
+
+No crash across all 200 packets; all three boards alive throughout.

@@ -245,42 +245,63 @@ fn main() -> ! {
                 let seed =
                     unsafe { (*pac::TIMER::ptr()).timerawl().read().bits() } ^ 0x1357_9BDF;
                 let mut fi = FaultInjector::new(seed);
-                let (mut txd, mut dropped, mut truncd) = (0u32, 0u32, 0u32);
+                let (mut txd, mut dropped, mut truncd, mut cryptod) = (0u32, 0u32, 0u32, 0u32);
                 // 50 packets/phase (not the spec's 100): each packet costs a ~341 ms
-                // v0A Ed25519 sign on the FPU-less M0+, so 300 would take ~2 min.
-                for pkt in 1..=150u32 {
-                    let level = if pkt <= 50 {
-                        NoiseLevel::Normal
-                    } else if pkt <= 100 {
-                        NoiseLevel::Medium
-                    } else {
-                        NoiseLevel::Extreme
-                    };
+                // v0A Ed25519 sign on the FPU-less M0+, so 400 would take ~2+ min.
+                for pkt in 1..=200u32 {
                     match pkt {
-                        1 => io.log("SWEEP", format_args!("Phase 1/3 (Normal,50)")),
-                        51 => io.log("SWEEP", format_args!("Phase 2/3 (Medium,50)")),
-                        101 => io.log("SWEEP", format_args!("Phase 3/3 (Extreme,50)")),
+                        1 => io.log("SWEEP", format_args!("Phase 1/4 (Normal,50)")),
+                        51 => io.log("SWEEP", format_args!("Phase 2/4 (Medium,50)")),
+                        101 => io.log("SWEEP", format_args!("Phase 3/4 (Extreme,50)")),
+                        151 => io.log("SWEEP", format_args!("Phase 4/4 (Pre-CRC Crypto Fail,50)")),
                         _ => {}
                     }
-                    let env = router.origin_wrap(b"OASIS-noise"); // fresh msg_id -> no dedup
-                    let mut wire = [0u8; MAX_ENV + 8];
-                    let wlen = frame_into(&mut wire, &env);
-                    match fi.apply_noise(&mut wire[..wlen], level) {
-                        None => dropped += 1, // simulated lost TX
-                        Some(txl) => {
-                            if txl != wlen {
-                                truncd += 1;
+                    if pkt <= 150 {
+                        // Phases 1-3: corrupt the FINISHED wire frame -> framer CRC catches it.
+                        let level = if pkt <= 50 {
+                            NoiseLevel::Normal
+                        } else if pkt <= 100 {
+                            NoiseLevel::Medium
+                        } else {
+                            NoiseLevel::Extreme
+                        };
+                        let env = router.origin_wrap(b"OASIS-noise"); // fresh msg_id -> no dedup
+                        let mut wire = [0u8; MAX_ENV + 8];
+                        let wlen = frame_into(&mut wire, &env);
+                        match fi.apply_noise(&mut wire[..wlen], level) {
+                            None => dropped += 1, // simulated lost TX
+                            Some(txl) => {
+                                if txl != wlen {
+                                    truncd += 1;
+                                }
+                                uart0.write_full_blocking(&wire[..txl]);
+                                txd += 1;
                             }
-                            uart0.write_full_blocking(&wire[..txl]);
-                            txd += 1;
                         }
+                    } else {
+                        // Phase 4: flip ONE bit in the envelope BEFORE framing, so the
+                        // frame CRC8 is valid over the corrupted bytes and the packet
+                        // reaches B's Ed25519 verifier. (v0A signs only magic||msg_id||
+                        // origin_fp, so a flip in ttl/hops/payload is accepted — see report.)
+                        let mut env = router.origin_wrap(b"OASIS-crypto-fail");
+                        let idx = fi.rng.upto(env.len() as u32) as usize;
+                        let bit = fi.rng.upto(8) as u8;
+                        env[idx] ^= 1u8 << bit; // single-bit corruption, pre-CRC
+                        let mut wire = [0u8; MAX_ENV + 8];
+                        let wlen = frame_into(&mut wire, &env); // valid CRC over corrupted env
+                        uart0.write_full_blocking(&wire[..wlen]);
+                        txd += 1;
+                        cryptod += 1;
                     }
                     io.poll();
                     cortex_m::asm::delay(6_250_000); // ~50 ms @125 MHz
                 }
                 io.log(
                     "SWEEP_DONE",
-                    format_args!("tx={},tx_dropped={},truncated={}", txd, dropped, truncd),
+                    format_args!(
+                        "tx={},tx_dropped={},truncated={},phase4_crypto={}",
+                        txd, dropped, truncd, cryptod
+                    ),
                 );
             }
         }
