@@ -186,6 +186,54 @@ fn main() -> ! {
                 regs.uartcr().modify(|_, w| w.lbe().clear_bit());
                 io.log("LOOPTEST", format_args!("uart0_internal_lbe_rx={}", got));
             }
+            // ── Task 1: anti-replay. Send the SAME envelope bytes twice (same
+            //    msg_id). Downstream dedup must Drop the 2nd. Run on A.
+            if rx[..n].contains(&b'R') {
+                let env = router.origin_wrap(b"OASIS-replay");
+                send_framed(&mut uart0, &env);
+                io.log("REPLAY_TX1", format_args!("len={}", env.len()));
+                // Gap so B fully processes frame 1 (incl. USB logging) before frame 2
+                // arrives — otherwise the 2nd frame overruns B's 32-byte RX FIFO.
+                cortex_m::asm::delay(37_500_000); // ~300 ms @125 MHz
+                send_framed(&mut uart0, &env); // identical bytes => identical msg_id
+                io.log("REPLAY_TX2", format_args!("replay_same_msg_id,len={}", env.len()));
+            }
+            // ── Task 2: forge / MitM. Build an envelope that CLAIMS origin fp=A
+            //    but is signed with a bad seed. Downstream verify must fail. Run on B.
+            if rx[..n].contains(&b'F') {
+                let mut forger = MeshRouter::new_ed25519_signed(
+                    fp_for("A"),
+                    MeshEdSeed([0x99u8; 32]), // NOT A's real seed
+                    MeshPubRegistry::new(),
+                );
+                let env = forger.origin_wrap(b"FORGED-as-A");
+                send_framed(&mut uart0, &env);
+                io.log("FORGE_TX", format_args!("claim=A,bad_seed,len={}", env.len()));
+            }
+            // ── Task 4: TTL. Origin TTL=0 => the receiving node (B) is terminal
+            //    (Arrived forward=false) and does NOT relay to C. Run on A.
+            if rx[..n].contains(&b'T') {
+                let env = router.origin_wrap_with_ttl(b"OASIS-ttl0", 0);
+                send_framed(&mut uart0, &env);
+                io.log("ORIGINATED_TTL0", format_args!("ttl=0,len={}", env.len()));
+            }
+            // ── Task 3: flood / disconnect resilience. Burst many fresh envelopes
+            //    (each a new msg_id, so each is relayed). Unplug B->C mid-burst:
+            //    TX into an open line never errors/panics; reconnect resumes. Run on A.
+            if rx[..n].contains(&b'X') {
+                let mut count = 0u32;
+                for _ in 0..600u32 {
+                    let env = router.origin_wrap(b"OASIS-spam");
+                    send_framed(&mut uart0, &env);
+                    count += 1;
+                    if count % 50 == 0 {
+                        io.log("SPAM", format_args!("sent={}", count));
+                    }
+                    io.poll();
+                    cortex_m::asm::delay(4_000_000); // ~32 ms between packets
+                }
+                io.log("SPAM_DONE", format_args!("sent={}", count));
+            }
         }
 
         // UART0 RX (GP1) → deframe → process → log → relay on UART0 TX (GP0).

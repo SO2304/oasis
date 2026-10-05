@@ -151,3 +151,27 @@ T5 (`v0A_forge_rejected=true`, same verify path).
 UART0 passed (`=6`), so the link was moved to UART0 only. Root cause of a dead first
 attempt was firmware/peripheral, not the wiring — isolated via the on-chip LBE self-test,
 not guesswork.
+
+## 11. Attack / resilience tests over the UART mesh (2026-10-05)
+Console commands added to `uart_mesh.rs` (`uart_mesh_attacks.log`,
+`uart_mesh_task3_disconnect.log`):
+
+| # | Test | Trigger | Result on silicon |
+|---|---|---|---|
+| 1 | **Anti-replay** | `R`→A (same envelope sent twice) | B: 1st `ARRIVED`+`RELAYED`, 2nd `DROP duplicate` — replay not relayed to C. **PASS** |
+| 2 | **Forge / MitM** | `F`→B (claims origin=A, signed with bad seed) | C: `DROP "bad mesh signature"` — forgery rejected. **PASS** |
+| 4 | **TTL** | `T`→A (origin TTL=0) | B: `ARRIVED forward=false`, no relay; C silent. **PASS** |
+| 3 | **Flood / disconnect** | `X`→A (600-packet burst) | No board crashed (post-check: no BOOTSEL volume, all 3 COMs alive); B relayed throughout. **No panic/HardFault.** Live unplug→gap→resume not captured (wire not pulled in-window). |
+
+**Honest notes (0 bullshit):**
+- The prompt's "zero-alloc / `alloc` interdit" does **not** hold for this stack:
+  `oasis-rt::MeshRouter` is heap-backed (dedup `VecDeque`, `Box` Bloom, `BTreeMap`
+  registry; `origin_wrap`/`process` return `Vec`). These tests run on `embedded-alloc`.
+  True zero-alloc would require reworking oasis-rt.
+- **TTL semantics correction:** OASIS decrements on *forward* and treats TTL==0 *on
+  receipt* as terminal (`Arrived{forward:false}`, not a hard Drop). So the prompt's
+  "TTL=1 expires at B" is off-by-one — TTL=1 actually reaches C. Origin TTL=0 is what
+  stops the packet at B (used here).
+- **Replay needs pacing:** sending the two copies back-to-back overran B's 32-byte RX
+  FIFO (2nd frame lost) while B was busy logging; a ~300 ms gap between copies makes the
+  `DROP duplicate` deterministic. Dedup *logic* was already proven in T5.
