@@ -157,21 +157,37 @@ fn pq_wrong_network_refused() {
 
 #[test]
 fn pq_every_single_bit_flip_refused() {
-    // Exhaustive over all 2 507 bytes x 8 bits of a hybrid message.
+    // Exhaustive over every bit of a hybrid message: 16 + 9 + 64 + 2420 = 2 509
+    // bytes, 20 072 flips.
     let mlpk = ml_pub(&ML_SEED);
     let pol = AuthPolicy::default();
     let m = signed_oau1(kind::REVOCATION, SUITE_HYBRID, b"revoke-me", &ED_SEED, &ML_SEED);
-    let mut accepted = 0;
+    assert_eq!(m.len(), 2509);
+    let (mut tried, mut accepted) = (0, 0);
     for i in 0..m.len() {
         for b in 0..8 {
             let mut x = m.clone();
             x[i] ^= 1 << b;
+            tried += 1;
             if verify_authority(&pol, &NET, &keys(&mlpk), &x).is_ok() {
                 accepted += 1;
             }
         }
     }
-    assert_eq!(accepted, 0, "{} bit flips over {} bytes, none may verify", m.len() * 8, m.len());
+    assert_eq!((tried, accepted), (20_072, 0), "every single-bit flip must be refused");
+}
+
+#[test]
+fn pq_precheck_refuses_unknown_kind_and_suite() {
+    // Not reachable through verify_authority (parse_oau1 rejects first), but the
+    // precheck must stand on its own: Kani found it accepted kind 0 + suite 0.
+    let pol = AuthPolicy::default();
+    for (k, s) in [(0u8, 0u8), (0, SUITE_HYBRID), (6, SUITE_HYBRID), (0xFF, 0x77)] {
+        let p = ParsedAuthority { kind: k, suite: s, network_id: NET, content: &[], ed25519_sig: &[], mldsa44_sig: &[] };
+        assert_eq!(precheck(&pol, &NET, &p), Err(AuthReject::UnknownKind), "kind {} suite {}", k, s);
+    }
+    let p = ParsedAuthority { kind: kind::ENROLLMENT, suite: 0x77, network_id: NET, content: &[], ed25519_sig: &[], mldsa44_sig: &[] };
+    assert_eq!(precheck(&pol, &NET, &p), Err(AuthReject::Downgrade), "unknown suite has no rank");
 }
 
 #[test]

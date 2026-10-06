@@ -159,7 +159,7 @@ pub const POLICY_RECORD_LEN: usize = 4 + KIND_COUNT + 4;
 impl AuthPolicy {
     pub fn min_suite(&self, kind: u8) -> u8 {
         if kind == 0 || kind as usize > KIND_COUNT {
-            return u8::MAX; // unknown kind: nothing satisfies it
+            return u8::MAX; // unknown kind: no rank, `precheck` refuses it
         }
         self.min_suite[(kind - 1) as usize]
     }
@@ -217,12 +217,18 @@ impl AuthPolicy {
     }
 }
 
-/// Cheap checks, before any signature verification: network, then downgrade.
+/// Cheap checks, before any signature verification: network, kind, then downgrade.
 pub fn precheck(policy: &AuthPolicy, my_network: &[u8; 8], p: &ParsedAuthority) -> Result<(), AuthReject> {
     if p.network_id != *my_network {
         return Err(AuthReject::WrongNetwork);
     }
-    if suite_rank(p.suite) < suite_rank(policy.min_suite(p.kind)) {
+    // An unknown kind has no rank: refuse it here rather than rely on `parse_oau1`
+    // (found by proof_auth_precheck_no_downgrade, evidence/kani/2026-10-06/pq/).
+    let required = suite_rank(policy.min_suite(p.kind));
+    if required == 0 {
+        return Err(AuthReject::UnknownKind);
+    }
+    if suite_rank(p.suite) < required {
         return Err(AuthReject::Downgrade);
     }
     Ok(())
@@ -272,8 +278,9 @@ pub struct AuthorityKeys<'k> {
 }
 
 /// Full check of an `OAU1` message: parse, cheap prechecks, then signatures. For
-/// the hybrid suite ML-DSA-44 is verified first (cheaper than Ed25519 on a
-/// Cortex-M0+), and both must pass.
+/// the hybrid suite ML-DSA-44 is verified first (expected cheaper than Ed25519 on
+/// a Cortex-M0+ per the PQClean baseline in the spec; not yet measured with this
+/// crate), and both must pass.
 pub fn verify_authority<'a>(policy: &AuthPolicy, my_network: &[u8; 8], keys: &AuthorityKeys, b: &'a [u8]) -> Result<ParsedAuthority<'a>, AuthReject> {
     let p = parse_oau1(b)?;
     precheck(policy, my_network, &p)?;
