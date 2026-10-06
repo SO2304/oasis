@@ -61,7 +61,6 @@ jobs:
       - uses: rustsec/audit-check@v2
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          working-directory: oasis-rt
 
   kani-proofs:
     name: Kani proofs (oasis-rt lib)
@@ -71,6 +70,7 @@ jobs:
     # (heavy mesh/spinal/synapse proofs OOM or time out). Hosted runners have far
     # more RAM and no per-command time cap. If a heavy proof still exhausts the
     # runner, lower -j or raise --harness-timeout (or split by module).
+    # -j 2 was killed by the runner (exit 143) after ~14 min: run serially.
     timeout-minutes: 90
     defaults:
       run:
@@ -86,7 +86,7 @@ jobs:
           cargo install --locked kani-verifier
           cargo kani setup
       - name: cargo kani --lib (all proof harnesses)
-        run: cargo kani --lib -Z unstable-options --harness-timeout 600s -j 2 --output-format terse
+        run: cargo kani --lib -Z unstable-options --harness-timeout 600s -j 1 --output-format terse
 
   docker-build:
     name: Docker image build + healthcheck

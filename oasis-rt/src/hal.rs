@@ -45,7 +45,16 @@ pub struct ClampResult {
 }
 
 pub fn clamp_command(force: f64, torque: f64, velocity: f64, pos: &[f64; 3], constraints: &PhysicalConstraints) -> ClampResult {
-    let mut r = ClampResult { force, torque, velocity, clamped_force: false, clamped_torque: false, clamped_velocity: false, geofence_breach: false, non_finite_input: false };
+    let mut r = ClampResult {
+        force,
+        torque,
+        velocity,
+        clamped_force: false,
+        clamped_torque: false,
+        clamped_velocity: false,
+        geofence_breach: false,
+        non_finite_input: false,
+    };
     // Fail closed on NaN/inf before any comparison.
     if !(force.is_finite() && torque.is_finite() && velocity.is_finite() && pos.iter().all(|p| p.is_finite())) {
         r.non_finite_input = true;
@@ -304,12 +313,7 @@ mod tests {
     fn clamp_fails_closed_on_non_finite_input() {
         let c = PhysicalConstraints::default_robot();
         let ok = [0.0, 0.0, 0.0];
-        for (f, t, v, pos) in [
-            (f64::NAN, 0.0, 0.0, ok),
-            (0.0, f64::INFINITY, 0.0, ok),
-            (0.0, 0.0, f64::NEG_INFINITY, ok),
-            (1.0, 1.0, 1.0, [f64::NAN, 0.0, 0.0]),
-        ] {
+        for (f, t, v, pos) in [(f64::NAN, 0.0, 0.0, ok), (0.0, f64::INFINITY, 0.0, ok), (0.0, 0.0, f64::NEG_INFINITY, ok), (1.0, 1.0, 1.0, [f64::NAN, 0.0, 0.0])] {
             let r = clamp_command(f, t, v, &pos, &c);
             assert!(r.non_finite_input);
             assert_eq!((r.force, r.torque, r.velocity), (0.0, 0.0, 0.0));
