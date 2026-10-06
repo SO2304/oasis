@@ -19,8 +19,9 @@ are a Cargo **workspace** (`resolver = "2"`); the 3 MCU crates are
 the host Bloom (64 KiB → 2 KiB). Re-measured headline numbers (commands
 reproduce them): **494 lib tests** (`cargo test --workspace --release`; 444
 before mesh v0B, +11 `v0b_*`, +2 strict mode, +9 `tx_lease`, +28 `rev_*`/`act_*`),
-**129 Kani proof harnesses** (`grep -rE 'kani::proof' oasis-rt/src | wc -l`;
-113 before v0B, +7 v0B, +9 lease/revocation/actuation; full CBMC pass *not* re-run — slow under WSL), **33 modules**,
+**129 Kani proof harnesses, 123 verified on CI** (`grep -rE 'kani::proof' oasis-rt/src | wc -l`;
+113 before v0B, +7 v0B, +9 lease/revocation/actuation; first full CI run 2026-10-06, sharded by
+`oasis-rt/kani_shards.sh`; 6 not verified, see validation matrix), **33 modules**,
 **19 `[[bin]]`**, **32 `src/*.rs`** files (largest module now `spore_crypto.rs`
 2583 L; `mesh.rs` was split 2026-06-02 — its tests + Kani proofs moved to
 `src/mesh/{tests,kani_proofs}.rs`; the protocol core is **1509 L** after mesh v0B
@@ -185,7 +186,7 @@ Performance trade across the 3 mesh variants (Linux WSL, K=10 medians):
 | Capability | Evidence | Status |
 |---|---|---|
 | **494 unit tests pass in parallel** (444 + 11 v0B + 2 strict + 9 lease + 28 revocation/actuation) | `cargo test --workspace --release` | ✅ |
-| **129 Kani proof harnesses** (53 in mesh, 3 lease, 3 revocation, 3 actuation) | `cargo kani --lib` (WSL) — full CBMC pass NOT re-run 2026-06-02 (slow under WSL); 4/4 sampled passed; the 16 harnesses added 2026-10-06 (v0B, lease, revocation, actuation) verified 16/16 individually (`evidence/kani/2026-10-06/`) | ⚠️ count verified, full 129-harness pass not reproduced locally (CI job) |
+| **129 Kani proof harnesses: 123 verified on CI** (53 in mesh, 3 lease, 3 revocation, 3 actuation) | First complete run 2026-10-06 (GitHub Actions, PR #1, head `113c16b`), sharded by `oasis-rt/kani_shards.sh` (every harness in exactly one shard, checked in CI). All authority harnesses (v0B, lease, revocation, actuation, hal, R14) pass. That run found what had never been run before: 2 **harness bugs** (counterexamples in `proof_ad_reset_count_predictable` and `proof_af_combined_pattern_no_dashboard_alert`, both fixed, both arithmetic-only) and 1 harness rewritten (`proof_spinal_assign_dims_stay_in_zone`, OOM). ⚠️ **6 NOT verified** (timeout or OOM even alone with 60 min): `proof_ae_snapshot_internal_consistency`, `proof_ae_capacity_consumed_monotonic`, `proof_ag_reset_count_extrapolation`, `proof_ah_arithmetic_tolerance_symmetric` (mesh, arithmetic-only), `proof_m4_fitness_monotone_in_goal` (f64, EXPERIMENTAL M4), `proof_topic_hash_deterministic_1byte` (SHA-256, OOM). ⚠️ Many of the 53 "mesh" harnesses (the `proof_a*` series) check integer arithmetic about Bloom/dashboard metrics and do **not** call the router; the router-level ones are `proof_mesh_*` and `proof_v0b_*` | ⚠️ 123/129 |
 | MAVLink v2 CRC + signing + replay | 29 in-suite tests + 300 real PX4 frames | ✅ |
 | Ed25519 federation + signing | `ed25519_signing_roundtrip` + tamper rejection | ✅ |
 | **Ed25519 per-node mesh signing (v0A)** | 10 tests inc. `v10_spoofed_origin_fp_rejected` | ✅ |
@@ -325,7 +326,7 @@ payload size via function-call dispatch; rclcpp's cost is executor
 ## Mental loop (specialist discipline)
 
 1. **Is it proven?** — ruthless test or it doesn't exist
-2. **Does it break?** — 455 Rust tests + 120 Kani proof harnesses must pass before and after
+2. **Does it break?** — 495 `oasis-rt` tests + the 123 CI-verified Kani harnesses must pass before and after
 3. **Is it bounded?** — fear ≤ 5×, entropy [0,1], latency < 1 ms, lux < 100 000
 4. **Is it honest?** — every mechanism explicitly PROVEN vs EXPERIMENTAL
 5. **Is it banded?** — **no single-shot bench number in the repo**. K=10 median ± half-spread or equivalent (Spore loss bench uses N=200 internal trials). Single-number claims are suspect.
