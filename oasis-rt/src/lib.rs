@@ -37,7 +37,9 @@ pub mod reflex;
 pub mod spinal;
 // spore: transport-layer (UdpSocket, fs, thread). Host-only.
 pub mod actions;
+pub mod actuation;
 pub mod mesh;
+pub mod mesh_revocation;
 pub mod nav;
 pub mod parameters;
 pub mod services;
