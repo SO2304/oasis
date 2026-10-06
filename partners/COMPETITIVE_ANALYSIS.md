@@ -1,5 +1,11 @@
 # OASIS face aux concurrents, axe par axe (2026-10-06)
 
+> **Maturité d'abord.** Reticulum ≈ TRL 7, microReticulum ≈ TRL 6-7, OASIS **TRL 4**
+> (modèle de sécurité prouvé en labo sur silicium, sans radio ni terrain). Les tableaux
+> ci-dessous comparent des **propriétés de conception**, pas des produits au même stade.
+> Le positionnement qui en découle (autorité de commande des flottes fermées, en
+> complément d'un transport mature) est dans `partners/POSITIONING.md`.
+
 Méthode : les affirmations sur OASIS viennent du code (`oasis-rt/src/mesh.rs` sur
 `main`) et des logs silicium. Les affirmations sur les concurrents viennent de leur
 code ou de leur documentation, sources en bas. « À vérifier » signifie que je n'ai

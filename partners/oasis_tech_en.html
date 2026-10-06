@@ -83,171 +83,136 @@ footer { font-size: 0.8rem; color: var(--muted); border-top: 1px solid var(--lin
 <div class="wrap">
 
   <header>
-    <h1>OASIS: a signed multi-hop mesh kernel for low-cost sensor nodes</h1>
-    <p class="sub">Rust, <code>no_std</code>. Per-node Ed25519 origin signatures, replay protection and revocation for multi-hop mesh networks, running on a Cortex-M0+ (RP2040) with 119 KB of flash. Validated on silicon. Not yet audited, not certified, not power-optimised.</p>
+    <h1>OASIS: command authority for autonomous machine fleets</h1>
+    <p class="sub">No machine moves on a forged, modified, stale, revoked or unsafe order, even when a node of the fleet has been captured. Rust <code>no_std</code>, runs on a $1 Cortex-M0+. Proven in the lab on real silicon (TRL 4); looking for field pilots to take it to TRL 5–6.</p>
     <div class="meta">
-      <span><b>pre-1.0</b> · single maintainer</span>
+      <span><b>TRL 4</b> · pre-1.0 · single maintainer</span>
       <span>last silicon run <b>2026-10-06</b></span>
-      <span><b>3 × RP2040</b> · 9/9 suite runs green</span>
-      <span>host: <b>444</b> unit tests · <b>113</b> Kani harnesses</span>
+      <span><b>3 × RP2040</b> · wired link</span>
+      <span><b>534</b> tests · <b>16/16</b> new Kani harnesses verified</span>
     </div>
   </header>
 
   <section aria-labelledby="s1">
-    <h2 id="s1"><span>§1</span>Problem</h2>
-    <p>Most low-cost sensor meshes authenticate traffic with a key shared by every node. Capturing one node gives an attacker that key, and with it the ability to impersonate any other node, inject commands in their name and replay old traffic. Cheap nodes deployed in the field are exactly the ones that get lost, stolen or opened.</p>
-    <p>OASIS gives each node its own signing identity. A captured node can sign only as itself, can be revoked, and cannot replay other nodes' messages.</p>
+    <h2 id="s1"><span>§1</span>Five guarantees</h2>
+    <div class="box">
+      <table class="wide">
+        <thead><tr><th>Guarantee</th><th>Mechanism</th><th>Shown on silicon</th></tr></thead>
+        <tbody>
+          <tr><th>Authority</th><td>Per-node Ed25519 identity; each actuator has its own list of command authorities</td><td>Order from a registered but non-authorised node: <code>NotAuthorized</code>, pin stays low</td></tr>
+          <tr><th>Integrity at every relay</th><td>Origin, payload digest, counter and network id signed (v0B); strict mode refuses older formats</td><td>0 of 150 single-bit flips accepted, 150/150 traced; relay-swapped payload dropped; downgrade to v0A refused</td></tr>
+          <tr><th>Freshness</th><td>Signed counter with a 128-bit window persisted in flash; sender counter lease; orders expire 10 s after issue, bound to the actuator's boot id</td><td>Byte-exact replay refused after a relay power-cut; rebooted sender accepted again; order from a previous boot refused</td></tr>
+          <tr><th>Fleet-wide revocation</th><td>Operator-signed list (single key or k-of-n), monotonic epoch, persisted before it is applied, enforced by every relay</td><td>Revoked origin dropped at the first hop, also after a power-cut; replay of an older list refused</td></tr>
+          <tr><th>Safe to act</th><td>R14 sensor-uncertainty gate, physical limits, non-finite values refused</td><td>Lost sensor: <code>R14Unsafe</code>; 1000 N on a 50 N limit and NaN: <code>OutOfLimits</code>; pin stays low</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note">An order is executed only if all seven checks pass: verified envelope, authorised origin, not revoked, not expired, R14 favourable, within limits, not already executed. The decision is a pure function with three Kani proofs: it acts only if every condition holds, never acts when R14 is unfavourable, and is total and deterministic.</p>
   </section>
 
   <section aria-labelledby="s2">
-    <h2 id="s2"><span>§2</span>Threat model</h2>
-    <div class="box">
-      <table class="wide">
-        <thead><tr><th>Threat</th><th>Mechanism</th><th>Status</th></tr></thead>
-        <tbody>
-          <tr><th>External forgery of mesh traffic</th><td>Keyed MAC on the mesh header (v9)</td><td><span class="tag proven">ON SILICON</span></td></tr>
-          <tr><th>Insider impersonation (captured node signs as another)</th><td>Per-node Ed25519 origin signature, verified at every hop (v0A)</td><td><span class="tag proven">ON SILICON</span></td></tr>
-          <tr><th>Replay of captured traffic</th><td>Message-id dedup at mesh layer · monotonic counter with 128-bit sliding window at transport layer (host tests)</td><td><span class="tag proven">ON SILICON</span> <small>mesh dedup</small></td></tr>
-          <tr><th>Flooding / routing loops</th><td>TTL, hop count, dedup cache (Bloom auto-reset: host tests)</td><td><span class="tag proven">ON SILICON</span></td></tr>
-          <tr><th>Payload tampering by a relay</th><td>Payload digest inside the per-node signature, checked at every hop (v0B)</td><td><span class="tag proven">ON SILICON</span></td></tr>
-          <tr><th>Eavesdropping</th><td>ChaCha20-Poly1305 AEAD with X25519 / Noise-KK key agreement</td><td><span class="tag proven">ON SILICON</span> <small>primitives</small></td></tr>
-          <tr><th>Compromised node stays in the network</th><td>Operator-signed revocation envelopes</td><td><span class="tag sim">HOST TESTS</span></td></tr>
-          <tr><th>Replay after a relay reboot</th><td>Signed counter, per-origin window persisted in flash (v0B)</td><td><span class="tag proven">ON SILICON</span></td></tr>
-          <tr><th>Sender reboot (counter restarts)</th><td>Sender-side counter lease</td><td><span class="tag todo">NOT IMPLEMENTED</span></td></tr>
-          <tr><th>Key extraction from a captured node</th><td>None on RP2040 (no secure boot, no flash encryption). Planned: RP2350 OTP + signed boot, or a secure element</td><td><span class="tag todo">OPEN</span></td></tr>
-          <tr><th>Side channels, fault injection</th><td>Not evaluated</td><td><span class="tag todo">OPEN</span></td></tr>
-          <tr><th>Post-quantum adversary</th><td>Not addressed</td><td><span class="tag todo">OPEN</span></td></tr>
-        </tbody>
-      </table>
-    </div>
+    <h2 id="s2"><span>§2</span>Problem</h2>
+    <p>Fleets of drones, field robots and remote actuators are run by an operator, but their nodes sit in the open and get lost, stolen or opened. Most low-cost meshes trust a key shared by every node, so one captured node can speak for all of them. Open meshes such as Reticulum are built for anonymity and let relays forward data without checking it. Neither design answers the operator's question: <em>can this order move this machine?</em></p>
   </section>
 
   <section aria-labelledby="s3">
-    <h2 id="s3"><span>§3</span>Architecture</h2>
-    <div class="layers">
-      <div class="layer"><b>Application</b><p>Sensor payloads, commands, or MAVLink v2 traffic (CRC, signing, replay checks) when bridged to a PX4 autopilot.</p></div>
-      <div class="layer"><b>Safety gate (R14)</b><p>Entropy-based gate: no actuation while sensor-derived uncertainty is above a threshold. Sensor loss raises entropy and freezes actuation.</p></div>
-      <div class="layer"><b>Transport security</b><p>AEAD envelopes, ephemeral and static Diffie-Hellman for forward secrecy and sender authentication, replay window, signed revocation. Standard primitives only, no custom cryptography.</p></div>
-      <div class="layer"><b>Mesh</b><p>Multi-hop flooding with TTL and dedup. Three header modes: unsigned (trusted bus), keyed MAC (external attacker), per-node signature (insider). The mesh header is authenticated; payload integrity is the transport layer's job.</p></div>
-      <div class="layer"><b>Link</b><p>Transport trait. Wired UART validated on silicon. LoRa SX1262 driver written and tested against a mock; not yet on radio hardware. Airtime calculator and EU868 duty-cycle throttle implemented.</p></div>
-    </div>
-  </section>
-
-  <section aria-labelledby="s4">
-    <h2 id="s4"><span>§4</span>Silicon validation (RP2040, Cortex-M0+ @ 125 MHz)</h2>
-    <p>Three boards, the full on-chip suite run three times on each. Every value below comes from raw logs captured on the chip and archived with SHA-256 hashes, together with the firmware images.</p>
+    <h2 id="s3"><span>§3</span>Two ways to deploy</h2>
     <div class="box">
       <table class="wide">
-        <thead><tr><th>Test</th><th>Pass criterion</th><th class="n">Result</th></tr></thead>
+        <thead><tr><th>Mode</th><th>When</th><th>Status</th></tr></thead>
         <tbody>
-          <tr><th>T0 clock</th><td>Core clock measured against the hardware timer, within ±1 % of configuration</td><td class="n">124.999 MHz · 9/9</td></tr>
-          <tr><th>T1 AEAD</th><td>ChaCha20-Poly1305, RFC 8439 §2.8.2 vector, byte-exact, plus decrypt round-trip</td><td class="n">9/9</td></tr>
-          <tr><th>T2 X25519</th><td>RFC 7748 §6.1 public keys, byte-exact</td><td class="n">9/9</td></tr>
-          <tr><th>T3 Ed25519</th><td>Known-answer key and signature (cross-checked with an independent library), verify, tamper rejected</td><td class="n">9/9</td></tr>
-          <tr><th>T4 safety gate</th><td>50/50 injected faults blocked and 0/50 nominal cases blocked</td><td class="n">9/9</td></tr>
-          <tr><th>T5 mesh</th><td>Delivery and dedup (unsigned); MAC-covered tamper rejected for the MAC reason; forged origin rejected for the signature reason</td><td class="n">9/9</td></tr>
-          <tr><th>T6 timing</th><td>Hardware-timer medians, see §5</td><td class="n">9/9</td></tr>
+          <tr><th>Closed OASIS mesh</th><td>Relays are not trusted: every hop must filter forged, modified, replayed, revoked or foreign traffic</td><td><span class="tag proven">TRL 4</span> 3 boards, wired link</td></tr>
+          <tr><th>Authority layer over an existing transport</th><td>MAVLink, serial, Reticulum or microReticulum already carry the traffic; OASIS adds authority, freshness, revocation and the safety gate at the machine</td><td><span class="tag todo">DESIGNED</span> the signed envelope is transport-independent bytes; not yet tested over MAVLink or Reticulum</td></tr>
         </tbody>
       </table>
     </div>
-    <div class="two">
-      <div>
-        <h3>Three-node relay over a physical link</h3>
-        <ul>
-          <li>A → B → C over wired UART, per-node signatures verified at B and at C, same message id end-to-end</li>
-          <li>Replay: second copy dropped at the first hop, never relayed</li>
-          <li>Forged origin injected mid-path: dropped by the next node</li>
-          <li>TTL exhaustion: delivered, not forwarded</li>
-          <li>600-packet burst: no crash on any node</li>
-        </ul>
-      </div>
-      <div>
-        <h3>Fault injection, 200 packets</h3>
-        <ul>
-          <li>Wire noise up to 20 % bit-flip and 15 % drop: all corruption caught by the frame CRC, before the verifier</li>
-          <li>Single-bit flips injected before the CRC: every flip in a signed field was rejected (34 by crypto, 4 by the parser)</li>
-          <li>No crash, no reset on any board</li>
-        </ul>
-      </div>
-    </div>
-    <p class="finding">Finding from that test: 12/50 flips landed in payload or hop fields and were accepted, because the v0A signature covered the header only. Fixed in v0B (below).</p>
-    <div class="two">
-      <div>
-        <h3>v0B: content, freshness and network bound into the signature</h3>
-        <ul>
-          <li>Signed: origin, counter, network id, payload length and SHA-256 of the payload</li>
-          <li>Relay state changes only after full verification</li>
-          <li>Per-origin counter window persisted in flash</li>
-          <li>Strict: legacy envelopes refused (no downgrade)</li>
-          <li>Cost over v0A: +1 % sign, +0.7 % verify on the chip</li>
-        </ul>
-      </div>
-      <div>
-        <h3>v0B on silicon (2026-10-06)</h3>
-        <ul>
-          <li>Pre-CRC single-bit flips: 0 accepted of 147 logged (v0A: 12/50)</li>
-          <li>Payload swapped by a relay, signature kept: dropped, genuine message still delivered</li>
-          <li>Relay power-cut: counter window restored from flash, old counter refused</li>
-          <li>Pending: re-run in strict mode, byte-exact replay, sender counter lease</li>
-        </ul>
-      </div>
+    <p>OASIS does not replace a mature transport. Reticulum moves the bytes; OASIS decides whether the machine may act on them.</p>
+  </section>
+
+  <section aria-labelledby="s4">
+    <h2 id="s4"><span>§4</span>Architecture</h2>
+    <div class="layers">
+      <div class="layer"><b>Actuation gate</b><p>Seven-condition decision before any actuator moves. Bound to the actuator's own clock and boot id, so no shared clock is needed.</p></div>
+      <div class="layer"><b>Authority</b><p>Operator key (single or k-of-n) signs revocation lists; per-actuator command authorities. Revocation is carried by the mesh as a signed content type.</p></div>
+      <div class="layer"><b>Signed envelope (v0B)</b><p>Ed25519 over a domain tag, network id, origin, counter, payload length and SHA-256 of the payload. Relay state changes only after full verification.</p></div>
+      <div class="layer"><b>Transport security</b><p>ChaCha20-Poly1305, X25519 and Noise-KK for confidentiality between peers. Standard primitives only.</p></div>
+      <div class="layer"><b>Link</b><p>Wired UART on silicon. LoRa SX1262 driver tested against a mock only. Flooding with TTL; no routing yet.</p></div>
     </div>
   </section>
 
   <section aria-labelledby="s5">
-    <h2 id="s5"><span>§5</span>Cost of security on a $1 MCU</h2>
+    <h2 id="s5"><span>§5</span>Evidence</h2>
     <div class="box">
       <table class="wide">
-        <thead><tr><th>Operation</th><th class="n">RP2040 (measured)</th><th class="n">x86 host</th><th>Implication</th></tr></thead>
+        <thead><tr><th>Test (3 × RP2040)</th><th>Result</th></tr></thead>
         <tbody>
-          <tr><th>Mesh wrap, keyed MAC</th><td class="n">0.73 ms</td><td class="n">431 ns</td><td>Routine traffic</td></tr>
-          <tr><th>Per-node signature (sign)</th><td class="n">174 ms</td><td class="n">251 µs</td><td>Cached keypair. Low-rate authority messages only</td></tr>
-          <tr><th>Per-node signature (verify)</th><td class="n">176 ms</td><td class="n">135 µs</td><td>Per hop, per signed message</td></tr>
-          <tr><th>Safety-gate evaluation</th><td class="n">3.2 ms</td><td class="n">331 ns</td><td>Soft-float on M0+ (no FPU)</td></tr>
+          <tr><th>Crypto known answers on chip</th><td>ChaCha20-Poly1305 (RFC 8439) and X25519 (RFC 7748) byte-exact; Ed25519 cross-checked with an independent library; 9/9 runs</td></tr>
+          <tr><th>Bit-flip sweep, strict v0B</th><td>150 sent, 150 traced at the relay, 0 accepted; every flipped field rejected for its expected reason</td></tr>
+          <tr><th>Downgrade</th><td>v0A refused in strict mode, accepted only after an explicit legacy switch (negative control)</td></tr>
+          <tr><th>Replay across a power-cut</th><td>The same 111 bytes, re-sent after the relay was unplugged: <code>stale counter</code></td></tr>
+          <tr><th>Sender power-cut</th><td>Sender resumed at counter 1280 from its flash ceiling; relay accepted it</td></tr>
+          <tr><th>Revocation</th><td>Applied on B and C, revoked origin dropped at the first hop, held across C's power-cut, old list refused</td></tr>
+          <tr><th>Actuation gate (GPIO read back)</th><td>4 legitimate orders executed; non-authorised, expired, replayed, lost-sensor, over-limit and NaN orders all refused</td></tr>
         </tbody>
       </table>
     </div>
-    <p class="note">Medians, hardware timer, consistent across the three boards. Host figures: K=10 medians, Linux. The M0+ has no FPU and no 64-bit multiplier; a Cortex-M33 (RP2350) or M4 target is expected to be several times faster, not yet measured.</p>
+    <p class="note">Raw logs, firmware images and SHA-256 manifests are archived for every row and verify in a fresh clone. Firmware was built from committed trees whose hash is stamped on every log line. The LED itself was not visually confirmed; the pin level was read back.</p>
   </section>
 
   <section aria-labelledby="s6">
-    <h2 id="s6"><span>§6</span>Footprint and energy</h2>
+    <h2 id="s6"><span>§6</span>Cost and footprint on a $1 MCU</h2>
     <div class="box">
-      <table>
+      <table class="wide">
+        <thead><tr><th>Item</th><th class="n">RP2040 (measured)</th><th>Implication</th></tr></thead>
         <tbody>
-          <tr><th>Flash</th><td class="n">119 KB</td><td>Full test firmware, linked ELF</td></tr>
-          <tr><th>RAM</th><td class="n">~34 KB / router</td><td>Heap-backed; requires an allocator. 160 KB heap reserved in the test firmware. Not suitable for 32–64 KB RAM parts without a reduced dedup window.</td></tr>
-          <tr><th>Sleep current</th><td class="n">not measured</td><td>No low-power mode implemented yet</td></tr>
-          <tr><th>Energy per signed message</th><td class="n">≈ 14 mJ (est.)</td><td>Estimate from datasheet active current × measured sign time (174 ms). Same order as one LoRa SF7 transmission (≈ 16 mJ, est.): on this MCU, signing costs about as much energy as sending.</td></tr>
+          <tr><th>Sign (cached keypair)</th><td class="n">≈ 175 ms</td><td>Orders and authority messages, not telemetry</td></tr>
+          <tr><th>Verify, per hop</th><td class="n">≈ 179 ms</td><td>Each relay pays it once per signed message</td></tr>
+          <tr><th>v0B over v0A</th><td class="n">+1 %</td><td>Binding payload, counter and network costs one SHA-256</td></tr>
+          <tr><th>Firmware flash</th><td class="n">≈ 136–158 KB</td><td>Mesh node with v0B and revocation; actuator node with the gate</td></tr>
+          <tr><th>RAM</th><td class="n">not measured</td><td>160 KB heap reserved; about 34 KB per router</td></tr>
+          <tr><th>Energy</th><td class="n">not measured</td><td>Estimate: one signature ≈ one LoRa SF7 transmission</td></tr>
         </tbody>
       </table>
     </div>
   </section>
 
   <section aria-labelledby="s7">
-    <h2 id="s7"><span>§7</span>Not done yet</h2>
+    <h2 id="s7"><span>§7</span>Maturity, stated plainly</h2>
     <div class="box">
       <table class="wide">
-        <thead><tr><th>Item</th><th>Plan</th></tr></thead>
+        <thead><tr><th></th><th>TRL</th><th>What it has that OASIS does not</th><th>What OASIS adds</th></tr></thead>
         <tbody>
-          <tr><th>LoRa on hardware</th><td>SX1262 on 3 nodes, range and packet-error curves</td></tr>
-          <tr><th>Power</th><td>Sleep between ticks, interrupt-driven RX, current measured with a power profiler</td></tr>
-          <tr><th>Key protection</th><td>RP2350 signed boot and OTP key storage; secure-element option</td></tr>
-          <tr><th>Low-power target</th><td>STM32WL (MCU and LoRa radio in one chip)</td></tr>
-          <tr><th>Counter persistence</th><td>Transmit counter survives power loss, validated on silicon</td></tr>
-          <tr><th>Flight</th><td>Pixhawk quadcopter; so far PX4 SITL only (arm, takeoff, 4-waypoint mission)</td></tr>
-          <tr><th>External review</th><td>Independent cryptographic audit</td></tr>
+          <tr><th>Reticulum (Python)</th><td class="n">≈ 7</td><td>Field use, routing, applications, anonymity</td><td>Relay-verified authority and an actuation gate</td></tr>
+          <tr><th>microReticulum (C++)</th><td class="n">≈ 6–7</td><td>Real LoRa hardware, routing, Reticulum interoperability</td><td>Its relays forward data unchecked; OASIS relays verify origin, content, freshness and network</td></tr>
+          <tr><th>OASIS</th><td class="n">4</td><td colspan="2">Security model proven in the lab on silicon. No radio, no routing, no field deployment, no external audit.</td></tr>
         </tbody>
       </table>
     </div>
+    <p class="note">TRL estimates use the EU Horizon 2020 scale. Competitor behaviour was read in their source code (Reticulum <code>e40191b</code>, microReticulum <code>40fa628</code>); no attack has yet been executed against them.</p>
   </section>
 
-  <section class="ask" aria-labelledby="s8">
-    <h2 id="s8"><span>§8</span>Pilot partners</h2>
-    <p>Looking for 2–3 teams deploying sensor nodes or drone fleets in the field, for a 6-week pilot on their hardware. You bring the platform and the use case; I bring the integration, raw logs and pass/fail criteria agreed before the test.</p>
-    <p>The evidence pack (raw logs, hashes, firmware images, full test report) is shared with pilot partners.</p>
+  <section aria-labelledby="s8">
+    <h2 id="s8"><span>§8</span>Known limits</h2>
+    <ul>
+      <li>No key protection on RP2040: a captured node gives up its key over SWD. It can sign only as itself and can be revoked. Planned: RP2350 OTP and secure boot.</li>
+      <li>A revoked node can still relay, delay or drop other nodes' traffic; it cannot modify it.</li>
+      <li>k-of-n operator quorum and relay catch-up after a missed revocation are tested on PC only.</li>
+      <li>Flooding, not routing: every signed message costs one verification per relay.</li>
+      <li>No radio on hardware, no power measurement, no certification, no external audit.</li>
+    </ul>
+  </section>
+
+  <section class="ask" aria-labelledby="s9">
+    <h2 id="s9"><span>§9</span>Six-week field pilot</h2>
+    <p>For teams running drones, field robots or remote actuators under one operator. Together we take OASIS from TRL 4 to TRL 5–6 on your hardware:</p>
+    <ul>
+      <li>the authority gate on one real actuator class (motor, valve, PX4 command);</li>
+      <li>a revocation drill: a node is "captured", revoked, and the time to exclude it fleet-wide is measured;</li>
+      <li>attacks on your bench: forged, replayed, expired and revoked orders, none of which may move the machine;</li>
+      <li>pass/fail criteria agreed before the test, raw logs handed over.</li>
+    </ul>
     <p class="contact">Contact: direct message on LinkedIn.</p>
   </section>
 
-  <footer>OASIS · Rust · pre-1.0 · not certified · no external audit · figures dated 2026-10-06</footer>
+  <footer>OASIS · Rust · pre-1.0 · TRL 4 · not certified · no external audit · figures dated 2026-10-06</footer>
 </div>
