@@ -5,12 +5,13 @@
 use alloc::vec::Vec;
 use oasis_operator_key::OperatorAuthority;
 use oasis_rt::actuation::{command_within_limits, ActCommand, Actuator, Decision, GateInput};
+use oasis_rt::authority::{kind, verify_authority, AuthPolicy};
 use oasis_rt::hal::PhysicalConstraints;
 use oasis_rt::hyper_state::{agent_new, inject_sensory, is_action_safe, Agent};
 use oasis_rt::mesh::MeshRouter;
 use oasis_rt::mesh_revocation::{
-    load_latest_blob, parse_orv1, revocation_transition, signed_message, store_blob, BlobSlots, Fp, RevDecision,
-    RevReject, RevState,
+    load_latest_blob, parse_orv1, parse_revocation_body, revocation_transition, signed_message, store_blob, BlobSlots,
+    Fp, RevDecision, RevReject, RevState,
 };
 use rp2040_hal::pac;
 
@@ -26,9 +27,11 @@ pub const ACTUATOR_AUTHORITY: Fp = [0xAA; 8];
 pub const R14_THRESHOLD: f64 = 0.6;
 pub const LED_PIN: u32 = 25;
 
-/// Revocation blob: two alternating 4 KiB sectors below the lease sectors.
+/// Revocation blob: two alternating 4 KiB sectors below the lease sectors. The slot
+/// is the whole sector since Phase 1.1: a hybrid OAU1 revocation is ~2.5 KB (an
+/// ORV1 record keeps the same layout; only the read length grew from 512 B).
 const REV_SECTORS: [u32; 2] = [0x1F_B000, 0x1F_C000];
-const REV_SLOT_CAP: usize = 512;
+const REV_SLOT_CAP: usize = 4096;
 pub struct RevFlash;
 impl BlobSlots for RevFlash {
     fn cap(&self) -> usize {
@@ -107,6 +110,8 @@ pub fn content_kind(payload: &[u8]) -> &'static str {
         Some(b"ORV1") => "ORV1",
         Some(b"OAC1") => "OAC1",
         Some(b"OEP1") => "OEP1",
+        Some(b"OFR1") => "OFR1",
+        Some(b"OAU1") => "OAU1",
         _ => "other",
     }
 }
@@ -135,6 +140,18 @@ impl Ef {
     }
 
     fn verified(&self, blob: &[u8]) -> Result<(RevDecision, Option<RevState>), RevReject> {
+        if blob.get(0..4) == Some(&b"OAU1"[..]) {
+            // Boot restore of a persisted OAU1 revocation: signatures re-verified under
+            // the DEFAULT policy. It was accepted under the policy in force at the time;
+            // re-applying a policy raised since would drop a valid list at every boot.
+            let a = verify_authority(&AuthPolicy::default(), &crate::NETWORK_ID, &crate::pq::keys(), blob)
+                .map_err(|_| RevReject::BadOperatorSig)?;
+            if a.kind != kind::REVOCATION {
+                return Err(RevReject::Malformed);
+            }
+            let p = parse_revocation_body(a.network_id, a.content)?;
+            return Ok(revocation_transition(&self.rev, &crate::NETWORK_ID, &p, true));
+        }
         let p = parse_orv1(blob)?;
         let sig_ok = self.auth.verify_authorization(&signed_message(&p), &p.sigs).is_ok();
         Ok(revocation_transition(&self.rev, &crate::NETWORK_ID, &p, sig_ok))
@@ -178,6 +195,26 @@ impl Ef {
                 RevDecision::Applied
             }
             Ok((d, _)) => d,
+        }
+    }
+
+    /// OAU1 revocation whose signatures `verify_authority` already accepted under the
+    /// live policy: same rule as ORV1 (persist BEFORE applying; only `Applied` is
+    /// forwarded, by re-origination).
+    pub fn ingest_oau1_revocation(&mut self, router: &mut MeshRouter, blob: &[u8], content: &[u8]) -> RevDecision {
+        let p = match parse_revocation_body(crate::NETWORK_ID, content) {
+            Ok(p) => p,
+            Err(r) => return RevDecision::Reject(r),
+        };
+        match revocation_transition(&self.rev, &crate::NETWORK_ID, &p, true) {
+            (RevDecision::Applied, Some(new)) => {
+                if !store_blob(&mut RevFlash, blob) {
+                    return RevDecision::Reject(RevReject::PersistFailed);
+                }
+                self.apply(router, new);
+                RevDecision::Applied
+            }
+            (d, _) => d,
         }
     }
 

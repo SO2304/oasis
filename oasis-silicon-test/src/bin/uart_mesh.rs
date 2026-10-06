@@ -11,6 +11,10 @@
 //! Wiring chain: A.GP0→B.GP1, B.GP0→C.GP1, common GND.
 //! USB-CDC control: `o`=originate, `s`=RX status, `l`=UART0 internal self-test,
 //! `b`=reboot to BOOTSEL. `K`=strict v0B (refuse v8/v9/v0A), `k`=legacy allowed.
+//! Phase 1.1 (hybrid authority, `pq.rs`), line commands: `@Q<hex>` append to the
+//! staged `OAU1` message, `@C` clear it, `@F` fragment it (`OFR1`) and originate
+//! each fragment in its own v0B envelope, `@T<idx>` same with fragment `idx`
+//! altered after fragmentation, `@I` policy/reassembly status.
 
 #![no_std]
 #![no_main]
@@ -41,10 +45,14 @@ use oasis_rt::mesh::inner_slice;
 
 #[path = "../ef.rs"]
 mod ef;
+#[path = "../pq.rs"]
+mod pq;
+use oasis_rt::fragment::{fragment, FragOutcome};
 use oasis_rt::tx_lease::{DualSlotStore, SlotIo, TxLease, TX_LEASE_BLOCK, TX_LEASE_RECORD_LEN};
 
 /// Upper bound on counters a single USB command buffer can consume (the
-/// commands sum to <= 868: X=600, N=200, G=50, Y=12, others 1 each). One
+/// commands sum to <= 900: X=600, N=200, G=50, Y=12, `@F`/`@T` <= 32 fragments,
+/// others 1 each). One
 /// durable reservation covering this is made BEFORE any command in the buffer
 /// originates, so no counter is ever used above the persisted ceiling.
 const CMD_MAX_ORIGINATIONS: u64 = 1024;
@@ -312,6 +320,17 @@ fn main() -> ! {
         Ok(None) => io.log("REV_BOOT", format_args!("no_saved_list")),
         Err(r) => io.log("REV_BOOT", format_args!("persisted_list_rejected={:?}", r)),
     }
+    // Phase 1.1: authority policy from its two flash slots (never below the default).
+    let mut pqs = pq::Pq::boot();
+    io.log(
+        "POLICY_BOOT",
+        format_args!(
+            "min_suite_revocation={},min_suite_policy={},legacy_orv1_allowed={}",
+            pqs.policy.min_suite(oasis_rt::authority::kind::REVOCATION),
+            pqs.policy.min_suite(oasis_rt::authority::kind::POLICY),
+            pqs.policy.legacy_orv1_allowed()
+        ),
+    );
     // `@P<hex>` + newline from the PC: originate a v0B envelope with that payload.
     // Line bytes are diverted so hex digits never trigger single-byte commands.
     let mut line = [0u8; 600];
@@ -386,6 +405,46 @@ fn main() -> ! {
                     None => io.log("PAYLOAD_BAD_HEX", format_args!("chars={}", line_len - 1)),
                 }
             }
+            // Phase 1.1: staged authority message from the PC, fragmented on demand.
+            if line_done && line_len >= 1 && line[0] == b'Q' {
+                let mut chunk = [0u8; 300];
+                match ef::hex_decode(&line[1..line_len], &mut chunk) {
+                    Some(n) if pqs.stage.len() + n <= oasis_rt::fragment::MAX_ASSEMBLED => {
+                        pqs.stage.extend_from_slice(&chunk[..n]);
+                        io.log("STAGE", format_args!("len={}", pqs.stage.len()));
+                    }
+                    Some(_) => io.log("STAGE_FULL", format_args!("len={}", pqs.stage.len())),
+                    None => io.log("STAGE_BAD_HEX", format_args!("chars={}", line_len - 1)),
+                }
+            }
+            if line_done && line_len >= 1 && line[0] == b'C' {
+                pqs.stage.clear();
+                io.log("STAGE", format_args!("len=0"));
+            }
+            if line_done && line_len >= 1 && (line[0] == b'F' || line[0] == b'T') {
+                let tamper = if line[0] == b'T' {
+                    core::str::from_utf8(&line[1..line_len]).ok().and_then(|t| t.parse::<usize>().ok())
+                } else {
+                    None
+                };
+                let stage = core::mem::take(&mut pqs.stage);
+                send_fragments(&mut io, &mut router, &mut uart0, &stage, tamper);
+                pqs.stage = stage; // kept, so the same message can be resent
+            }
+            if line_done && line_len >= 1 && line[0] == b'I' {
+                io.log(
+                    "PQ_STATUS",
+                    format_args!(
+                        "min_suite_revocation={},legacy_orv1_allowed={},epoch={},revoked={},reasm_in_use={},stage_len={}",
+                        pqs.policy.min_suite(oasis_rt::authority::kind::REVOCATION),
+                        pqs.policy.legacy_orv1_allowed(),
+                        efs.rev.epoch,
+                        efs.rev.revoked.len(),
+                        pqs.reasm.in_use(),
+                        pqs.stage.len()
+                    ),
+                );
+            }
             // Test-harness factory reset of ALL persistence areas (receiver window,
             // sender lease, revocation list), then a full system reset so the RAM
             // state (incl. the router's revoked set) starts clean too.
@@ -393,6 +452,7 @@ fn main() -> ! {
                 persist::wipe();
                 wipe_lease_sectors();
                 ef::wipe_rev_sectors();
+                pq::wipe_policy_sectors();
                 io.log("PERSIST_WIPED", format_args!("all persistence erased; resetting"));
                 for _ in 0..200_000 {
                     io.poll();
@@ -813,6 +873,81 @@ fn main() -> ! {
                         match ef::content_kind(inner) {
                             // Signed revocation (spec E.3): verify, persist, apply; forward
                             // only a fresh epoch, exactly once. Rejects/duplicates stop here.
+                            // Phase 1.1: once revocations require the hybrid suite, a legacy
+                            // Ed25519-only ORV1 list is refused before any verification.
+                            "ORV1" if !pqs.policy.legacy_orv1_allowed() => {
+                                io.log(
+                                    "REV",
+                                    format_args!(
+                                        "decision=LegacyRefused,min_suite_revocation={},epoch={},revoked={}",
+                                        pqs.policy.min_suite(oasis_rt::authority::kind::REVOCATION),
+                                        efs.rev.epoch,
+                                        efs.rev.revoked.len()
+                                    ),
+                                );
+                                relay = false;
+                            }
+                            // Phase 1.1: authority fragment. Never relayed as-is: the whole
+                            // message is reassembled and verified first, then re-originated
+                            // under this node's own counters (store-and-forward, spec §3).
+                            "OFR1" => {
+                                relay = false;
+                                let hdr = oasis_rt::fragment::parse_ofr1(inner).map(|(h, _)| (h.idx, h.count));
+                                let out = pqs.push_fragment(origin, inner);
+                                let (idx, count) = hdr.unwrap_or((0, 0));
+                                let tag = match &out {
+                                    FragOutcome::Incomplete => "incomplete",
+                                    FragOutcome::Duplicate => "duplicate",
+                                    FragOutcome::Complete(_) => "complete",
+                                    FragOutcome::Rejected(oasis_rt::fragment::FragReject::Malformed) => "rejected_malformed",
+                                    FragOutcome::Rejected(oasis_rt::fragment::FragReject::NoSlot) => "rejected_no_slot",
+                                    FragOutcome::Rejected(oasis_rt::fragment::FragReject::HashMismatch) => {
+                                        "rejected_hash_mismatch"
+                                    }
+                                };
+                                io.log(
+                                    "FRAG_RX",
+                                    format_args!("origin={:02x},idx={},count={},outcome={}", origin[0], idx, count, tag),
+                                );
+                                if let FragOutcome::Complete(msg) = out {
+                                    let (done, g) = pqs.complete(&mut efs, &mut router, &msg);
+                                    io.log(
+                                        "AUTH",
+                                        format_args!(
+                                            "kind={},suite={},len={},decision={:?},verify_us={},stack={},forward={}",
+                                            g.kind,
+                                            g.suite,
+                                            msg.len(),
+                                            done,
+                                            g.verify_us,
+                                            g.stack,
+                                            done.forward()
+                                        ),
+                                    );
+                                    if let pq::Done::Revocation(_) = done {
+                                        io.log(
+                                            "REV",
+                                            format_args!(
+                                                "source=OAU1,epoch={},revoked={}",
+                                                efs.rev.epoch,
+                                                efs.rev.revoked.len()
+                                            ),
+                                        );
+                                    }
+                                    if done.forward() {
+                                        // Re-originated fragments use this node's counters:
+                                        // make them durable first (lease), as for USB commands.
+                                        let need = router
+                                            .tx_counter()
+                                            .saturating_add(oasis_rt::fragment::MAX_FRAGMENTS as u64);
+                                        if lease.ensure(need, &mut lstore) {
+                                            send_fragments(&mut io, &mut router, &mut uart0, &msg, None);
+                                        } else {
+                                            io.log("LEASE_FAIL", format_args!("re-origination skipped"));
+                                        }
+                                    }
+                                }
+                            }
                             "ORV1" => {
                                 let d = efs.ingest_orv1(&mut router, inner);
                                 io.log(
@@ -877,6 +1012,47 @@ fn main() -> ! {
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+/// Fragment `msg` into `OFR1` fragments that fit one frame and originate each in its
+/// own v0B envelope. `tamper = Some(i)`: flip the last byte of fragment `i` AFTER
+/// fragmentation (test only), so its v0B signature is valid but the reassembled
+/// message no longer hashes to `msg_id`.
+fn send_fragments(io: &mut Io, router: &mut MeshRouter, uart: &mut Uart0, msg: &[u8], tamper: Option<usize>) {
+    let mut frags = match fragment(msg, pq::FRAG_MAX) {
+        Some(f) => f,
+        None => {
+            io.log("FRAG_TX_FAIL", format_args!("len={}", msg.len()));
+            return;
+        }
+    };
+    if let Some(f) = tamper.and_then(|t| frags.get_mut(t)) {
+        let n = f.len();
+        f[n - 1] ^= 0x01;
+    }
+    let count = frags.len();
+    for (i, f) in frags.iter().enumerate() {
+        match router.origin_wrap_v0b(f) {
+            Some(env) => {
+                send_framed(uart, &env);
+                io.log(
+                    "FRAG_TX",
+                    format_args!(
+                        "idx={},count={},counter={},len={},tampered={}",
+                        i,
+                        count,
+                        router.tx_counter(),
+                        env.len(),
+                        tamper == Some(i)
+                    ),
+                );
+            }
+            None => {
+                io.log("FRAG_TX_FAIL", format_args!("idx={}", i));
+                return;
             }
         }
     }
