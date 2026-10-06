@@ -17,13 +17,14 @@ removed content now lives in baseline commit `d8681c5`. The 4 std crates
 are a Cargo **workspace** (`resolver = "2"`); the 3 MCU crates are
 *excluded* so `mesh_bloom_mcu` feature-unification can no longer shrink
 the host Bloom (64 KiB → 2 KiB). Re-measured headline numbers (commands
-reproduce them): **523 `oasis-rt` lib tests, 562 across the workspace**
+reproduce them): **539 `oasis-rt` lib tests, 578 across the workspace**
 (`cargo test -p oasis-rt --release --lib` / `cargo test --workspace --release`,
 re-measured 2026-10-06: 495 / 534 before Phase 1.1, so the "494" this file stated
-before was one short; Phase 1.1 added 28: 16 `pq_*`, 11 `frag_*`, 1 `rev_*`),
-**136 Kani proof harnesses** (`grep -rE 'kani::proof' oasis-rt/src | wc -l`;
-113 before v0B, +7 v0B, +9 lease/revocation/actuation, +7 authority/fragment; full CBMC pass *not* re-run — slow under WSL), **35 modules**,
-**19 `[[bin]]`**, **37 `src/*.rs`** files (35 before Phase 1.1; this file said 32, stale) (largest module now `spore_crypto.rs`
+before was one short; Phase 1.1 added 28: 16 `pq_*`, 11 `frag_*`, 1 `rev_*`; Phase
+1.2 added 16: 5 `id_*`, 6 `enr_*`, 5 `own_*`),
+**143 Kani proof harnesses** (`grep -rE 'kani::proof' oasis-rt/src | wc -l`;
+113 before v0B, +7 v0B, +9 lease/revocation/actuation, +7 authority/fragment, +7 enrollment/ownership; full CBMC pass *not* re-run — slow under WSL), **38 modules**,
+**19 `[[bin]]`**, **41 `src/*.rs`** files (35 before Phase 1.1; this file said 32, stale) (largest module now `spore_crypto.rs`
 2583 L; `mesh.rs` was split 2026-06-02 — its tests + Kani proofs moved to
 `src/mesh/{tests,kani_proofs}.rs`; the protocol core is **1509 L** after mesh v0B
 was added 2026-10-06). ⚠️ The per-file line counts in the tree
@@ -170,7 +171,10 @@ Threat model: **19 of 23 threats covered in-protocol** (remaining: disk
 wipe, operator key compromise, rogue pairing, post-quantum, traffic
 analysis — post-quantum only partly closed since Phase 1.1: **authority messages**
 (revocation, policy, and later enrollment/firmware/ownership) can be hybrid
-Ed25519 + ML-DSA-44, but per-hop v0B, orders and the spore layer stay classical; v0A closed 2 from the prior "17 of 23" count — insider
+Ed25519 + ML-DSA-44, but per-hop v0B, orders and the spore layer stay classical;
+rogue pairing only partly closed since Phase 1.2: a node is accepted only with an
+owner-signed attestation after proof of possession, but the RP2040 cannot protect
+its key from physical/USB access; v0A closed 2 from the prior "17 of 23" count — insider
 forge + mesh-header spoof).
 
 Performance trade across the 3 mesh variants (Linux WSL, K=10 medians):
@@ -188,9 +192,10 @@ Performance trade across the 3 mesh variants (Linux WSL, K=10 medians):
 
 | Capability | Evidence | Status |
 |---|---|---|
-| **523 `oasis-rt` lib tests / 562 workspace tests pass in parallel** (495 / 534 before Phase 1.1, +28) | `cargo test -p oasis-rt --release --lib`, `cargo test --workspace --release` | ✅ |
-| **136 Kani proof harnesses** (53 in mesh, 3 lease, 3 revocation, 3 actuation, 4 authority, 3 fragment) | `cargo kani --lib -Z stubbing` (WSL) — full CBMC pass NOT re-run (slow under WSL; 3.3 GB); the 16 harnesses added for E/F verified 16/16 individually and the 7 Phase 1.1 harnesses 7/7 (`evidence/kani/2026-10-06/`, `…/pq/`: run 1 refuted `proof_auth_precheck_no_downgrade`, a real defect, fixed in `3e67254`) | ⚠️ count verified, full 136-harness pass not reproduced locally (CI job, now with `-Z stubbing`) |
-| **Hybrid authority messages (Phase 1.1, `OAU1` + `OFR1`)** | `authority` + `fragment`: signed suite byte (Ed25519, or hybrid Ed25519 AND ML-DSA-44, FIPS 204), per-kind minimum suite never lowered and persisted in two flash slots, downgrade refused before any signature work, bounded reassembly, store-and-forward. ML-DSA-44 on device = `libcrux-ml-dsa` 0.0.10 (arithmetic/NTT/serialization formally verified; pre-1.0); RustCrypto `ml-dsa` 0.1.1 as oracle; NIST ACVP sigVer 15/15 on both; byte-for-byte keygen/sign match over 8 seeds; 20 072 single-bit flips 0 accepted. **RP2040 bake-off** (3×3×K5): libcrux 198 ms / 44.8 KB stack vs `ml-dsa` 178 ms / 84 KB; full hybrid gate **377 ms, 48.7 KB stack**; flash +125 KB. **Silicon A→B→C (stamp `1a9b461`)**: 14-fragment hybrid revocation applied and re-originated per hop; altered fragment → hash mismatch, altered message → `BadSignature`, nothing forwarded; policy raise → legacy ORV1 refused, Ed25519-only `OAU1` refused as downgrade in 4 ms; policy and hybrid list restored after a **real power cut** of B. See `docs/specs/PQ_AUTHORITY_SPEC.md`, `evidence/silicon/2026-10-06/pq/REPORT.md`. ⚠️ Wired UART only; ~7.6 s of computation per hop per hybrid message; no rate limit yet (Phase 2); kinds 2–4 verified then refused (`Unsupported`) | ✅ |
+| **539 `oasis-rt` lib tests / 578 workspace tests pass in parallel** (495 / 534 before Phase 1.1; +28 in 1.1, +16 in 1.2) | `cargo test -p oasis-rt --release --lib`, `cargo test --workspace --release` | ✅ |
+| **143 Kani proof harnesses** (53 in mesh, 3 lease, 3 revocation, 3 actuation, 4 authority, 3 fragment, 4 enrollment, 3 ownership) | `cargo kani --lib -Z stubbing` (WSL) — full CBMC pass NOT re-run (slow under WSL; 3.3 GB); verified individually: 16/16 E/F, 7/7 Phase 1.1 (`…/pq/`: run 1 refuted `proof_auth_precheck_no_downgrade`, a real defect, fixed in `3e67254`), 7/7 Phase 1.2 (`…/enroll/`: run 1 hit a CBMC out-of-memory, harness reshaped, with a negative control) | ⚠️ count verified, full 143-harness pass not reproduced locally (CI job, now with `-Z stubbing`) |
+| **Hybrid authority messages (Phase 1.1, `OAU1` + `OFR1`)** | `authority` + `fragment`: signed suite byte (Ed25519, or hybrid Ed25519 AND ML-DSA-44, FIPS 204), per-kind minimum suite never lowered and persisted in two flash slots, downgrade refused before any signature work, bounded reassembly, store-and-forward. ML-DSA-44 on device = `libcrux-ml-dsa` 0.0.10 (arithmetic/NTT/serialization formally verified; pre-1.0); RustCrypto `ml-dsa` 0.1.1 as oracle; NIST ACVP sigVer 15/15 on both; byte-for-byte keygen/sign match over 8 seeds; 20 072 single-bit flips 0 accepted. **RP2040 bake-off** (3×3×K5): libcrux 198 ms / 44.8 KB stack vs `ml-dsa` 178 ms / 84 KB; full hybrid gate **377 ms, 48.7 KB stack**; flash +125 KB. **Silicon A→B→C (stamp `1a9b461`)**: 14-fragment hybrid revocation applied and re-originated per hop; altered fragment → hash mismatch, altered message → `BadSignature`, nothing forwarded; policy raise → legacy ORV1 refused, Ed25519-only `OAU1` refused as downgrade in 4 ms; policy and hybrid list restored after a **real power cut** of B. See `docs/specs/PQ_AUTHORITY_SPEC.md`, `evidence/silicon/2026-10-06/pq/REPORT.md`. ⚠️ Wired UART only; ~5.5 s of computation per hop per 14-fragment hybrid message (first stated as 7.6 s with a wrong 341 ms sign time; uart_mesh signs v0B in 178 ms — erratum in the report; fragments now paced 100 ms apart after a FIFO overrun in Phase 1.2); no rate limit yet (Phase 2); kind 3 (firmware manifest) still verified then refused (`Unsupported`) | ✅ |
+| **Enrollment and ownership transfer (Phase 1.2)** | `identity` (on-board keygen: 4 096 ROSC bits, SP 800-90B RCT/APT health tests, SHA-256 conditioning, one-time tool-nonce mix-in, proof of possession; all-zero seed refused), `enrollment` (OAU1 kind 2 attestation: pk, role, permissions, `enroll_seq`; fp derived; revoked never enrolled; seq strictly rising), `ownership` (offer signed by the current owner + acceptance signed by the offered keys, bound to the offer digest; `NeedsResign` before a second transfer), PC tool `oasis_enroll`. No compiled seeds or registry on the boards any more: unenrolled = `unknown sender` at the first hop; actuation "authorized" = enrolled with `ACTUATE`. **Silicon (stamps `5c4bd96`/`4713703`)**: 3 distinct keys at first boot; ROSC 43–47 % ones, MCV 0.81–0.91 bit/sample; unenrolled A refused by B and unenrolled B by C (14/14 drops); tool enrollment with proof of possession; attestation propagated A→B→C; B's order `NotAuthorized`, A's `Act`; transfer o1→o2 on 3 boards (o3 acceptance refused, o1 messages refused after, `NoPendingOffer`, `NeedsResign`); **real power cut** of B: same key, owner o2, peers, revocation re-verified with o2. See `docs/specs/ENROLLMENT_OWNERSHIP_SPEC.md`, `evidence/silicon/2026-10-06/enroll/REPORT.md`. ⚠️ Key readable from flash (BOOTSEL/SWD, no secure element); ROSC not a validated source (datasheet §2.17.5); ownership per network, not per device; only `ACTUATE` enforced | ✅ |
 | MAVLink v2 CRC + signing + replay | 29 in-suite tests + 300 real PX4 frames | ✅ |
 | Ed25519 federation + signing | `ed25519_signing_roundtrip` + tamper rejection | ✅ |
 | **Ed25519 per-node mesh signing (v0A)** | 10 tests inc. `v10_spoofed_origin_fp_rejected` | ✅ |
@@ -203,7 +208,7 @@ Performance trade across the 3 mesh variants (Linux WSL, K=10 medians):
 | Altitude hold closed-loop | 1.94 m vs 2.0 m target (±6 cm) | ✅ |
 | Spore v7 loss + FEC real UDP | bench + loss proxy: 98% @ 30% uniform, 82-90% @ 30% burst | ✅ |
 | RFC 8439 ChaCha20-Poly1305 vector | test vector matches byte-for-byte | ✅ |
-| All 11 mechanisms compile + test | 523 `oasis-rt` lib tests across 35 modules | ✅ |
+| All 11 mechanisms compile + test | 539 `oasis-rt` lib tests across 38 modules | ✅ |
 | Android daemon 3h+ run | session_v0_5 on S23 FE, 121 290 ticks | ⚠️ claimed; logs not in repo |
 | **MCU cross-compile** (`thumbv7em-none-eabi`) | `cargo build --target thumbv7em-none-eabi --lib --no-default-features --features mesh_bloom_mcu --release` | ✅ 0 errors |
 | **A/B vs ROS 2 Jazzy** (Linux intra-process, K=10 medians) | OASIS 241 ns vs rclcpp intra 5 624 ns vs rclcpp DDS 52 411 ns at 16 B — 23–217× faster | ✅ measured |
@@ -330,7 +335,7 @@ payload size via function-call dispatch; rclcpp's cost is executor
 ## Mental loop (specialist discipline)
 
 1. **Is it proven?** — ruthless test or it doesn't exist
-2. **Does it break?** — 562 workspace tests + 136 Kani proof harnesses must pass before and after
+2. **Does it break?** — 578 workspace tests + 143 Kani proof harnesses must pass before and after
 3. **Is it bounded?** — fear ≤ 5×, entropy [0,1], latency < 1 ms, lux < 100 000
 4. **Is it honest?** — every mechanism explicitly PROVEN vs EXPERIMENTAL
 5. **Is it banded?** — **no single-shot bench number in the repo**. K=10 median ± half-spread or equivalent (Spore loss bench uses N=200 internal trials). Single-number claims are suspect.

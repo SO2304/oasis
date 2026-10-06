@@ -161,7 +161,7 @@ fragment's last 3 bytes, and one of them was a literal `|`. Logging artifact onl
 - **Store-and-forward cost.** Each hop verifies 14 v0B fragments (~178 ms each),
   then the gate (~380 ms), then re-signs 14 fragments (~341 ms each, T6 `v0A_sign` in
   `../board_A_run1.log`): 14 × 178 + 380 + 14 × 341 ms ≈ 7.6 s of computation per hop
-  for one hybrid revocation. It is acceptable for rare
+  for one hybrid revocation. **⚠️ Wrong: see the erratum at the end (≈ 5.5 s).** It is acceptable for rare
   authority messages and not for orders, which is why orders stay Ed25519 only
   (spec §1). End-to-end latency was not measured (no timestamps in the logs).
 - **DoS.** A node holding a valid v0B key can make a relay run the 380 ms gate by
@@ -178,3 +178,21 @@ fragment's last 3 bytes, and one of them was a literal `|`. Logging artifact onl
 - `verify_us` includes about 4 ms of stack measurement; §2's 377 ms is the clean figure.
 - The ML-DSA-44 implementation is formally verified only in part (arithmetic, NTT,
   serialization) and is pre-1.0. No external audit.
+
+## Erratum (2026-10-06, found during Phase 1.2)
+
+On `uart_mesh` a v0B **sign** takes **178 ms** (`../enroll/10_reflash_paced_A.log`:
+`v0b_sign_us=178065`), not the 341 ms I took from the T6 suite, which is a different
+firmware. Two consequences:
+
+1. The per-hop computation in §4 is about **5.5 s** (14 × 185 + 380 + 14 × 178 ms),
+   not 7.6 s.
+2. I had argued that B keeps up because A signs more slowly than B verifies. That was
+   wrong: A's period was ~204 ms (sign + 26 ms on the wire), against B's ~185 ms of
+   verification plus logging. The Phase 1.1 runs above passed with that ~10 ms margin
+   (0 CRC failures in their logs). Phase 1.2 added per-frame work and B's FIFO
+   overflowed (`../enroll/REPORT.md` §3). Commit `4713703` adds a 100 ms gap after
+   each fragment.
+
+The Phase 1.1 results stand: every fragment arrived and every decision is in the
+logs. They were obtained without a safety margin on the wire.
