@@ -38,10 +38,22 @@ pub struct ClampResult {
     pub clamped_torque: bool,
     pub clamped_velocity: bool,
     pub geofence_breach: bool,
+    /// A command or position input was NaN or infinite. The command is zeroed:
+    /// comparisons against NaN are always false, so it would otherwise pass
+    /// every cap and the geofence unchanged.
+    pub non_finite_input: bool,
 }
 
 pub fn clamp_command(force: f64, torque: f64, velocity: f64, pos: &[f64; 3], constraints: &PhysicalConstraints) -> ClampResult {
-    let mut r = ClampResult { force, torque, velocity, clamped_force: false, clamped_torque: false, clamped_velocity: false, geofence_breach: false };
+    let mut r = ClampResult { force, torque, velocity, clamped_force: false, clamped_torque: false, clamped_velocity: false, geofence_breach: false, non_finite_input: false };
+    // Fail closed on NaN/inf before any comparison.
+    if !(force.is_finite() && torque.is_finite() && velocity.is_finite() && pos.iter().all(|p| p.is_finite())) {
+        r.non_finite_input = true;
+        r.force = 0.0;
+        r.torque = 0.0;
+        r.velocity = 0.0;
+        return r;
+    }
     // Force capping
     if r.force.abs() > constraints.max_force_n {
         r.force = r.force.signum() * constraints.max_force_n;
@@ -287,6 +299,23 @@ mod kani_proofs {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn clamp_fails_closed_on_non_finite_input() {
+        let c = PhysicalConstraints::default_robot();
+        let ok = [0.0, 0.0, 0.0];
+        for (f, t, v, pos) in [
+            (f64::NAN, 0.0, 0.0, ok),
+            (0.0, f64::INFINITY, 0.0, ok),
+            (0.0, 0.0, f64::NEG_INFINITY, ok),
+            (1.0, 1.0, 1.0, [f64::NAN, 0.0, 0.0]),
+        ] {
+            let r = clamp_command(f, t, v, &pos, &c);
+            assert!(r.non_finite_input);
+            assert_eq!((r.force, r.torque, r.velocity), (0.0, 0.0, 0.0));
+        }
+        assert!(!clamp_command(1.0, 1.0, 1.0, &ok, &c).non_finite_input);
+    }
 
     #[test]
     fn clamp_caps_force() {

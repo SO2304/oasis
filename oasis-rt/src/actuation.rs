@@ -98,7 +98,7 @@ pub fn parse_otm1(b: &[u8]) -> Option<(u64, u64)> {
 /// `true` iff `clamp_command` changed nothing and saw no geofence breach.
 /// Out-of-limit commands are REJECTED, not clamped (spec F.3, condition 6).
 pub fn limits_ok(r: &ClampResult) -> bool {
-    !r.clamped_force && !r.clamped_torque && !r.clamped_velocity && !r.geofence_breach
+    !r.clamped_force && !r.clamped_torque && !r.clamped_velocity && !r.geofence_breach && !r.non_finite_input
 }
 
 /// Condition 6 for a decoded command. `clamp_command` fails OPEN on NaN

@@ -118,10 +118,10 @@ fn act_out_of_limits() {
 #[test]
 fn act_nan_setpoint_rejected() {
     let k = PhysicalConstraints::default_robot();
-    // Documents the hazard: clamp_command alone fails OPEN on NaN.
+    // clamp_command itself now fails closed on NaN (it used to pass it through).
     let raw = clamp_command(f64::NAN, 0.0, 0.0, &[f64::NAN, 0.0, 0.0], &k);
-    assert!(limits_ok(&raw), "clamp_command raises no flag on NaN (fail-open)");
-    // The gate's check closes it.
+    assert!(!limits_ok(&raw), "clamp_command must flag NaN input");
+    // The gate's own finiteness check stays as a second layer.
     for bad in [ActCommand { force: f32::NAN, ..cmd(1) }, ActCommand { velocity: f32::INFINITY, ..cmd(1) }, ActCommand { pos: [0.0, f32::NAN, 0.0], ..cmd(1) }] {
         assert!(!command_within_limits(&bad, &k));
     }
