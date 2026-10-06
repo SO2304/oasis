@@ -8,9 +8,12 @@
 //! - time per verify, K = 5 (median/min/max, hardware 1 MHz timer);
 //! - peak stack per verify (stack painted with a known word, then scanned).
 //!
-//! Verifiers linked: `bench_rc` = RustCrypto `ml-dsa` (through
-//! `oasis_rt::authority`), `bench_lx` = `libcrux-ml-dsa`. Flash size is compared by
-//! building with one feature at a time. USB-CDC: `r` = run, `b` = BOOTSEL.
+//! Verifiers linked: `bench_rc` = RustCrypto `ml-dsa`, called directly;
+//! `bench_lx` = `libcrux-ml-dsa` through `oasis_rt::authority::mldsa44_verify` (the
+//! device path since the bake-off) plus the full `verify_authority` gate. Flash size
+//! is compared by building with one feature at a time. USB-CDC: `r` = run,
+//! `b` = BOOTSEL. (Bake-off runs at stamp `98ecb35` had these the other way round:
+//! `oasis_rt` used `ml-dsa` then, and the gate was measured under `bench_rc`.)
 
 #![no_std]
 #![no_main]
@@ -185,9 +188,23 @@ fn run(io: &mut Io, timer: &hal::Timer, sysclk_hz: u32) {
 
     #[cfg(feature = "bench_rc")]
     {
-        let pk: &[u8] = OPERATOR_MLDSA_PK;
-        let ok = mldsa44_verify(pk, &msg, AUTH_DOMAIN, &sig);
-        let rej = !mldsa44_verify(pk, &msg, AUTH_DOMAIN, &bad);
+        let rc_verify = |s: &[u8]| -> bool {
+            use ml_dsa::{EncodedVerifyingKey, MlDsa44, Signature, VerifyingKey};
+            let enc = match EncodedVerifyingKey::<MlDsa44>::try_from(&OPERATOR_MLDSA_PK[..]) {
+                Ok(e) => e,
+                Err(_) => return false,
+            };
+            match Signature::<MlDsa44>::try_from(s) {
+                Ok(sg) => VerifyingKey::<MlDsa44>::decode(&enc).verify_with_context(
+                    &msg,
+                    AUTH_DOMAIN,
+                    &sg,
+                ),
+                Err(_) => false,
+            }
+        };
+        let ok = rc_verify(&sig);
+        let rej = !rc_verify(&bad);
         emit(io, "PQ_RC_OK", ok, format_args!("{}", ok), "bool");
         emit(
             io,
@@ -197,7 +214,7 @@ fn run(io: &mut Io, timer: &hal::Timer, sysclk_hz: u32) {
             "bool",
         );
         let (m, lo, hi) = timeit(io, timer, || {
-            core::hint::black_box(mldsa44_verify(pk, &msg, AUTH_DOMAIN, &sig));
+            core::hint::black_box(rc_verify(&sig));
         });
         emit(
             io,
@@ -207,11 +224,40 @@ fn run(io: &mut Io, timer: &hal::Timer, sysclk_hz: u32) {
             "us_med/min/max_K5",
         );
         let st = stack_peak(|| {
-            core::hint::black_box(mldsa44_verify(pk, &msg, AUTH_DOMAIN, &sig));
+            core::hint::black_box(rc_verify(&sig));
         });
         emit(io, "PQ_RC_STACK", true, format_args!("{}", st), "bytes");
+    }
 
-        // The full gate as the firmware will run it: parse, precheck, ML-DSA, Ed25519.
+    #[cfg(feature = "bench_lx")]
+    {
+        let pk: &[u8] = OPERATOR_MLDSA_PK;
+        let ok = mldsa44_verify(pk, &msg, AUTH_DOMAIN, &sig);
+        let rej = !mldsa44_verify(pk, &msg, AUTH_DOMAIN, &bad);
+        emit(io, "PQ_LX_OK", ok, format_args!("{}", ok), "bool");
+        emit(
+            io,
+            "PQ_LX_TAMPER",
+            rej,
+            format_args!("refused={}", rej),
+            "bool",
+        );
+        let (m, lo, hi) = timeit(io, timer, || {
+            core::hint::black_box(mldsa44_verify(pk, &msg, AUTH_DOMAIN, &sig));
+        });
+        emit(
+            io,
+            "PQ_LX_TIME",
+            ok,
+            format_args!("{}/{}/{}", m, lo, hi),
+            "us_med/min/max_K5",
+        );
+        let st = stack_peak(|| {
+            core::hint::black_box(mldsa44_verify(pk, &msg, AUTH_DOMAIN, &sig));
+        });
+        emit(io, "PQ_LX_STACK", true, format_args!("{}", st), "bytes");
+
+        // The full gate as the firmware runs it: parse, precheck, ML-DSA, Ed25519.
         let keys = AuthorityKeys {
             ed25519: OPERATOR_ED_PUB,
             mldsa44: OPERATOR_MLDSA_PK,
@@ -233,40 +279,6 @@ fn run(io: &mut Io, timer: &hal::Timer, sysclk_hz: u32) {
             core::hint::black_box(verify_authority(&pol, &NETWORK_ID, &keys, REV_HYBRID).is_ok());
         });
         emit(io, "PQ_AUTH_STACK", true, format_args!("{}", st), "bytes");
-    }
-
-    #[cfg(feature = "bench_lx")]
-    {
-        use libcrux_ml_dsa::ml_dsa_44 as lx;
-        let lx_verify = |s: &[u8; MLDSA44_SIG_LEN]| -> bool {
-            let vk = lx::MLDSA44VerificationKey::new(*OPERATOR_MLDSA_PK);
-            let sg = lx::MLDSA44Signature::new(*s);
-            lx::verify(&vk, &msg, AUTH_DOMAIN, &sg).is_ok()
-        };
-        let ok = lx_verify(&sig);
-        let rej = !lx_verify(&bad);
-        emit(io, "PQ_LX_OK", ok, format_args!("{}", ok), "bool");
-        emit(
-            io,
-            "PQ_LX_TAMPER",
-            rej,
-            format_args!("refused={}", rej),
-            "bool",
-        );
-        let (m, lo, hi) = timeit(io, timer, || {
-            core::hint::black_box(lx_verify(&sig));
-        });
-        emit(
-            io,
-            "PQ_LX_TIME",
-            ok,
-            format_args!("{}/{}/{}", m, lo, hi),
-            "us_med/min/max_K5",
-        );
-        let st = stack_peak(|| {
-            core::hint::black_box(lx_verify(&sig));
-        });
-        emit(io, "PQ_LX_STACK", true, format_args!("{}", st), "bytes");
     }
 
     emit(

@@ -15,10 +15,15 @@
 //! A per-kind minimum suite ([`AuthPolicy`]), persisted and never lowered, refuses
 //! downgrades before any expensive verification. Public keys never travel: they are
 //! provisioned on the device.
+//!
+//! ML-DSA-44 verification uses `libcrux-ml-dsa` (formally verified arithmetic, NTT
+//! and serialization; 44.8 KB peak stack on RP2040 vs 84.0 KB for RustCrypto
+//! `ml-dsa`, see `evidence/silicon/2026-10-06/pq/REPORT.md`). RustCrypto `ml-dsa`
+//! remains the independent oracle in the tests and the signer on the host.
 
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
-use ml_dsa::{EncodedVerifyingKey, MlDsa44, Signature as MlDsaSignature, VerifyingKey as MlDsaVerifyingKey};
+use libcrux_ml_dsa::ml_dsa_44::{verify as mldsa44_verify_raw, MLDSA44Signature, MLDSA44VerificationKey};
 use sha2::{Digest, Sha256};
 
 pub const OAU1_MAGIC: [u8; 4] = *b"OAU1";
@@ -255,20 +260,18 @@ pub fn ed25519_verify(public_key: &[u8; 32], msg: &[u8], sig: &[u8]) -> bool {
     }
 }
 
-/// ML-DSA-44 (FIPS 204, external/pure interface) verification with a context string.
+/// ML-DSA-44 (FIPS 204, external/pure interface) verification with a context string
+/// (`libcrux-ml-dsa`). The key and signature are copied into libcrux's owned types;
+/// that copy is included in the measured stack.
 pub fn mldsa44_verify(public_key: &[u8], msg: &[u8], ctx: &[u8], sig: &[u8]) -> bool {
     if public_key.len() != MLDSA44_PK_LEN || sig.len() != MLDSA44_SIG_LEN || ctx.len() > 255 {
         return false;
     }
-    let enc = match EncodedVerifyingKey::<MlDsa44>::try_from(public_key) {
-        Ok(e) => e,
-        Err(_) => return false,
-    };
-    let vk = MlDsaVerifyingKey::<MlDsa44>::decode(&enc);
-    match MlDsaSignature::<MlDsa44>::try_from(sig) {
-        Ok(s) => vk.verify_with_context(msg, ctx, &s),
-        Err(_) => false,
-    }
+    let mut pk = [0u8; MLDSA44_PK_LEN];
+    pk.copy_from_slice(public_key);
+    let mut sg = [0u8; MLDSA44_SIG_LEN];
+    sg.copy_from_slice(sig);
+    mldsa44_verify_raw(&MLDSA44VerificationKey::new(pk), msg, ctx, &MLDSA44Signature::new(sg)).is_ok()
 }
 
 /// Authority public keys provisioned on the device.

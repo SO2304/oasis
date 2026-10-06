@@ -29,16 +29,17 @@ getrandom = { version = "0.2", optional = true }
 # the gap. ~10 KB code, well-audited, no further deps.
 libm = "0.2"
 # ML-DSA-44 (FIPS 204 final) for hybrid authority signatures (docs/specs/PQ_AUTHORITY_SPEC.md).
-# RustCrypto, pure Rust, no_std without alloc (checked for thumbv6m 2026-10-06), maintained.
-# NOT independently audited (its README says so): cross-checked in tests against
-# libcrux-ml-dsa and NIST ACVP sigVer vectors. Pinned exactly; verification only on devices.
-ml-dsa = { version = "=0.1.1", default-features = false }
+# libcrux-ml-dsa (Cryspen), pure Rust, no_std without alloc: arithmetic, NTT and
+# serialization formally verified (hax/F*). Chosen by the RP2040 bake-off over RustCrypto
+# ml-dsa: 44.8 KB vs 84.0 KB peak stack, +11 % time, +101 KB flash
+# (evidence/silicon/2026-10-06/pq/REPORT.md). Latest stable release, pinned exactly;
+# verification only on devices. Pre-1.0.
+libcrux-ml-dsa = { version = "=0.0.10", default-features = false, features = ["mldsa44"] }
 
 [dev-dependencies]
-# Independent ML-DSA implementation (Cryspen) whose arithmetic/NTT/serialization are
-# formally verified (hax/F*): differential test oracle for ml-dsa. Pinned to the latest
-# stable release (0.0.10, 2026-07-15; pre-1.0), not the 0.0.11-pre.1 of 2026-10-06.
-libcrux-ml-dsa = { version = "=0.0.10", default-features = false, features = ["mldsa44"] }
+# RustCrypto ml-dsa: independent ML-DSA-44 oracle (NOT independently audited, per its
+# README). Every test signature is checked by both implementations, plus NIST ACVP.
+ml-dsa = { version = "=0.1.1", default-features = false }
 # Serializes tests that mutate process-wide env vars (OASIS_SIGNING_KEY, OASIS_ED25519_SEED).
 # Without this, parallel test execution causes intermittent failures in federation suite.
 serial_test = "3"

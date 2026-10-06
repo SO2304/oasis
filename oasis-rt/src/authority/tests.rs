@@ -1,6 +1,6 @@
 use super::*;
 use crate::mesh_revocation::{encode_revocation_body, parse_revocation_body, revocation_transition, RevDecision, RevState};
-use ml_dsa::{Keypair, SigningKey as MlDsaSigningKey, B32};
+use ml_dsa::{EncodedVerifyingKey, Keypair, MlDsa44, Signature as RcSignature, SigningKey as MlDsaSigningKey, VerifyingKey as RcVerifyingKey, B32};
 
 const NET: [u8; 8] = *b"OASISnet";
 const ED_SEED: [u8; 32] = [0x0E; 32];
@@ -39,6 +39,19 @@ fn keys(mlpk: &[u8; MLDSA44_PK_LEN]) -> AuthorityKeys<'_> {
     AuthorityKeys { ed25519: ed_pub(&ED_SEED), mldsa44: mlpk }
 }
 
+/// The RustCrypto `ml-dsa` verifier: the independent oracle for `mldsa44_verify`
+/// (which is libcrux).
+fn rustcrypto_verify(pk: &[u8], msg: &[u8], ctx: &[u8], sig: &[u8]) -> bool {
+    let enc = match EncodedVerifyingKey::<MlDsa44>::try_from(pk) {
+        Ok(e) => e,
+        Err(_) => return false,
+    };
+    match RcSignature::<MlDsa44>::try_from(sig) {
+        Ok(s) => RcVerifyingKey::<MlDsa44>::decode(&enc).verify_with_context(msg, ctx, &s),
+        Err(_) => false,
+    }
+}
+
 fn hex(s: &str) -> Vec<u8> {
     if s == "-" {
         return Vec::new();
@@ -51,13 +64,17 @@ fn hex(s: &str) -> Vec<u8> {
 #[test]
 fn pq_acvp_mldsa44_sigver_official_vectors() {
     // NIST ACVP-Server, ML-DSA-44 external/pure sigVer: 3 valid + 12 tampered.
+    // Checked against the device verifier (libcrux) AND the oracle (RustCrypto).
     let data = include_str!("acvp_mldsa44_sigver.txt");
     let (mut n, mut ok) = (0, 0);
     for line in data.lines().filter(|l| !l.starts_with('#') && !l.trim().is_empty()) {
         let f: Vec<&str> = line.split(' ').collect();
         let (tc, passed) = (f[0], f[1] == "1");
-        let got = mldsa44_verify(&hex(f[2]), &hex(f[3]), &hex(f[4]), &hex(f[5]));
-        assert_eq!(got, passed, "ACVP tcId {} ({}) expected passed={}", tc, f[6], passed);
+        let (pk, msg, ctx, sig) = (hex(f[2]), hex(f[3]), hex(f[4]), hex(f[5]));
+        let got = mldsa44_verify(&pk, &msg, &ctx, &sig);
+        assert_eq!(got, passed, "libcrux: ACVP tcId {} ({}) expected passed={}", tc, f[6], passed);
+        let oracle = rustcrypto_verify(&pk, &msg, &ctx, &sig);
+        assert_eq!(oracle, passed, "ml-dsa: ACVP tcId {} ({}) expected passed={}", tc, f[6], passed);
         n += 1;
         ok += passed as usize;
     }
@@ -81,11 +98,12 @@ fn pq_mldsa44_matches_libcrux_byte_for_byte() {
         // Cross-verify both ways, plus a tampered signature rejected by both.
         let mut sig_arr = [0u8; MLDSA44_SIG_LEN];
         sig_arr.copy_from_slice(&ours);
-        assert!(lx::verify(&lx_kp.verification_key, &msg, AUTH_DOMAIN, &lx::MLDSA44Signature::new(sig_arr)).is_ok());
-        assert!(mldsa44_verify(&ml_pub(&seed), &msg, AUTH_DOMAIN, theirs.as_slice()));
+        // mldsa44_verify (libcrux) on the ml-dsa signature, ml-dsa on libcrux's.
+        assert!(mldsa44_verify(lx_kp.verification_key.as_slice(), &msg, AUTH_DOMAIN, &sig_arr));
+        assert!(rustcrypto_verify(&ml_pub(&seed), &msg, AUTH_DOMAIN, theirs.as_slice()));
         sig_arr[100] ^= 0x01;
-        assert!(lx::verify(&lx_kp.verification_key, &msg, AUTH_DOMAIN, &lx::MLDSA44Signature::new(sig_arr)).is_err());
-        assert!(!mldsa44_verify(&ml_pub(&seed), &msg, AUTH_DOMAIN, &sig_arr));
+        assert!(!mldsa44_verify(lx_kp.verification_key.as_slice(), &msg, AUTH_DOMAIN, &sig_arr));
+        assert!(!rustcrypto_verify(&ml_pub(&seed), &msg, AUTH_DOMAIN, &sig_arr));
     }
 }
 
