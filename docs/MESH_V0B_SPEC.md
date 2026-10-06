@@ -157,16 +157,32 @@ delivered to any honest node that already saw it. `ttl`/`hops` bound honest-path
 length; the signed counter window bounds flooding. This is the property v0B
 actually proves, and the comparison doc (Phase 4) states it as such.
 
-### Flash-wear strategy for persisting `counter` (RP2040) — **decision point**
+### Counter persistence on RP2040 — implemented (receiver) + open gap (sender)
 
-Persisting `highest` on every message would wear RP2040 flash (≈100 k erase
-cycles/sector). Proposed **counter-lease** strategy: persist the high-water mark
-rounded up to the next lease of `L` (e.g. `L = 256`). On boot, resume from the
-persisted lease ceiling, so a counter is **never reused** — at the cost of
-skipping up to `L−1` counters per reboot (harmless; the receiver only requires
-strict progress, not contiguity). Flash writes drop to ~1 per `L` messages. I will
-confirm `L` and the flash sector layout with you before implementing Phase 3's T8,
-as the prompt's stop-condition requests.
+**Receiver — DONE and silicon-proven (T8).** The relay's `CounterTracker`
+serialization (`CTR\x03`) is written to the last 4 KiB flash sector via
+`rp2040-flash`'s RAM-safe bootrom helpers and restored on boot **before** any
+v0B envelope is processed. Verified across a real USB power-cut on 2026-10-06:
+`a_last_seen=165` came back from flash after RAM was wiped, and the old counter
+was then refused `stale counter`. See
+`evidence/silicon/2026-10-06/REPORT_MESH_V0B.md` §4.
+
+Flash wear: persisting on every message would wear the sector (≈100 k erase
+cycles). Production policy is write-coalescing — persist at most once per `L`
+messages (`L = 256`); the silicon test flushes on demand (`P`) instead, which
+persists the *exact* window and is strictly stronger for the test.
+
+**Sender — NOT yet implemented (liveness gap found by T8).** During the T8
+power-cut the *origin* was also reset, its `tx_counter` restarted at 1, and the
+relay (correctly remembering `highest = 165`) then refused **every** counter the
+origin could produce. Receiver persistence secures the protocol but starves
+availability. The fix is the symmetric **counter lease** on the sender: persist a
+counter *ceiling* ahead of use in blocks of `L = 256` and resume **from the
+ceiling** after a reboot, so a counter is never reused and the sender always
+resumes above anything it previously sent (cost: up to `L−1` counters skipped per
+reboot, harmless since receivers require strict progress, not contiguity).
+Until this exists, a v0B origin that loses power cannot resume talking to relays
+that persisted its counter.
 
 ---
 
@@ -237,8 +253,20 @@ job / a ≥16 GB Linux host, not on local WSL.
 
 ---
 
-**STOP — review requested before any code is written (Phase 1 gate).**
-Open questions for you:
-1. Counter-lease size `L` and RP2040 flash sector for T8 persistence (§5).
-2. `mesh_v0b` as its own cargo feature, or fold into `mesh_v10`?
-3. `MAX_TTL` = 8 (current `DEFAULT_TTL`) acceptable, or a different cap?
+## 9. Status (2026-10-06)
+
+Phase-1 decisions, as resolved and built:
+1. **Counter lease `L = 256`**, last 4 KiB flash sector. Receiver side
+   implemented and silicon-proven (T8); **sender side still open** — see §5.
+2. **Folded into the existing `mesh_v10` cargo feature** (v0B builds on the v0A
+   Ed25519 machinery, and this keeps the MCU build command unchanged).
+3. **`MAX_TTL = 8`** (`DEFAULT_TTL`).
+
+Delivered: implementation in `oasis-rt/src/mesh.rs`; **11 `v0b_*` tests** (one
+per attack in §6) — workspace went 444 → 455 lib tests, 0 failed; **7 Kani
+proofs**; cost bench `bench_mesh_v0b` (v0B ≈ v0A + ~1 %); silicon validation on
+3 RP2040 boards (`evidence/silicon/2026-10-06/REPORT_MESH_V0B.md`) — 0/150
+bit-flips accepted, suppression defeated, T8 passed across a real power-cut.
+
+Open: the sender-side counter lease (§5), and LoRa/over-the-air (this chain is
+a wire; SX1262 is still mock-tested only).

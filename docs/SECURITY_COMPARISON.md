@@ -63,6 +63,33 @@ v0B costs essentially the same as v0A: Ed25519 dominates, and binding the
 payload adds only one SHA-256 (~2-3 µs, ≈1%), flat even at 1 KB. **Security was
 bought at ~1% of the per-message crypto cost, not a redesign of the hot path.**
 
-**On-chip (3× RP2040, K=5):** Phase 3 — pending hardware reflash + the physical
-power-cut for the persistence (T8) replay test. No on-chip number is entered
-here until its raw log exists under `evidence/silicon/`.
+**On-chip (3× RP2040 Cortex-M0+, K=5 medians)** — raw log:
+`evidence/silicon/2026-10-06/v0b_timing_A.log`, firmware stamp `d285ef4`:
+
+| op | v0A | v0B | delta |
+|---|---:|---:|---:|
+| sign (cached keypair) | ≈173.7 ms | ≈175.5 ms | **+1.0 %** |
+| verify | ≈177.9 ms | ≈179.1 ms | **+0.7 %** |
+
+So the per-hop price of binding content+counter+network is ~1 % on top of
+Ed25519, on both PC and silicon. **~179 ms verify per hop on an M0+** is the
+real cost of the security model — v0B is for low-rate authenticated broadcasts,
+not control loops (v9 HMAC remains the high-rate choice).
+
+### Silicon validation of the matrix rows above
+
+Verified on three wired RP2040 boards (A→B→C), full write-up in
+`evidence/silicon/2026-10-06/REPORT_MESH_V0B.md`:
+
+- **Payload modified in flight** — 3×50 pre-CRC single-bit flips: **0/150
+  accepted** (v0A accepted 12/50 on 2026-10-04).
+- **Message suppression** — forged-content copy with the original signature is
+  dropped (`bad mesh signature`) and the real message still reaches C.
+- **Replay after relay power loss** — relay's counter window restored from flash
+  after a physical USB power-cut; the old counter is refused `stale counter`.
+
+**Known liveness gap (honest):** the sender-side counter lease is **not yet
+implemented**, so an origin that loses power cannot resume talking to a relay
+that persisted its counter until its counter passes the remembered high-water
+mark. Receiver persistence is sufficient for the security property, not for
+availability. See the report's "Finding" section.
