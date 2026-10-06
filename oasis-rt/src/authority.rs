@@ -151,12 +151,14 @@ pub struct AuthPolicy {
 }
 
 impl Default for AuthPolicy {
-    /// Migration start: Ed25519 accepted for revocation, enrollment and firmware
-    /// manifests; POLICY and OWNERSHIP_TRANSFER (the trust root itself) always hybrid.
+    /// Migration start: Ed25519 accepted for revocation and enrollment; POLICY,
+    /// OWNERSHIP_TRANSFER (the trust root itself) and FIRMWARE_MANIFEST (an image can
+    /// do anything, Phase 1.3) always hybrid.
     fn default() -> Self {
         let mut min_suite = [SUITE_ED25519; KIND_COUNT];
         min_suite[(kind::POLICY - 1) as usize] = SUITE_HYBRID;
         min_suite[(kind::OWNERSHIP_TRANSFER - 1) as usize] = SUITE_HYBRID;
+        min_suite[(kind::FIRMWARE_MANIFEST - 1) as usize] = SUITE_HYBRID;
         AuthPolicy { min_suite }
     }
 }

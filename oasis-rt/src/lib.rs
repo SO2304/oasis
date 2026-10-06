@@ -40,6 +40,7 @@ pub mod actions;
 pub mod actuation;
 pub mod authority;
 pub mod enrollment;
+pub mod firmware;
 pub mod fragment;
 pub mod identity;
 pub mod mesh;

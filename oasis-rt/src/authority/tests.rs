@@ -233,9 +233,9 @@ fn pq_parse_never_panics_on_prefixes_and_garbage() {
 fn pq_policy_monotone_and_persisted() {
     let mut p = AuthPolicy::default();
     assert_eq!(p.min_suite(kind::POLICY), SUITE_HYBRID, "policy updates always need hybrid");
-    assert!(p.raise(kind::FIRMWARE_MANIFEST, SUITE_HYBRID));
-    assert!(!p.raise(kind::FIRMWARE_MANIFEST, SUITE_ED25519), "never lowered");
-    assert!(!p.raise(kind::FIRMWARE_MANIFEST, SUITE_MLDSA44), "reserved suite never accepted");
+    assert!(p.raise(kind::ENROLLMENT, SUITE_HYBRID));
+    assert!(!p.raise(kind::ENROLLMENT, SUITE_ED25519), "never lowered");
+    assert!(!p.raise(kind::ENROLLMENT, SUITE_MLDSA44), "reserved suite never accepted");
     assert!(!p.raise(9, SUITE_HYBRID), "unknown kind");
     let r = p.to_bytes();
     assert_eq!(AuthPolicy::from_bytes(&r), Some(p));
