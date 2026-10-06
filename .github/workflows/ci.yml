@@ -88,6 +88,7 @@ jobs:
           - { shard: heavy-proof_ah_arithmetic_tolerance_symmetric, harness_timeout: 3600s, minutes: 75 }
           - { shard: heavy-proof_m4_fitness_monotone_in_goal, harness_timeout: 3600s, minutes: 75 }
           - { shard: heavy-proof_m3_pain_monotone_in_magnitude, harness_timeout: 3600s, minutes: 75 }
+          - { shard: heavy-proof_topic_hash_deterministic_1byte, harness_timeout: 3600s, minutes: 75 }
     defaults:
       run:
         working-directory: oasis-rt

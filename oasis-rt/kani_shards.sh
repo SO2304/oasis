@@ -16,6 +16,8 @@ HEAVY=(
   mesh::kani_proofs::proof_ah_arithmetic_tolerance_symmetric
   branching::kani_proofs::proof_m4_fitness_monotone_in_goal
   efference::kani_proofs::proof_m3_pain_monotone_in_magnitude
+  # SHA-256 over a symbolic byte: goto-instrument is SIGKILLed (OOM) before CBMC.
+  topics::kani_proofs::proof_topic_hash_deterministic_1byte
 )
 
 list_all() {
@@ -59,5 +61,5 @@ case "${1:-}" in
   "")
     echo "usage: $0 <shard>|--all|--check" >&2; exit 2 ;;
   *)
-    list_all | while read -r h; do [ "$(shard_of "$h")" = "$1" ] && echo "$h"; done ;;
+    list_all | while read -r h; do if [ "$(shard_of "$h")" = "$1" ]; then echo "$h"; fi; done ;;
 esac
