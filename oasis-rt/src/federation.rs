@@ -712,7 +712,7 @@ mod tests {
         mesh.set_trust(0, 1, 0.9);
         mesh.set_trust(1, 0, 0.3);
 
-        let path = "/tmp/oasis_rt.bin";
+        let path = &std::env::temp_dir().join("oasis_rt.bin").to_string_lossy().into_owned();
         mesh.save(path).unwrap();
         let mut m2 = FederatedMesh::new();
         assert_eq!(m2.load(path).unwrap(), 1);
@@ -731,13 +731,13 @@ mod tests {
     fn load_dedup_and_corrupt() {
         let mut mesh = FederatedMesh::new();
         mesh.pool.push(make_digest(10, 1.0, 0.3, 1.0));
-        let path = "/tmp/oasis_dedup.bin";
+        let path = &std::env::temp_dir().join("oasis_dedup.bin").to_string_lossy().into_owned();
         mesh.save(path).unwrap();
         assert_eq!(mesh.load(path).unwrap(), 0); // dedup: same axis → skip
         assert_eq!(mesh.digest_count(), 1);
         std::fs::remove_file(path).ok();
 
-        let bad = "/tmp/oasis_bad.bin";
+        let bad = &std::env::temp_dir().join("oasis_bad.bin").to_string_lossy().into_owned();
         std::fs::write(bad, b"GARBAGE").unwrap();
         assert!(FederatedMesh::new().load(bad).is_err());
         std::fs::remove_file(bad).ok();
@@ -748,7 +748,7 @@ mod tests {
     fn merge_foreign_attenuates() {
         let mut ma = FederatedMesh::new();
         ma.pool.push(make_digest(5, 1.0, 1.0, 1.0));
-        let path = "/tmp/oasis_foreign.bin";
+        let path = &std::env::temp_dir().join("oasis_foreign.bin").to_string_lossy().into_owned();
         ma.save(path).unwrap();
         let mut mb = FederatedMesh::new();
         assert_eq!(mb.merge_foreign(path, 0.5).unwrap(), 1);
@@ -760,7 +760,7 @@ mod tests {
     #[test]
     #[serial]
     fn save_empty_and_sparse() {
-        let path = "/tmp/oasis_empty.bin";
+        let path = &std::env::temp_dir().join("oasis_empty.bin").to_string_lossy().into_owned();
         FederatedMesh::new().save(path).unwrap();
         assert_eq!(FederatedMesh::new().load(path).unwrap_or(99), 0);
         std::fs::remove_file(path).ok();
@@ -772,7 +772,7 @@ mod tests {
         axis[127] = -0.7;
         mesh.pool
             .push(ExperienceDigest { source: 0, axis, magnitude: 0.5, valence: -1.0, entropy: 0.6, tick: 1, reinforcements: 2, active: true });
-        let sp = "/tmp/oasis_sparse.bin";
+        let sp = &std::env::temp_dir().join("oasis_sparse.bin").to_string_lossy().into_owned();
         mesh.save(sp).unwrap();
         assert!(std::fs::metadata(sp).unwrap().len() < 200);
         let mut m2 = FederatedMesh::new();

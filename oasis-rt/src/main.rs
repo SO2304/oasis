@@ -142,7 +142,7 @@ fn epoch_ms() -> u64 {
 }
 
 fn pin_cpu() {
-    #[cfg(any(target_os = "linux", target_os = "android"))]
+    #[cfg(all(any(target_os = "linux", target_os = "android"), target_arch = "aarch64"))]
     unsafe {
         let mask: u64 = 1 << 4;
         let ret: i64;
@@ -276,7 +276,7 @@ fn main() {
             let prev_e = prev_audio_energy;
             rec.store(true, Ordering::Relaxed);
             std::thread::spawn(move || {
-                #[cfg(any(target_os = "linux", target_os = "android"))]
+                #[cfg(all(any(target_os = "linux", target_os = "android"), target_arch = "aarch64"))]
                 unsafe {
                     let mask: u64 = 0x0F;
                     let _: i64;

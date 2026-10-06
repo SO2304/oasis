@@ -1,0 +1,132 @@
+<title>OASIS Partenaires</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@112,800&family=IBM+Plex+Sans:wght@400;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a one-page datasheet. Spec table first, status in three columns, then repro commands; orange only on the ask */
+:root {
+  --bg: #eef1f4;
+  --surface: #ffffff;
+  --ink: #14202e;
+  --muted: #566476;
+  --line: #d3dae2;
+  --accent: #e2531d;
+  --proven: #1f7a4d;
+  --sim: #2c5fa8;
+  --todo: #9a6a12;
+  --display: "Archivo", "Arial Narrow", system-ui, sans-serif;
+  --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f151c; --surface: #17202a; --ink: #e6ebf0; --muted: #98a5b4; --line: #2a3644;
+    --accent: #f06a35; --proven: #4cc38a; --sim: #79a6e8; --todo: #e0ad4f;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f151c; --surface: #17202a; --ink: #e6ebf0; --muted: #98a5b4; --line: #2a3644;
+  --accent: #f06a35; --proven: #4cc38a; --sim: #79a6e8; --todo: #e0ad4f;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font: 400 0.95rem/1.5 var(--body); padding-inline: 16px; padding-block: 0; }
+.wrap { max-width: 60rem; margin: 0 auto; display: grid; gap: 2.25rem; padding-block: 2.5rem 3rem; }
+h1, h2 { font-family: var(--display); font-stretch: 112%; font-weight: 800; margin: 0; line-height: 1.1; text-wrap: balance; }
+h1 { font-size: clamp(1.7rem, 4vw, 2.4rem); }
+h2 { font: 500 0.75rem/1 var(--mono); text-transform: uppercase; letter-spacing: 0.12em; color: var(--muted); }
+p { margin: 0; max-width: 70ch; }
+section { display: grid; gap: 0.75rem; }
+header { display: grid; gap: 0.6rem; }
+.sub { font-size: 1.05rem; color: var(--muted); }
+.sub b { color: var(--ink); font-weight: 600; }
+
+.box { background: var(--surface); border: 1px solid var(--line); overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; }
+th, td { text-align: left; padding: 0.55rem 0.9rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+tr:last-child th, tr:last-child td { border-bottom: 0; }
+th { width: 9.5rem; font: 500 0.75rem/1.5 var(--mono); text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+td { font-family: var(--mono); font-size: 0.88rem; font-variant-numeric: tabular-nums; }
+td small { color: var(--muted); font-size: 0.8rem; }
+
+.status { display: grid; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); gap: 1rem; }
+.col { border-top: 3px solid currentColor; padding-top: 0.6rem; display: grid; gap: 0.4rem; align-content: start; }
+.col.proven { color: var(--proven); }
+.col.sim { color: var(--sim); }
+.col.todo { color: var(--todo); }
+.col h3 { margin: 0; font: 500 0.75rem/1 var(--mono); letter-spacing: 0.1em; text-transform: uppercase; }
+.col ul { margin: 0; padding-left: 1rem; color: var(--ink); font-size: 0.9rem; display: grid; gap: 0.25rem; }
+
+pre { margin: 0; padding: 1rem; font: 400 0.82rem/1.6 var(--mono); color: var(--ink); white-space: pre; }
+pre .c { color: var(--muted); }
+
+.ask { border: 1.5px solid var(--accent); padding: 1.1rem 1.25rem; display: grid; gap: 0.5rem; }
+.ask p { font-size: 0.95rem; }
+.ask strong { color: var(--accent); }
+footer { font-size: 0.8rem; color: var(--muted); }
+</style>
+
+<div class="wrap">
+
+  <header>
+    <h1>OASIS : l'autorité de commande des flottes de machines autonomes</h1>
+    <p class="sub">Aucune machine ne bouge sur un ordre <b>forgé, modifié, périmé, révoqué ou dangereux</b>, même si un nœud de la flotte a été capturé. Rust <b>no_std</b>, sur un microcontrôleur à 1 $. <b>TRL 4</b> : prouvé en labo sur vrai silicium. Je cherche des partenaires pour le pilote terrain.</p>
+  </header>
+
+  <section aria-labelledby="g-h">
+    <h2 id="g-h">Cinq garanties, prouvées sur 3 cartes RP2040</h2>
+    <div class="box">
+      <table>
+        <tr><th>Autorité</th><td>Seule une origine habilitée commande un actionneur donné <small>· ordre d'un nœud non habilité refusé</small></td></tr>
+        <tr><th>Intégrité</th><td>Origine, contenu, compteur et réseau signés, vérifiés <b>à chaque relais</b> <small>· 0/150 inversions de bit acceptées</small></td></tr>
+        <tr><th>Fraîcheur</th><td>Ni rejeu ni ordre périmé, même après coupure de courant <small>· rejeu à l'octet près refusé, échéance de 10 s</small></td></tr>
+        <tr><th>Révocation</th><td>Liste signée par l'opérateur, appliquée par toute la flotte <small>· nœud révoqué rejeté au premier saut, après coupure aussi</small></td></tr>
+        <tr><th>Sûreté</th><td>Pas d'action si les capteurs ne sont pas fiables ou hors limites <small>· capteur perdu, 1000 N, NaN : refusés</small></td></tr>
+      </table>
+    </div>
+  </section>
+
+  <section aria-labelledby="st-h">
+    <h2 id="st-h">État réel</h2>
+    <div class="status">
+      <div class="col proven">
+        <h3>Prouvé · TRL 4</h3>
+        <ul>
+          <li>Les 5 garanties sur silicium, liaison filaire, logs bruts et SHA-256</li>
+          <li>534 tests, 16 nouvelles preuves Kani vérifiées</li>
+          <li>Crypto exacte sur puce (RFC 8439, RFC 7748)</li>
+        </ul>
+      </div>
+      <div class="col sim">
+        <h3>Conçu, pas encore testé</h3>
+        <ul>
+          <li>Couche d'autorité par-dessus MAVLink ou Reticulum</li>
+          <li>Révocation k-sur-n et rattrapage : sur PC seulement</li>
+          <li>Drone : simulation PX4 SITL</li>
+        </ul>
+      </div>
+      <div class="col todo">
+        <h3>Manquant</h3>
+        <ul>
+          <li>Radio LoRa sur matériel, routage</li>
+          <li>Protection matérielle des clés (RP2350 prévu)</li>
+          <li>Mesure d'énergie, audit externe</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section aria-labelledby="pos-h">
+    <h2 id="pos-h">Pourquoi pas Reticulum ?</h2>
+    <p>Reticulum (TRL 7) et microReticulum (TRL 6-7) sont d'excellents transports : radio, routage, écosystème. Leurs relais transmettent les données sans les vérifier, par choix d'anonymat. OASIS ne les remplace pas : <b>il décide si une machine a le droit d'agir</b>, et peut s'installer par-dessus.</p>
+  </section>
+
+  <section class="ask" aria-labelledby="ask-h">
+    <h2 id="ask-h">Pilote terrain · 6 semaines · TRL 4 → 5-6</h2>
+    <p><strong>Pour qui :</strong> drones, robots de terrain, actionneurs distants (vannes, pompes, portails) sous l'autorité d'un opérateur.</p>
+    <p><strong>Ce qu'on fait :</strong> la porte d'autorité sur un vrai actionneur, un exercice de révocation chronométré, des attaques sur votre banc. Critères de réussite fixés avant, logs bruts remis.</p>
+    <p>Contact : message LinkedIn.</p>
+  </section>
+
+  <footer>OASIS · Rust · MIT · pré-1.0 · TRL 4 · non certifié · sans audit externe</footer>
+</div>

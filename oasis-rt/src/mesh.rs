@@ -142,6 +142,34 @@ pub fn mesh_v9_verify(key: &MeshMacKey, msg_id: u64, origin_fp: [u8; FP_LEN], go
 pub const SPORE_V10_MAGIC: &[u8] = b"SPORE\x0A";
 pub const MESH_ED_SIG_LEN: usize = 64;
 pub const MESH_V10_HEADER_LEN: usize = MESH_HEADER_LEN + MESH_ED_SIG_LEN;
+
+// ─── v0B (SPORE\x0B): payload-bound, fresh, domain-separated, revocation-aware ───
+// See docs/MESH_V0B_SPEC.md. v0B closes the four v0A defects: the signature now
+// binds the payload (via SHA-256), the counter (verifiable freshness over a
+// persisted sliding window), and the network_id (domain separation); relays
+// enforce revocation. v0B is ADDITIVE — v8/v9/v0A behaviour is unchanged.
+#[cfg(feature = "mesh_v10")]
+pub const SPORE_V0B_MAGIC: &[u8] = b"SPORE\x0B";
+/// Network identifier length (domain separation).
+#[cfg(feature = "mesh_v10")]
+pub const MESH_V0B_NETWORK_LEN: usize = 8;
+/// v0B header: 6 magic + 8 network_id + 8 origin_fp + 8 counter + 1 ttl
+/// + 2 hops + 2 payload_len + 64 signature = 99 bytes, then payload.
+#[cfg(feature = "mesh_v10")]
+pub const MESH_V0B_HEADER_LEN: usize = 99;
+/// Max payload: bounded by the u16 `payload_len` field.
+#[cfg(feature = "mesh_v10")]
+pub const MESH_V0B_MAX_PAYLOAD: usize = u16::MAX as usize;
+/// Hop cap enforced on receipt (unsigned ttl/hops are bounded here).
+#[cfg(feature = "mesh_v10")]
+pub const MESH_V0B_MAX_TTL: u8 = DEFAULT_TTL;
+/// 14-byte ASCII domain-separation tag prefixed into the signed data.
+#[cfg(feature = "mesh_v10")]
+pub const MESH_V0B_DOMAIN: &[u8] = b"OASIS-MESH-v0B";
+/// Length of the Ed25519-signed preimage:
+/// 14 domain + 8 network_id + 8 origin_fp + 8 counter + 2 payload_len + 32 digest.
+#[cfg(feature = "mesh_v10")]
+pub const MESH_V0B_PREIMAGE_LEN: usize = 14 + 8 + 8 + 8 + 2 + 32;
 pub const ED25519_PUB_LEN: usize = 32;
 pub const ED25519_SEED_LEN: usize = 32;
 
@@ -218,6 +246,97 @@ pub fn mesh_v10_pubkey_from_seed(seed: &MeshEdSeed) -> Result<MeshEdPub, &'stati
     let mut out = [0u8; ED25519_PUB_LEN];
     out.copy_from_slice(kp.pk.as_ref());
     Ok(MeshEdPub(out))
+}
+
+// ─── v0B crypto: payload-bound, domain-separated Ed25519 over a SHA-256 digest ───
+
+/// SHA-256 digest of the payload (bound into the v0B signed data).
+#[cfg(feature = "mesh_v10")]
+pub fn mesh_v0b_payload_digest(payload: &[u8]) -> [u8; 32] {
+    let mut h = Sha256::new();
+    h.update(payload);
+    let out = h.finalize();
+    let mut d = [0u8; 32];
+    d.copy_from_slice(&out);
+    d
+}
+
+/// Build the v0B Ed25519 signed preimage (pure — Kani-friendly):
+/// `"OASIS-MESH-v0B" || network_id || origin_fp || counter || payload_len || SHA-256(payload)`.
+/// Content, freshness (counter) and network are all bound here.
+#[cfg(feature = "mesh_v10")]
+pub fn mesh_v0b_signed_preimage(network_id: [u8; MESH_V0B_NETWORK_LEN], origin_fp: [u8; FP_LEN], counter: u64, payload_len: u16, payload_digest: &[u8; 32]) -> [u8; MESH_V0B_PREIMAGE_LEN] {
+    let mut buf = [0u8; MESH_V0B_PREIMAGE_LEN];
+    buf[0..14].copy_from_slice(MESH_V0B_DOMAIN);
+    buf[14..22].copy_from_slice(&network_id);
+    buf[22..30].copy_from_slice(&origin_fp);
+    buf[30..38].copy_from_slice(&counter.to_le_bytes());
+    buf[38..40].copy_from_slice(&payload_len.to_le_bytes());
+    buf[40..72].copy_from_slice(payload_digest);
+    buf
+}
+
+/// Sign a v0B envelope with a pre-derived keypair (hot path).
+#[cfg(feature = "mesh_v10")]
+pub fn mesh_v0b_sign_with_kp(kp: &ed25519_compact::KeyPair, network_id: [u8; MESH_V0B_NETWORK_LEN], origin_fp: [u8; FP_LEN], counter: u64, payload: &[u8]) -> [u8; MESH_ED_SIG_LEN] {
+    let digest = mesh_v0b_payload_digest(payload);
+    let pre = mesh_v0b_signed_preimage(network_id, origin_fp, counter, payload.len() as u16, &digest);
+    let sig = kp.sk.sign(&pre, None);
+    let mut out = [0u8; MESH_ED_SIG_LEN];
+    out.copy_from_slice(sig.as_ref());
+    out
+}
+
+/// Verify a v0B signature. Recomputes the payload digest, so any change to the
+/// payload, network_id, origin_fp, counter or payload_len fails verification.
+#[cfg(feature = "mesh_v10")]
+pub fn mesh_v0b_verify(pubkey: &MeshEdPub, network_id: [u8; MESH_V0B_NETWORK_LEN], origin_fp: [u8; FP_LEN], counter: u64, payload: &[u8], got: &[u8; MESH_ED_SIG_LEN]) -> bool {
+    let digest = mesh_v0b_payload_digest(payload);
+    let pre = mesh_v0b_signed_preimage(network_id, origin_fp, counter, payload.len() as u16, &digest);
+    let pk = match ed25519_compact::PublicKey::from_slice(&pubkey.0) {
+        Ok(p) => p,
+        Err(_) => return false,
+    };
+    let sig = match ed25519_compact::Signature::from_slice(got) {
+        Ok(s) => s,
+        Err(_) => return false,
+    };
+    pk.verify(&pre, &sig).is_ok()
+}
+
+/// Parsed v0B header fields.
+#[cfg(feature = "mesh_v10")]
+pub struct V0bHeader {
+    pub network_id: [u8; MESH_V0B_NETWORK_LEN],
+    pub origin_fp: [u8; FP_LEN],
+    pub counter: u64,
+    pub ttl: u8,
+    pub hops: u16,
+    pub payload_len: u16,
+    pub sig: [u8; MESH_ED_SIG_LEN],
+}
+
+/// Pure, panic-free v0B header parser (Kani-proven total). Returns `None` for a
+/// buffer shorter than the fixed header or with the wrong magic; otherwise the
+/// parsed fields. All slice bounds are inside `[0, MESH_V0B_HEADER_LEN)` after
+/// the length check, so no indexing can panic for any input.
+#[cfg(feature = "mesh_v10")]
+pub fn v0b_try_parse_header(envelope: &[u8]) -> Option<V0bHeader> {
+    if envelope.len() < MESH_V0B_HEADER_LEN {
+        return None;
+    }
+    if &envelope[0..6] != SPORE_V0B_MAGIC {
+        return None;
+    }
+    Some(V0bHeader {
+        network_id: envelope[6..14].try_into().ok()?,
+        origin_fp: envelope[14..22].try_into().ok()?,
+        counter: u64::from_le_bytes(envelope[22..30].try_into().ok()?),
+        ttl: envelope[30],
+        hops: u16::from_le_bytes(envelope[31..33].try_into().ok()?),
+        payload_len: u16::from_le_bytes(envelope[33..35].try_into().ok()?),
+        sig: envelope[35..MESH_V0B_HEADER_LEN].try_into().ok()?,
+    })
 }
 
 // ─── Bloom-filter second-level dedup ──────────────────────────────────────
@@ -493,7 +612,9 @@ pub fn inner_slice(envelope: &[u8]) -> &[u8] {
     }
     let m = &envelope[..6];
     #[cfg(feature = "mesh_v10")]
-    let header_len = if m == SPORE_V10_MAGIC {
+    let header_len = if m == SPORE_V0B_MAGIC {
+        MESH_V0B_HEADER_LEN
+    } else if m == SPORE_V10_MAGIC {
         MESH_V10_HEADER_LEN
     } else if m == SPORE_V9_MAGIC {
         MESH_V9_HEADER_LEN
@@ -555,6 +676,25 @@ pub struct MeshRouter {
     /// Pubkey registry for v0A verify. Maps origin_fp → Ed25519 pubkey.
     #[cfg(feature = "mesh_v10")]
     ed_registry: MeshPubRegistry,
+    /// v0B network identifier (domain separation). Default `[0;8]`; set by
+    /// `new_v0b`. Only consulted on the v0B path.
+    #[cfg(feature = "mesh_v10")]
+    network_id: [u8; MESH_V0B_NETWORK_LEN],
+    /// v0B freshness: `Some` iff this router is in v0B mode. IPsec-style
+    /// persisted sliding window (per origin). Authoritative anti-replay —
+    /// independent of the RAM Bloom, so it survives reboot/Bloom-reset.
+    #[cfg(feature = "mesh_v10")]
+    counter_tracker: Option<crate::spore_crypto::CounterTracker>,
+    /// v0B relay-enforced revocation set. A revoked origin is dropped at the
+    /// first hop, before the signature check.
+    #[cfg(feature = "mesh_v10")]
+    revoked: HashSet<[u8; FP_LEN]>,
+    /// v0B strict mode: when `false` (the default for a v0B router), every
+    /// non-v0B envelope (v8/v9/v0A) is dropped. Accepting them would let an
+    /// attacker downgrade to v0A, whose payload is unsigned and whose replay
+    /// protection is RAM-only. Set to `true` only during a migration.
+    #[cfg(feature = "mesh_v10")]
+    allow_legacy: bool,
 }
 
 impl MeshRouter {
@@ -581,6 +721,14 @@ impl MeshRouter {
             ed_keypair: None,
             #[cfg(feature = "mesh_v10")]
             ed_registry: MeshPubRegistry::new(),
+            #[cfg(feature = "mesh_v10")]
+            network_id: [0u8; MESH_V0B_NETWORK_LEN],
+            #[cfg(feature = "mesh_v10")]
+            counter_tracker: None,
+            #[cfg(feature = "mesh_v10")]
+            revoked: HashSet::new(),
+            #[cfg(feature = "mesh_v10")]
+            allow_legacy: false,
         }
     }
 
@@ -607,6 +755,14 @@ impl MeshRouter {
             ed_keypair: None,
             #[cfg(feature = "mesh_v10")]
             ed_registry: MeshPubRegistry::new(),
+            #[cfg(feature = "mesh_v10")]
+            network_id: [0u8; MESH_V0B_NETWORK_LEN],
+            #[cfg(feature = "mesh_v10")]
+            counter_tracker: None,
+            #[cfg(feature = "mesh_v10")]
+            revoked: HashSet::new(),
+            #[cfg(feature = "mesh_v10")]
+            allow_legacy: false,
         }
     }
 
@@ -644,6 +800,81 @@ impl MeshRouter {
         r.ed_keypair = Some(kp);
         r.ed_registry = registry;
         r
+    }
+
+    /// v0B constructor (SPORE\x0B). Like `new_ed25519_signed`, plus a
+    /// `network_id` for domain separation and a persisted per-origin counter
+    /// window for verifiable freshness. Strict by default: v8/v9/v0A envelopes
+    /// are dropped (no downgrade). `set_allow_legacy(true)` re-enables them for
+    /// a migration; v0B traffic always goes through the stricter `process_v0b`.
+    #[cfg(feature = "mesh_v10")]
+    pub fn new_v0b(my_fp: [u8; FP_LEN], network_id: [u8; MESH_V0B_NETWORK_LEN], seed: MeshEdSeed, registry: MeshPubRegistry) -> Self {
+        let s = ed25519_compact::Seed::from_slice(&seed.0).expect("bad ed25519 seed in new_v0b — 32 bytes required");
+        let kp = ed25519_compact::KeyPair::from_seed(s);
+        let mut r = Self::new(my_fp);
+        r.ed_keypair = Some(kp);
+        r.ed_registry = registry;
+        r.network_id = network_id;
+        r.counter_tracker = Some(crate::spore_crypto::CounterTracker::new());
+        r
+    }
+
+    /// Accept (or refuse, the default) legacy v8/v9/v0A envelopes on a v0B
+    /// router. Opting in re-opens the v0A downgrade (unsigned payload,
+    /// RAM-only replay protection); use it only while migrating a fleet.
+    #[cfg(feature = "mesh_v10")]
+    pub fn set_allow_legacy(&mut self, allow: bool) {
+        self.allow_legacy = allow;
+    }
+
+    /// True if this router is in v0B mode.
+    #[cfg(feature = "mesh_v10")]
+    pub fn is_v0b(&self) -> bool {
+        self.counter_tracker.is_some()
+    }
+
+    /// This router's v0B network id.
+    #[cfg(feature = "mesh_v10")]
+    pub fn v0b_network_id(&self) -> [u8; MESH_V0B_NETWORK_LEN] {
+        self.network_id
+    }
+
+    /// Add an origin fingerprint to the relay revocation set. A revoked
+    /// origin is dropped at the first hop, before signature verification.
+    #[cfg(feature = "mesh_v10")]
+    pub fn revoke(&mut self, fp: [u8; FP_LEN]) {
+        self.revoked.insert(fp);
+    }
+
+    /// True if `fp` is revoked on this relay.
+    #[cfg(feature = "mesh_v10")]
+    pub fn is_revoked(&self, fp: &[u8; FP_LEN]) -> bool {
+        self.revoked.contains(fp)
+    }
+
+    /// Highest v0B counter this relay has accepted from `origin_fp` (0 if
+    /// none / not in v0B mode).
+    #[cfg(feature = "mesh_v10")]
+    pub fn v0b_last_seen(&self, origin_fp: &[u8; FP_LEN]) -> u64 {
+        self.counter_tracker.as_ref().map(|t| t.last_seen(origin_fp)).unwrap_or(0)
+    }
+
+    /// Serialize the v0B freshness window for durable storage (CTR\x03). On
+    /// boot, restore it with `restore_counter_tracker` BEFORE processing any
+    /// v0B envelope — this is what defeats post-reboot replay. Returns `None`
+    /// if not in v0B mode.
+    #[cfg(feature = "mesh_v10")]
+    pub fn counter_tracker_bytes(&self) -> Option<Vec<u8>> {
+        self.counter_tracker.as_ref().map(|t| t.to_bytes())
+    }
+
+    /// Restore the v0B freshness window from `counter_tracker_bytes`. Also puts
+    /// the router into v0B mode if it was not already.
+    #[cfg(feature = "mesh_v10")]
+    pub fn restore_counter_tracker(&mut self, bytes: &[u8]) -> Result<(), &'static str> {
+        let t = crate::spore_crypto::CounterTracker::from_bytes(bytes)?;
+        self.counter_tracker = Some(t);
+        Ok(())
     }
 
     #[cfg(feature = "mesh_v10")]
@@ -872,6 +1103,45 @@ impl MeshRouter {
         Some(out)
     }
 
+    /// Originate a v0B envelope (SPORE\x0B) at the default TTL. Returns `None`
+    /// if the router is not v0B-capable or the payload exceeds
+    /// `MESH_V0B_MAX_PAYLOAD`.
+    #[cfg(feature = "mesh_v10")]
+    pub fn origin_wrap_v0b(&mut self, inner: &[u8]) -> Option<Vec<u8>> {
+        self.origin_wrap_v0b_with_ttl(inner, self.default_ttl)
+    }
+
+    /// Originate a v0B envelope at an explicit TTL. The signature binds the
+    /// payload (via SHA-256), the monotonic counter and the network_id.
+    #[cfg(feature = "mesh_v10")]
+    pub fn origin_wrap_v0b_with_ttl(&mut self, inner: &[u8], ttl: u8) -> Option<Vec<u8>> {
+        if self.ed_keypair.is_none() {
+            return None;
+        }
+        if inner.len() > MESH_V0B_MAX_PAYLOAD {
+            return None;
+        }
+        self.tx_counter = self.tx_counter.wrapping_add(1);
+        let counter = self.tx_counter;
+        let network_id = self.network_id;
+        let my_fp = self.my_fp;
+        let sig = {
+            let kp = self.ed_keypair.as_ref().unwrap();
+            mesh_v0b_sign_with_kp(kp, network_id, my_fp, counter, inner)
+        };
+        let mut out = Vec::with_capacity(MESH_V0B_HEADER_LEN + inner.len());
+        out.extend_from_slice(SPORE_V0B_MAGIC);
+        out.extend_from_slice(&network_id);
+        out.extend_from_slice(&my_fp);
+        out.extend_from_slice(&counter.to_le_bytes());
+        out.push(ttl.min(MESH_V0B_MAX_TTL));
+        out.extend_from_slice(&0u16.to_le_bytes()); // hops
+        out.extend_from_slice(&(inner.len() as u16).to_le_bytes());
+        out.extend_from_slice(&sig);
+        out.extend_from_slice(inner);
+        Some(out)
+    }
+
     /// Process an incoming mesh envelope. Caller supplies the full packet
     /// as received on UDP (or other transport). Returns what to do next.
     ///
@@ -879,6 +1149,14 @@ impl MeshRouter {
     /// and mutate TTL + hops bytes in place. Previously this case allocated
     /// 2× (inner copy + freshly-built forward envelope).
     pub fn process(&mut self, envelope: &[u8]) -> MeshDecision {
+        #[cfg(feature = "mesh_v10")]
+        if self.counter_tracker.is_some() && envelope.len() >= 6 && &envelope[..6] == SPORE_V0B_MAGIC {
+            return self.process_v0b(envelope);
+        }
+        #[cfg(feature = "mesh_v10")]
+        if self.counter_tracker.is_some() && !self.allow_legacy {
+            return MeshDecision::Drop("legacy envelope rejected by strict v0B router");
+        }
         let parsed = match parse_and_verify(
             envelope,
             self.signing_key.as_ref(),
@@ -911,6 +1189,14 @@ impl MeshRouter {
     /// into a Vec). Avoids the one memcpy in `process()` by mutating in place.
     /// For ProcessLocalOnly case, the envelope is returned unchanged.
     pub fn process_owned(&mut self, mut envelope: Vec<u8>) -> MeshDecision {
+        #[cfg(feature = "mesh_v10")]
+        if self.counter_tracker.is_some() && envelope.len() >= 6 && &envelope[..6] == SPORE_V0B_MAGIC {
+            return self.process_v0b(&envelope);
+        }
+        #[cfg(feature = "mesh_v10")]
+        if self.counter_tracker.is_some() && !self.allow_legacy {
+            return MeshDecision::Drop("legacy envelope rejected by strict v0B router");
+        }
         let parsed = match parse_and_verify(
             &envelope,
             self.signing_key.as_ref(),
@@ -935,6 +1221,76 @@ impl MeshRouter {
         let new_hops = parsed.hops_so_far.saturating_add(1);
         envelope[23..25].copy_from_slice(&new_hops.to_le_bytes());
         MeshDecision::Arrived { envelope, msg_id: parsed.msg_id, hops_seen: parsed.hops_so_far, forward: true }
+    }
+
+    /// v0B receive pipeline. Verification order is cheapest → most expensive,
+    /// and router state (the counter window) mutates ONLY after every check —
+    /// including the Ed25519 signature — has passed (verify-before-remember).
+    /// A rejected message never advances the freshness window.
+    #[cfg(feature = "mesh_v10")]
+    fn process_v0b(&mut self, envelope: &[u8]) -> MeshDecision {
+        // 1. length + magic (pure, panic-free parse).
+        let hdr = match v0b_try_parse_header(envelope) {
+            Some(h) => h,
+            None => {
+                if envelope.len() < MESH_V0B_HEADER_LEN {
+                    return MeshDecision::Drop("mesh envelope too short");
+                }
+                return MeshDecision::Drop("bad mesh magic");
+            }
+        };
+        if self.counter_tracker.is_none() {
+            return MeshDecision::Drop("v0B received but router not in v0B mode");
+        }
+        // 2. network (domain separation) — reject foreign networks cheaply.
+        if hdr.network_id != self.network_id {
+            return MeshDecision::Drop("foreign network");
+        }
+        // own re-broadcast bounced back
+        if hdr.origin_fp == self.my_fp {
+            return MeshDecision::Drop("own echo");
+        }
+        // 3. origin must be known AND not revoked — both before signature cost.
+        if self.is_revoked(&hdr.origin_fp) {
+            return MeshDecision::Drop("origin revoked");
+        }
+        let pubkey = match self.ed_registry.get(&hdr.origin_fp) {
+            Some(p) => *p,
+            None => return MeshDecision::Drop("unknown sender"),
+        };
+        // 4. ttl/hops/length sanity (unsigned fields bounded here).
+        if hdr.ttl > MESH_V0B_MAX_TTL || hdr.hops > MESH_V0B_MAX_TTL as u16 || (hdr.ttl as u16).saturating_add(hdr.hops) > MESH_V0B_MAX_TTL as u16 {
+            return MeshDecision::Drop("ttl/hops out of range");
+        }
+        let payload = &envelope[MESH_V0B_HEADER_LEN..];
+        if payload.len() != hdr.payload_len as usize {
+            return MeshDecision::Drop("length mismatch");
+        }
+        // 5. freshness pre-check (read-only; never mutates) — cheap replay reject.
+        if self.counter_tracker.as_ref().unwrap().is_stale(&hdr.origin_fp, hdr.counter) {
+            return MeshDecision::Drop("stale counter");
+        }
+        // 6. Ed25519 over domain||network||origin||counter||len||sha256(payload).
+        if !mesh_v0b_verify(&pubkey, hdr.network_id, hdr.origin_fp, hdr.counter, payload, &hdr.sig) {
+            return MeshDecision::Drop("bad mesh signature");
+        }
+        // 7. authoritative freshness update — the FIRST and ONLY state mutation.
+        match self.counter_tracker.as_mut().unwrap().check_and_update(hdr.origin_fp, hdr.counter) {
+            Ok(()) => {}
+            Err("replay detected (bit set in sliding window)") => return MeshDecision::Drop("replay detected"),
+            Err(_) => return MeshDecision::Drop("stale counter"),
+        }
+
+        let msg_id = origin_msg_id(hdr.origin_fp, hdr.counter);
+        // 8. forward / terminal decision (ttl/hops are the only mutated bytes).
+        if hdr.ttl == 0 {
+            return MeshDecision::Arrived { envelope: envelope.to_vec(), msg_id, hops_seen: hdr.hops, forward: false };
+        }
+        let mut out = envelope.to_vec();
+        out[30] = hdr.ttl - 1;
+        let new_hops = hdr.hops.saturating_add(1);
+        out[31..33].copy_from_slice(&new_hops.to_le_bytes());
+        MeshDecision::Arrived { envelope: out, msg_id, hops_seen: hdr.hops, forward: true }
     }
 
     pub fn dedup_cache_size(&self) -> usize {

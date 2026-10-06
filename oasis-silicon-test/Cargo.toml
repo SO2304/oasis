@@ -14,6 +14,8 @@ cortex-m = "0.7"
 cortex-m-rt = "0.7"
 rp2040-hal = { version = "0.10", features = ["rt", "critical-section-impl"] }
 rp2040-boot2 = "0.3"
+# RAM-safe flash erase/program (bootrom helpers) for v0B counter persistence (T8).
+rp2040-flash = "0.5"
 usb-device = "0.3"
 usbd-serial = "0.2"
 embedded-alloc = "0.5"
@@ -21,6 +23,8 @@ embedded-alloc = "0.5"
 oasis-rt = { path = "../oasis-rt", default-features = false, features = ["mesh_bloom_mcu", "mesh_v10"] }
 # Same Ed25519 primitive oasis-rt uses — for the T3 deterministic KAT.
 ed25519-compact = { version = "2", default-features = false, features = ["x25519"] }
+# Operator authority (single / k-of-n) for verifying ORV1 revocation lists on-chip (Part C).
+oasis-operator-key = { path = "../oasis-operator-key" }
 
 [profile.release]
 opt-level = "z"

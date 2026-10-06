@@ -1,0 +1,218 @@
+<title>OASIS Technical Brief</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@112,800&family=IBM+Plex+Sans:wght@400;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: an engineering datasheet in one 62rem column; numbered sections because a reader cites them ("see §5"); orange only for the pilot ask */
+:root {
+  --bg: #eef1f4;
+  --surface: #ffffff;
+  --ink: #14202e;
+  --muted: #566476;
+  --line: #d3dae2;
+  --accent: #e2531d;
+  --proven: #1f7a4d;
+  --sim: #2c5fa8;
+  --todo: #9a6a12;
+  --display: "Archivo", "Arial Narrow", system-ui, sans-serif;
+  --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f151c; --surface: #17202a; --ink: #e6ebf0; --muted: #98a5b4; --line: #2a3644;
+    --accent: #f06a35; --proven: #4cc38a; --sim: #79a6e8; --todo: #e0ad4f;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f151c; --surface: #17202a; --ink: #e6ebf0; --muted: #98a5b4; --line: #2a3644;
+  --accent: #f06a35; --proven: #4cc38a; --sim: #79a6e8; --todo: #e0ad4f;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font: 400 0.95rem/1.55 var(--body); padding-inline: 16px; padding-block: 0; }
+/* Deterrent only: discourages casual copy-paste of the brief. Contact stays selectable. */
+.wrap { -webkit-user-select: none; user-select: none; }
+.wrap .contact { -webkit-user-select: text; user-select: text; }
+.wrap { max-width: 62rem; margin: 0 auto; display: grid; gap: 2.5rem; padding-block: 2.5rem 3rem; }
+h1, h2 { font-family: var(--display); font-stretch: 112%; font-weight: 800; margin: 0; line-height: 1.15; text-wrap: balance; }
+h1 { font-size: clamp(1.6rem, 4vw, 2.3rem); }
+h2 { font-size: 1.2rem; display: flex; gap: 0.6rem; align-items: baseline; }
+h2 span { font: 500 0.8rem/1 var(--mono); color: var(--muted); }
+h3 { margin: 0; font: 600 0.95rem/1.3 var(--body); }
+p { margin: 0; max-width: 72ch; }
+section { display: grid; gap: 0.8rem; }
+header { display: grid; gap: 0.7rem; }
+.sub { font-size: 1.05rem; color: var(--muted); max-width: 72ch; }
+.meta { display: flex; flex-wrap: wrap; gap: 0.4rem 1.25rem; font: 400 0.8rem/1.4 var(--mono); color: var(--muted); border-top: 1px solid var(--line); padding-top: 0.8rem; }
+.meta b { color: var(--ink); font-weight: 500; }
+.note { font-size: 0.82rem; color: var(--muted); }
+
+.box { background: var(--surface); border: 1px solid var(--line); overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; }
+th, td { text-align: left; padding: 0.55rem 0.85rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+tr:last-child th, tr:last-child td { border-bottom: 0; }
+thead th { font: 500 0.72rem/1.3 var(--mono); text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+tbody th { font-weight: 600; width: 13rem; }
+td.n, th.n { font-family: var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+td small { color: var(--muted); }
+.wide { min-width: 40rem; }
+
+.tag { display: inline-block; font: 500 0.68rem/1 var(--mono); letter-spacing: 0.06em; padding: 0.3rem 0.45rem; border: 1px solid currentColor; white-space: nowrap; }
+.tag.proven { color: var(--proven); }
+.tag.sim { color: var(--sim); }
+.tag.todo { color: var(--todo); }
+
+.layers { display: grid; gap: 0; border: 1px solid var(--line); background: var(--surface); }
+.layer { display: grid; grid-template-columns: 11rem 1fr; gap: 1rem; padding: 0.75rem 0.9rem; border-bottom: 1px solid var(--line); }
+.layer:last-child { border-bottom: 0; }
+.layer > * { min-width: 0; }
+.layer b { font: 500 0.8rem/1.4 var(--mono); }
+.layer p { font-size: 0.9rem; }
+@media (max-width: 34rem) { .layer { grid-template-columns: 1fr; gap: 0.25rem; } }
+
+.two { display: grid; grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr)); gap: 1.25rem; }
+.two > * { min-width: 0; }
+ul { margin: 0; padding-left: 1.1rem; display: grid; gap: 0.3rem; }
+.finding { border-left: 3px solid var(--todo); padding: 0.2rem 0 0.2rem 0.9rem; }
+.ask { border: 1.5px solid var(--accent); padding: 1.1rem 1.25rem; display: grid; gap: 0.6rem; }
+.ask h2 { color: var(--accent); }
+footer { font-size: 0.8rem; color: var(--muted); border-top: 1px solid var(--line); padding-top: 1rem; }
+</style>
+
+<div class="wrap">
+
+  <header>
+    <h1>OASIS: command authority for autonomous machine fleets</h1>
+    <p class="sub">No machine moves on a forged, modified, stale, revoked or unsafe order, even when a node of the fleet has been captured. Rust <code>no_std</code>, runs on a $1 Cortex-M0+. Proven in the lab on real silicon (TRL 4); looking for field pilots to take it to TRL 5–6.</p>
+    <div class="meta">
+      <span><b>TRL 4</b> · pre-1.0 · single maintainer</span>
+      <span>last silicon run <b>2026-10-06</b></span>
+      <span><b>3 × RP2040</b> · wired link</span>
+      <span><b>534</b> tests · <b>16/16</b> new Kani harnesses verified</span>
+    </div>
+  </header>
+
+  <section aria-labelledby="s1">
+    <h2 id="s1"><span>§1</span>Five guarantees</h2>
+    <div class="box">
+      <table class="wide">
+        <thead><tr><th>Guarantee</th><th>Mechanism</th><th>Shown on silicon</th></tr></thead>
+        <tbody>
+          <tr><th>Authority</th><td>Per-node Ed25519 identity; each actuator has its own list of command authorities</td><td>Order from a registered but non-authorised node: <code>NotAuthorized</code>, pin stays low</td></tr>
+          <tr><th>Integrity at every relay</th><td>Origin, payload digest, counter and network id signed (v0B); strict mode refuses older formats</td><td>0 of 150 single-bit flips accepted, 150/150 traced; relay-swapped payload dropped; downgrade to v0A refused</td></tr>
+          <tr><th>Freshness</th><td>Signed counter with a 128-bit window persisted in flash; sender counter lease; orders expire 10 s after issue, bound to the actuator's boot id</td><td>Byte-exact replay refused after a relay power-cut; rebooted sender accepted again; order from a previous boot refused</td></tr>
+          <tr><th>Fleet-wide revocation</th><td>Operator-signed list (single key or k-of-n), monotonic epoch, persisted before it is applied, enforced by every relay</td><td>Revoked origin dropped at the first hop, also after a power-cut; replay of an older list refused</td></tr>
+          <tr><th>Safe to act</th><td>R14 sensor-uncertainty gate, physical limits, non-finite values refused</td><td>Lost sensor: <code>R14Unsafe</code>; 1000 N on a 50 N limit and NaN: <code>OutOfLimits</code>; pin stays low</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note">An order is executed only if all seven checks pass: verified envelope, authorised origin, not revoked, not expired, R14 favourable, within limits, not already executed. The decision is a pure function with three Kani proofs: it acts only if every condition holds, never acts when R14 is unfavourable, and is total and deterministic.</p>
+  </section>
+
+  <section aria-labelledby="s2">
+    <h2 id="s2"><span>§2</span>Problem</h2>
+    <p>Fleets of drones, field robots and remote actuators are run by an operator, but their nodes sit in the open and get lost, stolen or opened. Most low-cost meshes trust a key shared by every node, so one captured node can speak for all of them. Open meshes such as Reticulum are built for anonymity and let relays forward data without checking it. Neither design answers the operator's question: <em>can this order move this machine?</em></p>
+  </section>
+
+  <section aria-labelledby="s3">
+    <h2 id="s3"><span>§3</span>Two ways to deploy</h2>
+    <div class="box">
+      <table class="wide">
+        <thead><tr><th>Mode</th><th>When</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr><th>Closed OASIS mesh</th><td>Relays are not trusted: every hop must filter forged, modified, replayed, revoked or foreign traffic</td><td><span class="tag proven">TRL 4</span> 3 boards, wired link</td></tr>
+          <tr><th>Authority layer over an existing transport</th><td>MAVLink, serial, Reticulum or microReticulum already carry the traffic; OASIS adds authority, freshness, revocation and the safety gate at the machine</td><td><span class="tag todo">DESIGNED</span> the signed envelope is transport-independent bytes; not yet tested over MAVLink or Reticulum</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>OASIS does not replace a mature transport. Reticulum moves the bytes; OASIS decides whether the machine may act on them.</p>
+  </section>
+
+  <section aria-labelledby="s4">
+    <h2 id="s4"><span>§4</span>Architecture</h2>
+    <div class="layers">
+      <div class="layer"><b>Actuation gate</b><p>Seven-condition decision before any actuator moves. Bound to the actuator's own clock and boot id, so no shared clock is needed.</p></div>
+      <div class="layer"><b>Authority</b><p>Operator key (single or k-of-n) signs revocation lists; per-actuator command authorities. Revocation is carried by the mesh as a signed content type.</p></div>
+      <div class="layer"><b>Signed envelope (v0B)</b><p>Ed25519 over a domain tag, network id, origin, counter, payload length and SHA-256 of the payload. Relay state changes only after full verification.</p></div>
+      <div class="layer"><b>Transport security</b><p>ChaCha20-Poly1305, X25519 and Noise-KK for confidentiality between peers. Standard primitives only.</p></div>
+      <div class="layer"><b>Link</b><p>Wired UART on silicon. LoRa SX1262 driver tested against a mock only. Flooding with TTL; no routing yet.</p></div>
+    </div>
+  </section>
+
+  <section aria-labelledby="s5">
+    <h2 id="s5"><span>§5</span>Evidence</h2>
+    <div class="box">
+      <table class="wide">
+        <thead><tr><th>Test (3 × RP2040)</th><th>Result</th></tr></thead>
+        <tbody>
+          <tr><th>Crypto known answers on chip</th><td>ChaCha20-Poly1305 (RFC 8439) and X25519 (RFC 7748) byte-exact; Ed25519 cross-checked with an independent library; 9/9 runs</td></tr>
+          <tr><th>Bit-flip sweep, strict v0B</th><td>150 sent, 150 traced at the relay, 0 accepted; every flipped field rejected for its expected reason</td></tr>
+          <tr><th>Downgrade</th><td>v0A refused in strict mode, accepted only after an explicit legacy switch (negative control)</td></tr>
+          <tr><th>Replay across a power-cut</th><td>The same 111 bytes, re-sent after the relay was unplugged: <code>stale counter</code></td></tr>
+          <tr><th>Sender power-cut</th><td>Sender resumed at counter 1280 from its flash ceiling; relay accepted it</td></tr>
+          <tr><th>Revocation</th><td>Applied on B and C, revoked origin dropped at the first hop, held across C's power-cut, old list refused</td></tr>
+          <tr><th>Actuation gate (GPIO read back)</th><td>4 legitimate orders executed; non-authorised, expired, replayed, lost-sensor, over-limit and NaN orders all refused</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note">Raw logs, firmware images and SHA-256 manifests are archived for every row and verify in a fresh clone. Firmware was built from committed trees whose hash is stamped on every log line. The LED itself was not visually confirmed; the pin level was read back.</p>
+  </section>
+
+  <section aria-labelledby="s6">
+    <h2 id="s6"><span>§6</span>Cost and footprint on a $1 MCU</h2>
+    <div class="box">
+      <table class="wide">
+        <thead><tr><th>Item</th><th class="n">RP2040 (measured)</th><th>Implication</th></tr></thead>
+        <tbody>
+          <tr><th>Sign (cached keypair)</th><td class="n">≈ 175 ms</td><td>Orders and authority messages, not telemetry</td></tr>
+          <tr><th>Verify, per hop</th><td class="n">≈ 179 ms</td><td>Each relay pays it once per signed message</td></tr>
+          <tr><th>v0B over v0A</th><td class="n">+1 %</td><td>Binding payload, counter and network costs one SHA-256</td></tr>
+          <tr><th>Firmware flash</th><td class="n">≈ 136–158 KB</td><td>Mesh node with v0B and revocation; actuator node with the gate</td></tr>
+          <tr><th>RAM</th><td class="n">not measured</td><td>160 KB heap reserved; about 34 KB per router</td></tr>
+          <tr><th>Energy</th><td class="n">not measured</td><td>Estimate: one signature ≈ one LoRa SF7 transmission</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section aria-labelledby="s7">
+    <h2 id="s7"><span>§7</span>Maturity, stated plainly</h2>
+    <div class="box">
+      <table class="wide">
+        <thead><tr><th></th><th>TRL</th><th>What it has that OASIS does not</th><th>What OASIS adds</th></tr></thead>
+        <tbody>
+          <tr><th>Reticulum (Python)</th><td class="n">≈ 7</td><td>Field use, routing, applications, anonymity</td><td>Relay-verified authority and an actuation gate</td></tr>
+          <tr><th>microReticulum (C++)</th><td class="n">≈ 6–7</td><td>Real LoRa hardware, routing, Reticulum interoperability</td><td>Its relays forward data unchecked; OASIS relays verify origin, content, freshness and network</td></tr>
+          <tr><th>OASIS</th><td class="n">4</td><td colspan="2">Security model proven in the lab on silicon. No radio, no routing, no field deployment, no external audit.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note">TRL estimates use the EU Horizon 2020 scale. Competitor behaviour was read in their source code (Reticulum <code>e40191b</code>, microReticulum <code>40fa628</code>); no attack has yet been executed against them.</p>
+  </section>
+
+  <section aria-labelledby="s8">
+    <h2 id="s8"><span>§8</span>Known limits</h2>
+    <ul>
+      <li>No key protection on RP2040: a captured node gives up its key over SWD. It can sign only as itself and can be revoked. Planned: RP2350 OTP and secure boot.</li>
+      <li>A revoked node can still relay, delay or drop other nodes' traffic; it cannot modify it.</li>
+      <li>k-of-n operator quorum and relay catch-up after a missed revocation are tested on PC only.</li>
+      <li>Flooding, not routing: every signed message costs one verification per relay.</li>
+      <li>No radio on hardware, no power measurement, no certification, no external audit.</li>
+    </ul>
+  </section>
+
+  <section class="ask" aria-labelledby="s9">
+    <h2 id="s9"><span>§9</span>Six-week field pilot</h2>
+    <p>For teams running drones, field robots or remote actuators under one operator. Together we take OASIS from TRL 4 to TRL 5–6 on your hardware:</p>
+    <ul>
+      <li>the authority gate on one real actuator class (motor, valve, PX4 command);</li>
+      <li>a revocation drill: a node is "captured", revoked, and the time to exclude it fleet-wide is measured;</li>
+      <li>attacks on your bench: forged, replayed, expired and revoked orders, none of which may move the machine;</li>
+      <li>pass/fail criteria agreed before the test, raw logs handed over.</li>
+    </ul>
+    <p class="contact">Contact: direct message on LinkedIn.</p>
+  </section>
+
+  <footer>OASIS · Rust · pre-1.0 · TRL 4 · not certified · no external audit · figures dated 2026-10-06</footer>
+</div>

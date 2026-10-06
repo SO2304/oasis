@@ -32,3 +32,19 @@ std = []
 
 [lib]
 path = "src/lib.rs"
+
+[[example]]
+name = "duty_cycle"
+required-features = ["std"]
+
+[[example]]
+name = "fhss_advanced_jammers"
+required-features = ["std"]
+
+[[example]]
+name = "fhss_measurement"
+required-features = ["std"]
+
+[[example]]
+name = "mesh_poc"
+required-features = ["std"]

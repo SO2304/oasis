@@ -251,3 +251,51 @@ All three were corrected and **re-verified on the same 3 boards on 2026-10-06**
 negative control (`nominal_false_blocks=0/50`). Corrected evidence + full
 write-up: **`../2026-10-06/REPORT.md`**. The "9/9 PASS" headline of §1–§4 above
 therefore stands only as corrected by that re-run — read the two reports together.
+
+## 14. Errata detail — independent review notes (2026-10-05)
+
+Items 1–3 below were re-run on silicon on 2026-10-06 (see §13). Items 4–7 are
+corrections to this report and to the build.
+
+A second pass re-read every raw log, the firmware source and the SHA-256 list,
+re-derived the T3 Ed25519 KAT with an independent library (Python `cryptography`:
+pubkey and signature match), and replayed the T5 logic on the host. Corrections:
+
+1. **T5 v9 `tamper_rejected` was a false positive.** The test flipped the *last*
+   byte (inner payload) and re-sent it to the *same* receiver, which dropped it as
+   `"duplicate"`. Replayed on the host, a fresh receiver **accepts** that tampered
+   envelope: the v9 HMAC covers `magic||msg_id||origin_fp` only, exactly like v0A
+   (see §12b). The v9 MAC itself works (a flipped `msg_id` byte → `"bad mesh mac"`).
+   **Fixed in firmware:** flip a MAC-covered byte, send to a fresh receiver, and
+   require the specific reason `"bad mesh mac"`. The v0A forge check now also
+   requires `"bad mesh signature"` (it already failed for that reason; the match
+   was just too loose). **Needs a re-run on the boards.**
+2. **T0 always passed and the clock was not measured.** It emitted `PASS` hard-coded
+   and printed the HAL's *configured* frequency. **Fixed:** T0 now counts core
+   cycles with SysTick over a 100 ms window of the 1 MHz TIMER and passes only
+   within ±1 % of the configured clock. Both clocks come from the same crystal, so
+   this proves the PLL setting took effect, not crystal accuracy. **Needs a re-run.**
+3. **T4 had no negative control**, so a gate that blocks everything would have
+   passed. **Fixed:** 50 nominal cases (all sensors alive, low readings) must give
+   `nominal_false_blocks=0`. Host probe over 1000 nominal cases: max signal 0.919,
+   under the 0.95 threshold (thin margin, 0.031). Note also that fault signals rely
+   on the sensor-loss term: agent entropy alone can be as low as 0.872, and the +0.15
+   from the lost `Important` sensor carries it over 0.95. The `> 0.95` comparison
+   lives in the test harness; it validates the on-chip entropy math, not a gate API.
+   **Needs a re-run.**
+4. **§12 "15 framer CRC failures" is not supported by the archived log.** That log
+   was overwritten by the Phase-4 run (commit `0c0fe0b`); the original 3-phase log
+   is only in git history (`git show d12aa64:evidence/silicon/2026-10-04/uart_mesh_noise_sweep.log`).
+   It confirms tx=142 / dropped=8 / truncated=2 and 124 relayed at B and C, but CRC
+   failures were logged only every 10th (`count=1`, `count=11`), so the log proves
+   **11–20**, not 15. **Fixed:** `uart_mesh.rs` now logs every CRC failure.
+5. **SHA256SUMS:** `board_A_T0.log` and `board_B_T0.log` were hashed with CRLF line
+   endings and later normalised to LF by git, so they failed `sha256sum -c`. The
+   CRLF hashes were verified to match the old entries; the entries now hold the LF
+   hashes of the committed files (23/23 OK).
+6. **T6 batch count:** the code comment said K=10; the firmware runs K=5 (as §3 says).
+7. **Repro on Linux x86:** `cargo test --workspace --release` did not compile on
+   x86_64 Linux because `oasis-rt/src/main.rs` enabled ARM64 `svc` inline asm for
+   every Linux target. **Fixed:** guarded with `target_arch = "aarch64"`; the
+   command now passes on x86_64 Linux (480 tests, 0 failed; oasis-rt 444).
+

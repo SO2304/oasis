@@ -10,7 +10,7 @@
 //!
 //! Wiring chain: A.GP0→B.GP1, B.GP0→C.GP1, common GND.
 //! USB-CDC control: `o`=originate, `s`=RX status, `l`=UART0 internal self-test,
-//! `b`=reboot to BOOTSEL.
+//! `b`=reboot to BOOTSEL. `K`=strict v0B (refuse v8/v9/v0A), `k`=legacy allowed.
 
 #![no_std]
 #![no_main]
@@ -32,8 +32,55 @@ use usb_device::prelude::{UsbDeviceBuilder, UsbVidPid};
 use usbd_serial::SerialPort;
 
 use oasis_rt::mesh::{
-    mesh_v10_pubkey_from_seed, MeshDecision, MeshEdSeed, MeshPubRegistry, MeshRouter,
+    mesh_v0b_verify, mesh_v10_pubkey_from_seed, mesh_v10_verify, MeshDecision, MeshEdSeed,
+    MeshPubRegistry, MeshRouter,
 };
+use oasis_rt::spore_crypto::CounterTracker;
+use oasis_rt::actuation::parse_oac1;
+use oasis_rt::mesh::inner_slice;
+
+#[path = "../ef.rs"]
+mod ef;
+use oasis_rt::tx_lease::{DualSlotStore, SlotIo, TxLease, TX_LEASE_BLOCK, TX_LEASE_RECORD_LEN};
+
+/// Upper bound on counters a single USB command buffer can consume (the
+/// commands sum to <= 868: X=600, N=200, G=50, Y=12, others 1 each). One
+/// durable reservation covering this is made BEFORE any command in the buffer
+/// originates, so no counter is ever used above the persisted ceiling.
+const CMD_MAX_ORIGINATIONS: u64 = 1024;
+
+/// Sender counter lease on flash: two alternating 4 KiB sectors (below the
+/// receiver-window sector at 0x1FF000). A torn write damages only one slot.
+const LEASE_SECTORS: [u32; 2] = [0x1F_D000, 0x1F_E000];
+struct FlashSlots;
+impl SlotIo for FlashSlots {
+    fn read(&self, slot: usize) -> [u8; TX_LEASE_RECORD_LEN] {
+        let p = (0x1000_0000usize + LEASE_SECTORS[slot] as usize) as *const u8;
+        let mut r = [0u8; TX_LEASE_RECORD_LEN];
+        for (i, b) in r.iter_mut().enumerate() {
+            *b = unsafe { core::ptr::read_volatile(p.add(i)) };
+        }
+        r
+    }
+    fn write(&mut self, slot: usize, rec: &[u8; TX_LEASE_RECORD_LEN]) -> bool {
+        let mut buf = [0xFFu8; 256]; // flash program granularity
+        buf[..TX_LEASE_RECORD_LEN].copy_from_slice(rec);
+        cortex_m::interrupt::free(|_| unsafe {
+            rp2040_flash::flash::flash_range_erase(LEASE_SECTORS[slot], 4096, true);
+            rp2040_flash::flash::flash_range_program(LEASE_SECTORS[slot], &buf, true);
+        });
+        true // durability is confirmed by DualSlotStore's read-back
+    }
+}
+
+/// Test-harness only: erase both lease sectors (factory reset).
+fn wipe_lease_sectors() {
+    cortex_m::interrupt::free(|_| unsafe {
+        for s in LEASE_SECTORS {
+            rp2040_flash::flash::flash_range_erase(s, 4096, true);
+        }
+    });
+}
 
 #[global_allocator]
 static HEAP: Heap = Heap::empty();
@@ -56,7 +103,69 @@ pub static BOOT2: [u8; 256] = rp2040_boot2::BOOT_LOADER_W25Q080;
 const XTAL_HZ: u32 = 12_000_000;
 const BOARD_ID: &str = env!("OASIS_BOARD_ID");
 const GIT_HASH: &str = env!("OASIS_GIT_HASH");
+// v0B mesh network id (domain separation); all 3 boards share one network.
+const NETWORK_ID: [u8; 8] = *b"OASISnet";
 type Usb = hal::usb::UsbBus;
+
+/// Microsecond timestamp from the RP2040 1 MHz TIMER (32-bit, wraps ~71 min).
+#[inline]
+fn now_us() -> u32 {
+    unsafe { (*pac::TIMER::ptr()).timerawl().read().bits() }
+}
+/// Median of 5 samples (sorts in place).
+fn median5(s: &mut [u32; 5]) -> u32 {
+    s.sort_unstable();
+    s[2]
+}
+
+/// Flash persistence of the v0B counter window (T8 reboot-replay). Uses the
+/// last 4 KiB sector of a 2 MiB flash and rp2040-flash's RAM-safe bootrom
+/// helpers. Survives power loss; restored on boot so a replayed counter is
+/// rejected after a reboot.
+mod persist {
+    use alloc::vec::Vec;
+    const SECTOR: u32 = 0x1F_F000; // offset of the last 4K sector (2 MiB flash)
+    const XIP_BASE: usize = 0x1000_0000;
+    const MAGIC: [u8; 4] = *b"V0BP";
+
+    /// Erase + program the sector with [magic(4)][len(4 LE)][tracker bytes].
+    pub fn save(bytes: &[u8]) -> bool {
+        if bytes.len() > 4096 - 8 {
+            return false;
+        }
+        let mut buf = [0xFFu8; 4096];
+        buf[0..4].copy_from_slice(&MAGIC);
+        buf[4..8].copy_from_slice(&(bytes.len() as u32).to_le_bytes());
+        buf[8..8 + bytes.len()].copy_from_slice(bytes);
+        cortex_m::interrupt::free(|_| unsafe {
+            rp2040_flash::flash::flash_range_erase(SECTOR, 4096, true);
+            rp2040_flash::flash::flash_range_program(SECTOR, &buf, true);
+        });
+        true
+    }
+
+    /// Test-harness only: erase the receiver-window sector.
+    pub fn wipe() {
+        cortex_m::interrupt::free(|_| unsafe {
+            rp2040_flash::flash::flash_range_erase(SECTOR, 4096, true);
+        });
+    }
+
+    /// Read back the persisted tracker bytes (XIP-mapped), or None if absent.
+    pub fn load() -> Option<Vec<u8>> {
+        let p = (XIP_BASE + SECTOR as usize) as *const u8;
+        let hdr = unsafe { core::slice::from_raw_parts(p, 8) };
+        if hdr[0..4] != MAGIC {
+            return None;
+        }
+        let len = u32::from_le_bytes([hdr[4], hdr[5], hdr[6], hdr[7]]) as usize;
+        if len == 0 || len > 4096 - 8 {
+            return None;
+        }
+        let data = unsafe { core::slice::from_raw_parts(p.add(8), len) };
+        Some(data.to_vec())
+    }
+}
 
 // UART0 pins: GP0 = TX, GP1 = RX.
 type UartPins0 = (
@@ -146,21 +255,176 @@ fn main() -> ! {
             registry.insert(fp_for(id), pk);
         }
     }
-    let mut router =
-        MeshRouter::new_ed25519_signed(fp_for(BOARD_ID), MeshEdSeed(seed_for(BOARD_ID)), registry);
+    // v0B router: handles v0A envelopes as a superset (origin_wrap/process
+    // unchanged) AND v0B (origin_wrap_v0b/process_v0b dispatch). All existing
+    // v0A relay commands keep working; v0B adds O/G/W/Y below.
+    let mut router = MeshRouter::new_v0b(
+        fp_for(BOARD_ID),
+        NETWORK_ID,
+        MeshEdSeed(seed_for(BOARD_ID)),
+        registry,
+    );
+    // A v0B router is strict by default (legacy envelopes dropped, no downgrade).
+    // This test firmware also hosts the earlier v0A commands (o/R/F/T/X/N), so it
+    // boots in legacy-allowed mode; send `K` on every node before a v0B-only run.
+    router.set_allow_legacy(true);
 
     let mut io = Io { usb_dev, serial };
     let mut deframer = Deframer::new();
     let mut rx_total: u32 = 0;
     let mut frame_total: u32 = 0;
     let mut crc_fails: u32 = 0;
+    // T8: remember the last v0B envelope A originated, so it can be replayed
+    // byte-for-byte across a reboot of the relay (same counter => must be rejected).
+    let mut last_v0b = [0u8; MAX_ENV];
+    let mut last_v0b_len = 0usize;
     io.log("BOOT", format_args!("uart-mesh fp={} UART0 tx=GP0 rx=GP1 @115200", BOARD_ID));
+    // T8: restore the persisted v0B counter window so a post-reboot replay is
+    // rejected. Must happen BEFORE processing any v0B envelope.
+    match persist::load() {
+        Some(saved) => match router.restore_counter_tracker(&saved) {
+            Ok(()) => io.log("PERSIST_LOADED", format_args!("bytes={}", saved.len())),
+            Err(e) => io.log("PERSIST_BAD", format_args!("{}", e)),
+        },
+        None => io.log("PERSIST_NONE", format_args!("no saved v0b window")),
+    }
+    // Sender lease: resume AT the persisted ceiling, so every counter emitted
+    // after this boot exceeds every counter emitted before it.
+    let mut lstore = DualSlotStore::new(FlashSlots);
+    let mut lease = TxLease::boot(&lstore, TX_LEASE_BLOCK);
+    router.set_tx_counter(lease.resume_point());
+    io.log("LEASE_BOOT", format_args!("resume={},ceiling={}", lease.resume_point(), lease.ceiling()));
+    // boot_id for the actuation gate's time base = this boot's lease resume point.
+    // Force one durable reservation NOW so the next boot resumes strictly higher,
+    // even if this boot never receives a command (otherwise two boots could share
+    // a boot_id and a command stamped for the previous boot would look fresh).
+    let boot_id = lease.resume_point();
+    if !lease.ensure(boot_id.saturating_add(1), &mut lstore) {
+        io.log("LEASE_FAIL", format_args!("boot reservation failed; boot_id={} not unique", boot_id));
+    }
+
+    // Part C: actuator output on GP25 (on-board LED) + revocation/actuation state.
+    let _led = pins.gpio25.into_push_pull_output();
+    ef::led_set(false);
+    let mut efs = ef::Ef::new(boot_id);
+    match efs.restore(&mut router) {
+        Ok(Some(e)) => io.log("REV_BOOT", format_args!("restored_epoch={},revoked={}", e, efs.rev.revoked.len())),
+        Ok(None) => io.log("REV_BOOT", format_args!("no_saved_list")),
+        Err(r) => io.log("REV_BOOT", format_args!("persisted_list_rejected={:?}", r)),
+    }
+    // `@P<hex>` + newline from the PC: originate a v0B envelope with that payload.
+    // Line bytes are diverted so hex digits never trigger single-byte commands.
+    let mut line = [0u8; 600];
+    let mut line_len = 0usize;
+    let mut in_line = false;
 
     loop {
         io.poll();
 
-        let mut rx = [0u8; 16];
-        if let Ok(n) = io.serial.read(&mut rx) {
+        let mut raw = [0u8; 16];
+        if let Ok(n_raw) = io.serial.read(&mut raw) {
+            // Split the input: `@...` line bytes (up to a newline) go to `line`,
+            // the rest are single-byte commands.
+            let mut rx = [0u8; 16];
+            let mut n = 0usize;
+            let mut line_done = false;
+            for &byte in &raw[..n_raw] {
+                if in_line {
+                    if byte == b'\n' || byte == b'\r' {
+                        in_line = false;
+                        line_done = true;
+                    } else if line_len < line.len() {
+                        line[line_len] = byte;
+                        line_len += 1;
+                    }
+                } else if byte == b'@' {
+                    in_line = true;
+                    line_len = 0;
+                } else {
+                    rx[n] = byte;
+                    n += 1;
+                }
+            }
+            // Make every counter this buffer (commands + a completed line) could
+            // consume durable FIRST. On failure nothing in the buffer runs.
+            let writes_before = lease.writes();
+            let any_input = n > 0 || line_done;
+            let lease_ok = !any_input
+                || lease.ensure(router.tx_counter().saturating_add(CMD_MAX_ORIGINATIONS), &mut lstore);
+            if !lease_ok {
+                io.log("LEASE_FAIL", format_args!("tx={},ceiling={}", router.tx_counter(), lease.ceiling()));
+            }
+            let line_done = line_done && lease_ok;
+            let n = if lease_ok { n } else { 0 };
+            if lease.writes() != writes_before {
+                io.log(
+                    "LEASE_PERSIST",
+                    format_args!("ceiling={},writes_since_boot={}", lease.ceiling(), lease.writes()),
+                );
+            }
+            // `@P<hex>`: originate a v0B envelope carrying the PC-built payload
+            // (operator-signed ORV1 list, or an OAC1 command). Stored for `z` replay.
+            if line_done && line_len >= 1 && line[0] == b'P' {
+                let mut pl = [0u8; 300];
+                match ef::hex_decode(&line[1..line_len], &mut pl) {
+                    Some(plen) => {
+                        if let Some(env) = router.origin_wrap_v0b(&pl[..plen]) {
+                            last_v0b_len = env.len().min(MAX_ENV);
+                            last_v0b[..last_v0b_len].copy_from_slice(&env[..last_v0b_len]);
+                            send_framed(&mut uart0, &env);
+                            io.log(
+                                "PAYLOAD_TX",
+                                format_args!(
+                                    "kind={},counter={},len={}",
+                                    ef::content_kind(&pl[..plen]),
+                                    router.tx_counter(),
+                                    env.len()
+                                ),
+                            );
+                        }
+                    }
+                    None => io.log("PAYLOAD_BAD_HEX", format_args!("chars={}", line_len - 1)),
+                }
+            }
+            // Test-harness factory reset of ALL persistence areas (receiver window,
+            // sender lease, revocation list), then a full system reset so the RAM
+            // state (incl. the router's revoked set) starts clean too.
+            if rx[..n].contains(&b'!') {
+                persist::wipe();
+                wipe_lease_sectors();
+                ef::wipe_rev_sectors();
+                io.log("PERSIST_WIPED", format_args!("all persistence erased; resetting"));
+                for _ in 0..200_000 {
+                    io.poll();
+                }
+                cortex_m::peripheral::SCB::sys_reset();
+            }
+            // Part C harness: simulated sensor loss (R14), LED off, E/F status.
+            if rx[..n].contains(&b'U') {
+                efs.sensor_lost = !efs.sensor_lost;
+                io.log("SENSOR", format_args!("lost={}", efs.sensor_lost));
+            }
+            if rx[..n].contains(&b'L') {
+                ef::led_set(false);
+                io.log("LED", format_args!("off,pin25={}", ef::led_pin_level()));
+            }
+            if rx[..n].contains(&b'S') {
+                let r = &efs.act.rejects;
+                io.log(
+                    "EF_STATUS",
+                    format_args!(
+                        "boot_id={},now_ms={},epoch={},revoked={},sensor_lost={},pin25={},executed={},rejects={}/{}/{}/{}/{}/{}/{}",
+                        efs.boot_id,
+                        ef::now_ms64(),
+                        efs.rev.epoch,
+                        efs.rev.revoked.len(),
+                        efs.sensor_lost,
+                        ef::led_pin_level(),
+                        efs.act.executed,
+                        r[0], r[1], r[2], r[3], r[4], r[5], r[6]
+                    ),
+                );
+            }
             if rx[..n].contains(&b'b') {
                 hal::rom_data::reset_to_usb_boot(0, 0);
             }
@@ -170,14 +434,179 @@ fn main() -> ! {
                 send_framed(&mut uart0, &env);
                 io.log("ORIGINATED", format_args!("msg_id={},len={}", mid, env.len()));
             }
+            // ── v0B originate (payload/counter/network bound). Run on A.
+            if rx[..n].contains(&b'O') {
+                if let Some(env) = router.origin_wrap_v0b(b"OASIS-v0b-hello") {
+                    send_framed(&mut uart0, &env);
+                    io.log("V0B_ORIGINATED", format_args!("counter={},len={}", router.tx_counter(), env.len()));
+                }
+            }
+            // ── T8: originate a v0B envelope AND store its exact bytes for a
+            //    later byte-for-byte replay (across a reboot of B). Run on A.
+            if rx[..n].contains(&b'Z') {
+                if let Some(env) = router.origin_wrap_v0b(b"OASIS-v0b-T8") {
+                    last_v0b_len = env.len().min(MAX_ENV);
+                    last_v0b[..last_v0b_len].copy_from_slice(&env[..last_v0b_len]);
+                    send_framed(&mut uart0, &env);
+                    io.log("V0B_T8_TX", format_args!("counter={},len={}", router.tx_counter(), env.len()));
+                }
+            }
+            // ── T8: replay the stored envelope byte-for-byte (same counter). After
+            //    B reboots with its persisted window, B must DROP this. Run on A.
+            if rx[..n].contains(&b'z') {
+                if last_v0b_len > 0 {
+                    send_framed(&mut uart0, &last_v0b[..last_v0b_len]);
+                    io.log("V0B_T8_REPLAY", format_args!("len={}", last_v0b_len));
+                }
+            }
+            // ── v0B pre-CRC bit-flip sweep (50): flip ONE bit before framing so
+            //    the CRC is valid over corrupted bytes and the packet reaches B's
+            //    verifier. v0B signs the payload+counter+network, so expect ~0
+            //    ARRIVED at B (vs v0A's 12/50 accepted). Run on A.
+            if rx[..n].contains(&b'G') {
+                let seed = now_us() ^ 0x2468_ACE0;
+                let mut rng = Rng::new(seed);
+                let mut txd = 0u32;
+                io.log("V0B_SWEEP", format_args!("Phase (Pre-CRC v0B bitflip,50)"));
+                for seq in 1..=50u32 {
+                    // Payload ends in a 3-digit sequence number; the relay logs the
+                    // last 3 envelope bytes, so every packet is traceable end to end.
+                    let mut pl = *b"OASIS-nz-seq000";
+                    pl[12] = b'0' + ((seq / 100) % 10) as u8;
+                    pl[13] = b'0' + ((seq / 10) % 10) as u8;
+                    pl[14] = b'0' + (seq % 10) as u8;
+                    if let Some(mut env) = router.origin_wrap_v0b(&pl) {
+                        let idx = rng.upto(env.len() as u32) as usize;
+                        let bit = rng.upto(8) as u8;
+                        let field = match idx {
+                            0..=5 => "magic",
+                            6..=13 => "network",
+                            14..=21 => "origin",
+                            22..=29 => "counter",
+                            30 => "ttl",
+                            31..=32 => "hops",
+                            33..=34 => "plen",
+                            35..=98 => "sig",
+                            _ => "payload",
+                        };
+                        env[idx] ^= 1u8 << bit; // single-bit corruption, pre-CRC
+                        let mut wire = [0u8; MAX_ENV + 8];
+                        let wlen = frame_into(&mut wire, &env);
+                        uart0.write_full_blocking(&wire[..wlen]);
+                        txd += 1;
+                        io.log(
+                            "SWEEP_TX",
+                            format_args!(
+                                "seq={:03},counter={},idx={},bit={},field={}",
+                                seq,
+                                router.tx_counter(),
+                                idx,
+                                bit,
+                                field
+                            ),
+                        );
+                    }
+                    io.poll();
+                    cortex_m::asm::delay(6_250_000); // ~50 ms
+                }
+                io.log("V0B_SWEEP_DONE", format_args!("tx={}", txd));
+            }
+            // ── v0B content-swap (suppression): send a payload-swapped copy with
+            //    the ORIGINAL signature, then the real message. B must DROP the
+            //    forged one ("bad mesh signature") and ARRIVE/relay the real one.
+            //    Run on A. (payloads are equal length: 14 bytes each.)
+            if rx[..n].contains(&b'W') {
+                if let Some(orig) = router.origin_wrap_v0b(b"OASIS-v0b-REAL") {
+                    let mut forged = orig.clone();
+                    forged[99..].copy_from_slice(b"OASIS-v0b-FAKE"); // swap payload, keep sig
+                    send_framed(&mut uart0, &forged);
+                    io.log("V0B_SWAP_TX", format_args!("forged_content_kept_sig,len={}", forged.len()));
+                    cortex_m::asm::delay(37_500_000); // ~300 ms gap (avoid FIFO overrun)
+                    send_framed(&mut uart0, &orig);
+                    io.log("V0B_REAL_TX", format_args!("len={}", orig.len()));
+                }
+            }
+            // ── v0B vs v0A on-chip sign/verify timing (K=5 median, µs). Run on A.
+            if rx[..n].contains(&b'Y') {
+                let pl = b"OASIS-v0b-timing";
+                let mypub = mesh_v10_pubkey_from_seed(&MeshEdSeed(seed_for(BOARD_ID))).unwrap();
+                let mut a_sign = [0u32; 5];
+                let mut b_sign = [0u32; 5];
+                for k in 0..5 {
+                    let t0 = now_us();
+                    let _ = router.origin_wrap(pl);
+                    a_sign[k] = now_us().wrapping_sub(t0);
+                    let t0 = now_us();
+                    let _ = router.origin_wrap_v0b(pl);
+                    b_sign[k] = now_us().wrapping_sub(t0);
+                }
+                let ea = router.origin_wrap(pl);
+                let msg_id_a = u64::from_le_bytes(ea[6..14].try_into().unwrap());
+                let fp_a: [u8; 8] = ea[14..22].try_into().unwrap();
+                let sig_a: [u8; 64] = ea[25..89].try_into().unwrap();
+                let eb = router.origin_wrap_v0b(pl).unwrap();
+                let net_b: [u8; 8] = eb[6..14].try_into().unwrap();
+                let fp_b: [u8; 8] = eb[14..22].try_into().unwrap();
+                let ctr_b = u64::from_le_bytes(eb[22..30].try_into().unwrap());
+                let sig_b: [u8; 64] = eb[35..99].try_into().unwrap();
+                let pay_b = &eb[99..];
+                let mut a_ver = [0u32; 5];
+                let mut b_ver = [0u32; 5];
+                for k in 0..5 {
+                    let t0 = now_us();
+                    let _ = mesh_v10_verify(&mypub, msg_id_a, fp_a, &sig_a);
+                    a_ver[k] = now_us().wrapping_sub(t0);
+                    let t0 = now_us();
+                    let _ = mesh_v0b_verify(&mypub, net_b, fp_b, ctr_b, pay_b, &sig_b);
+                    b_ver[k] = now_us().wrapping_sub(t0);
+                }
+                io.log(
+                    "V0B_TIMING",
+                    format_args!(
+                        "v0a_sign_us={},v0b_sign_us={},v0a_verify_us={},v0b_verify_us={}",
+                        median5(&mut a_sign), median5(&mut b_sign), median5(&mut a_ver), median5(&mut b_ver)
+                    ),
+                );
+            }
             if rx[..n].contains(&b's') {
                 io.log(
                     "STATUS",
                     format_args!(
-                        "rx_bytes={},frames={},crc_fails={}",
-                        rx_total, frame_total, crc_fails
+                        "rx_bytes={},frames={},crc_fails={},tx={},lease_ceiling={},lease_writes={},a_last_seen={}",
+                        rx_total,
+                        frame_total,
+                        crc_fails,
+                        router.tx_counter(),
+                        lease.ceiling(),
+                        lease.writes(),
+                        router.v0b_last_seen(&fp_for("A"))
                     ),
                 );
+            }
+            // ── T8: flush the v0B counter window to flash (explicit lease
+            //    checkpoint). Production coalesces this to ~1 write per 256 msgs;
+            //    the test flushes on demand before a power-cut. Run on the relay (B).
+            // ── Strict v0B (`K`) refuses v8/v9/v0A; `k` re-allows them for the v0A commands.
+            if rx[..n].contains(&b'K') {
+                router.set_allow_legacy(false);
+                io.log("MODE", format_args!("strict_v0b=true"));
+            }
+            if rx[..n].contains(&b'k') {
+                router.set_allow_legacy(true);
+                io.log("MODE", format_args!("strict_v0b=false"));
+            }
+            if rx[..n].contains(&b'P') {
+                let hi_a = router.v0b_last_seen(&fp_for("A"));
+                match router.counter_tracker_bytes() {
+                    Some(b) => {
+                        let ok = persist::save(&b);
+                        io.log(
+                            "PERSIST_SAVED",
+                            format_args!("ok={},bytes={},a_last_seen={}", ok, b.len(), hi_a),
+                        );
+                    }
+                    None => io.log("PERSIST_SAVED", format_args!("ok=false,no_tracker")),
+                }
             }
             if rx[..n].contains(&b'l') {
                 // UART0 internal HW loopback self-test (no pins).
@@ -320,17 +749,46 @@ fn main() -> ! {
                         l
                     }
                     DfOut::CrcFail => {
-                        // Wire corruption caught at the framer (CRC8). Throttle logs.
+                        // Wire corruption caught at the framer (CRC8).
                         crc_fails = crc_fails.wrapping_add(1);
-                        if crc_fails % 10 == 1 {
-                            io.log("FRAMER_CRC_FAIL", format_args!("count={}", crc_fails));
-                        }
+                        // Log every failure so the archived log carries the exact total.
+                        io.log("FRAMER_CRC_FAIL", format_args!("count={}", crc_fails));
                         0
                     }
                     DfOut::Pending => 0,
                 };
                 if elen == 0 {
                     continue;
+                }
+                // Per-packet receive trace: frame index, counter field as received
+                // and the last 3 envelope bytes (the sweep's sequence number), so a
+                // lost packet is identifiable rather than merely absent.
+                {
+                    let e = &owned[..elen];
+                    let ctr = if elen >= 30 {
+                        u64::from_le_bytes([e[22], e[23], e[24], e[25], e[26], e[27], e[28], e[29]])
+                    } else {
+                        0
+                    };
+                    let mut seq = [b'?'; 3];
+                    if elen >= 3 {
+                        seq.copy_from_slice(&e[elen - 3..elen]);
+                    }
+                    for b in seq.iter_mut() {
+                        if !b.is_ascii_graphic() {
+                            *b = b'?';
+                        }
+                    }
+                    io.log(
+                        "RXF",
+                        format_args!(
+                            "n={},len={},ctr={},seq={}",
+                            frame_total,
+                            elen,
+                            ctr,
+                            core::str::from_utf8(&seq).unwrap_or("???")
+                        ),
+                    );
                 }
                 match router.process(&owned[..elen]) {
                     MeshDecision::Arrived {
@@ -346,13 +804,77 @@ fn main() -> ! {
                                 msg_id, hops_seen, forward
                             ),
                         );
-                        if forward {
+                        let inner = inner_slice(&envelope);
+                        let mut origin = [0u8; 8];
+                        if envelope.len() >= 22 {
+                            origin.copy_from_slice(&envelope[14..22]);
+                        }
+                        let mut relay = forward;
+                        match ef::content_kind(inner) {
+                            // Signed revocation (spec E.3): verify, persist, apply; forward
+                            // only a fresh epoch, exactly once. Rejects/duplicates stop here.
+                            "ORV1" => {
+                                let d = efs.ingest_orv1(&mut router, inner);
+                                io.log(
+                                    "REV",
+                                    format_args!(
+                                        "decision={:?},epoch={},revoked={},persisted_before_apply={}",
+                                        d,
+                                        efs.rev.epoch,
+                                        efs.rev.revoked.len(),
+                                        d == oasis_rt::mesh_revocation::RevDecision::Applied
+                                    ),
+                                );
+                                relay = forward && d == oasis_rt::mesh_revocation::RevDecision::Applied;
+                            }
+                            // Actuation command for the actuator this board hosts (C).
+                            "OAC1" if BOARD_ID == "C" => {
+                                if let Some(cmd) = parse_oac1(inner) {
+                                    let d = efs.decide(&router, &origin, true, &cmd);
+                                    io.log(
+                                        "ACT",
+                                        format_args!(
+                                            "decision={:?},seq={},origin={:02x},entropy={:.3},pin25={}",
+                                            d,
+                                            cmd.cmd_seq,
+                                            origin[0],
+                                            efs.last_entropy,
+                                            ef::led_pin_level()
+                                        ),
+                                    );
+                                }
+                                relay = false; // consumed by the actuator
+                            }
+                            _ => {}
+                        }
+                        if relay {
                             send_framed(&mut uart0, &envelope);
                             io.log("RELAYED", format_args!("msg_id={},hops={}", msg_id, hops_seen));
                         }
                     }
                     MeshDecision::Drop(reason) => {
                         io.log("DROP", format_args!("{}", reason));
+                        // A command that fails v0B (replay, forgery, revoked origin) is
+                        // still logged as a gate decision so its outcome is on record.
+                        let e = &owned[..elen];
+                        if BOARD_ID == "C" && elen >= 99 + oasis_rt::actuation::OAC1_LEN {
+                            if let Some(cmd) = parse_oac1(&e[99..99 + oasis_rt::actuation::OAC1_LEN]) {
+                                let mut origin = [0u8; 8];
+                                origin.copy_from_slice(&e[14..22]);
+                                let d = efs.decide(&router, &origin, false, &cmd);
+                                io.log(
+                                    "ACT",
+                                    format_args!(
+                                        "decision={:?},v0b_drop={},seq={},origin={:02x},pin25={}",
+                                        d,
+                                        reason,
+                                        cmd.cmd_seq,
+                                        origin[0],
+                                        ef::led_pin_level()
+                                    ),
+                                );
+                            }
+                        }
                     }
                 }
             }

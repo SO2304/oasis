@@ -23,6 +23,16 @@ fn main() {
     let board = env::var("OASIS_BOARD_ID").unwrap_or_else(|_| "X".to_string());
     println!("cargo:rustc-env=OASIS_BOARD_ID={board}");
 
+    // Re-run when HEAD (or the branch ref it points to) moves, so the stamped
+    // git hash always matches the code that was built — not a cached value from
+    // an earlier commit at the same OASIS_BOARD_ID.
+    println!("cargo:rerun-if-changed=../.git/HEAD");
+    if let Ok(head) = std::fs::read_to_string("../.git/HEAD") {
+        if let Some(r) = head.strip_prefix("ref: ") {
+            println!("cargo:rerun-if-changed=../.git/{}", r.trim());
+        }
+    }
+
     // Short git hash for provenance (falls back to "unknown" off a repo).
     let hash = Command::new("git")
         .args(["rev-parse", "--short", "HEAD"])
