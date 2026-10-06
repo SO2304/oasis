@@ -719,6 +719,7 @@ name = "oasis-operator-key"
 version = "0.1.0"
 dependencies = [
  "ed25519-compact",
+ "ml-dsa",
  "oasis-rt",
 ]
 

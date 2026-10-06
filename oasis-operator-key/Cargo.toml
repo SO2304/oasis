@@ -30,6 +30,9 @@ ed25519-compact = { version = "2.2.0", default-features = false, features = ["x2
 
 [dev-dependencies]
 oasis-rt = { path = "../oasis-rt", features = ["std", "mesh_v10"] }
+# Host-side ML-DSA-44 signing for examples/pq_payloads.rs (Phase 1.1). Same pinned
+# version as oasis-rt, which only verifies on devices.
+ml-dsa = { version = "=0.1.1", default-features = false }
 
 [features]
 default = []
