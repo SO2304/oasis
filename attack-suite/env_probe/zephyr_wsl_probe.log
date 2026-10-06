@@ -1,0 +1,91 @@
+[2026-10-06T10:44:35Z] probe launched, hard timebox 900 s (timeout inside WSL)
+
+[2026-10-06T10:44:51Z] === host ===
+Linux DESKTOP-OT31C80 6.18.40.1-microsoft-standard-WSL2 #1 SMP PREEMPT_DYNAMIC Fri Jul 31 22:12:15 UTC 2026 x86_64 x86_64 x86_64 GNU/Linux
+               total        used        free      shared  buff/cache   available
+Mem:            3381         482        1662           4        1311        2898
+Swap:           1024           0        1024
+/dev/sdd       1007G   28G  929G   3% /
+4
+
+[2026-10-06T10:44:51Z] === tools present ===
+python3  Python 3.12.3
+pip3     pip 24.0 from /usr/lib/python3/dist-packages/pip (python 3.12)
+cmake    cmake version 3.28.3
+ninja    1.11.1
+gcc      gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0
+git      git version 2.43.0
+dtc      MISSING
+
+[2026-10-06T10:44:52Z] === west ===
+
+note: If you believe this is a mistake, please contact your Python installation or OS distribution provider. You can override this, at the risk of breaking your Python installation or OS, by passing --break-system-packages.
+hint: See PEP 668 for the detailed specification.
+/tmp/zp.sh: line 10: west: command not found
+RESULT: west unavailable
+[2026-10-06T10:44:53Z] probe exit code 0 (124 = timebox hit)
+
+[2026-10-06T10:46:44Z] attempt 2 (venv for PEP 668), remaining timebox 764s
+
+[2026-10-06T10:46:53Z] === host ===
+Linux DESKTOP-OT31C80 6.18.40.1-microsoft-standard-WSL2 #1 SMP PREEMPT_DYNAMIC Fri Jul 31 22:12:15 UTC 2026 x86_64 x86_64 x86_64 GNU/Linux
+               total        used        free      shared  buff/cache   available
+Mem:            3381         455        1734           4        1266        2925
+Swap:           1024           0        1024
+/dev/sdd       1007G   28G  929G   3% /
+4
+
+[2026-10-06T10:46:53Z] === tools present ===
+python3  Python 3.12.3
+pip3     pip 24.0 from /usr/lib/python3/dist-packages/pip (python 3.12)
+cmake    cmake version 3.28.3
+ninja    1.11.1
+gcc      gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0
+git      git version 2.43.0
+dtc      MISSING
+
+[2026-10-06T10:46:54Z] === sudo (apt needs it for dtc / python3-venv) ===
+passwordless sudo: yes
+Setting up device-tree-compiler (1.7.0-2build1) ...
+Processing triggers for man-db (2.12.0-4build2) ...
+
+[2026-10-06T10:47:00Z] === west in a venv (PEP 668) ===
+West version: v1.5.0
+
+[2026-10-06T10:47:13Z] === west init (zephyr v3.7.0, pinned) ===
+Turn off this advice by setting config variable advice.detachedHead to false
+
+Updating files:   4% (1711/35876)Updating files:   5% (1794/35876)Updating files:   6% (2153/35876)Updating files:   7% (2512/35876)Updating files:   7% (2678/35876)Updating files:   8% (2871/35876)Updating files:   9% (3229/35876)Updating files:  10% (3588/35876)Updating files:  10% (3925/35876)Updating files:  11% (3947/35876)Updating files:  12% (4306/35876)Updating files:  13% (4664/35876)Updating files:  13% (4685/35876)Updating files:  14% (5023/35876)Updating files:  15% (5382/35876)Updating files:  16% (5741/35876)Updating files:  16% (5945/35876)Updating files:  17% (6099/35876)Updating files:  18% (6458/35876)Updating files:  18% (6747/35876)Updating files:  19% (6817/35876)Updating files:  20% (7176/35876)Updating files:  20% (7270/35876)Updating files:  21% (7534/35876)Updating files:  22% (7893/35876)Updating files:  22% (7957/35876)Updating files:  23% (8252/35876)Updating files:  23% (8521/35876)Updating files:  24% (8611/35876)Updating files:  25% (8969/35876)Updating files:  25% (9138/35876)Updating files:  26% (9328/35876)Updating files:  27% (9687/35876)Updating files:  28% (10046/35876)Updating files:  29% (10405/35876)Updating files:  30% (10763/35876)Updating files:  31% (11122/35876)Updating files:  32% (11481/35876)Updating files:  32% (11499/35876)Updating files:  33% (11840/35876)Updating files:  33% (11975/35876)Updating files:  34% (12198/35876)Updating files:  35% (12557/35876)Updating files:  36% (12916/35876)Updating files:  37% (13275/35876)Updating files:  38% (13633/35876)Updating files:  39% (13992/35876)Updating files:  40% (14351/35876)Updating files:  41% (14710/35876)Updating files:  42% (15068/35876)Updating files:  42% (15193/35876)Updating files:  43% (15427/35876)Updating files:  44% (15786/35876)Updating files:  45% (16145/35876)Updating files:  46% (16503/35876)Updating files:  47% (16862/35876)Updating files:  48% (17221/35876)Updating files:  49% (17580/35876)Updating files:  50% (17938/35876)Updating files:  50% (18196/35876)Updating files:  51% (18297/35876)Updating files:  52% (18656/35876)Updating files:  53% (19015/35876)Updating files:  54% (19374/35876)Updating files:  55% (19732/35876)Updating files:  56% (20091/35876)Updating files:  57% (20450/35876)Updating files:  57% (20481/35876)Updating files:  58% (20809/35876)Updating files:  59% (21167/35876)Updating files:  60% (21526/35876)Updating files:  61% (21885/35876)Updating files:  62% (22244/35876)Updating files:  62% (22514/35876)Updating files:  63% (22602/35876)Updating files:  64% (22961/35876)Updating files:  65% (23320/35876)Updating files:  66% (23679/35876)Updating files:  67% (24037/35876)Updating files:  68% (24396/35876)Updating files:  68% (24430/35876)Updating files:  69% (24755/35876)Updating files:  70% (25114/35876)Updating files:  71% (25472/35876)Updating files:  72% (25831/35876)Updating files:  73% (26190/35876)Updating files:  74% (26549/35876)Updating files:  75% (26907/35876)Updating files:  75% (27100/35876)Updating files:  76% (27266/35876)Updating files:  77% (27625/35876)Updating files:  78% (27984/35876)Updating files:  79% (28343/35876)Updating files:  80% (28701/35876)Updating files:  81% (29060/35876)Updating files:  82% (29419/35876)Updating files:  83% (29778/35876)Updating files:  84% (30136/35876)Updating files:  84% (30405/35876)Updating files:  85% (30495/35876)Updating files:  86% (30854/35876)Updating files:  87% (31213/35876)Updating files:  88% (31571/35876)Updating files:  89% (31930/35876)Updating files:  90% (32289/35876)Updating files:  91% (32648/35876)Updating files:  92% (33006/35876)Updating files:  93% (33365/35876)Updating files:  94% (33724/35876)Updating files:  94% (33857/35876)Updating files:  95% (34083/35876)Updating files:  96% (34441/35876)Updating files:  97% (34800/35876)Updating files:  98% (35159/35876)Updating files:  99% (35518/35876)Updating files: 100% (35876/35876)Updating files: 100% (35876/35876), done.
+--- setting manifest.path to zephyr
+=== Initialized. Now run "west update" inside /root/zephyr-probe.
+
+[2026-10-06T10:50:21Z] === west update (zephyr + babblesim group only, shallow) ===
+=== updating tinycrypt (modules/crypto/tinycrypt):
+--- tinycrypt: initializing
+Initialized empty Git repository in /root/zephyr-probe/modules/crypto/tinycrypt/.git/
+--- tinycrypt: fetching, need revision 1012a3ebee18c15ede5efc8332ee2fc37817670f
+From https://github.com/zephyrproject-rtos/tinycrypt
+ * branch            1012a3ebee18c15ede5efc8332ee2fc37817670f -> FETCH_HEAD
+HEAD is now at 1012a3e Fix warnings reported by UBSAN
+HEAD is now at 1012a3e Fix warnings reported by UBSAN
+
+[2026-10-06T10:50:39Z] === python requirements ===
+
+[2026-10-06T10:50:47Z] === build babblesim ===
+make: *** No rule to make target 'everything'.  Stop.
+
+[2026-10-06T10:50:47Z] === build one BT Mesh bsim test ===
+Call Stack (most recent call first):
+  /root/zephyr-probe/zephyr/cmake/modules/FindHostTools.cmake:53 (find_package)
+  /root/zephyr-probe/zephyr/cmake/modules/dts.cmake:9 (find_package)
+  /root/zephyr-probe/zephyr/cmake/modules/zephyr_default.cmake:132 (include)
+  /root/zephyr-probe/zephyr/share/zephyr-package/cmake/ZephyrConfig.cmake:66 (include)
+  /root/zephyr-probe/zephyr/share/zephyr-package/cmake/ZephyrConfig.cmake:92 (include_boilerplate)
+  CMakeLists.txt:5 (find_package)
+
+
+-- Configuring incomplete, errors occurred!
+
+[2026-10-06T10:51:07Z] === done ===
+RESULT: reached the end (see above for per-step success)
+[2026-10-06T10:51:07Z] probe exit code 0 (124 = timebox hit)
