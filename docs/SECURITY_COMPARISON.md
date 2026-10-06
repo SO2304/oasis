@@ -131,4 +131,4 @@ their code or documentation.
 
 What it costs: a revoked node can still relay, drop or delay others' traffic; there
 is an exposure window before catch-up; a compromised operator quorum can revoke
-everyone; Kani harnesses for E/F are written but not run on this machine.
+everyone; the E/F Kani harnesses verify (16/16 with the lease and v0B ones, `evidence/kani/2026-10-06/`), but the full 129-harness pass is only run by CI.

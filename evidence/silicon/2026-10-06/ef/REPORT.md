@@ -125,8 +125,11 @@ A revoked node can still relay, drop or delay others' traffic (revocation remove
 it as an origin, not as a hop). There is an exposure window before catch-up. A
 compromised operator quorum can revoke everyone. There's no secure element: keys
 and persisted state are readable and writable over SWD. Still a wire, not a radio.
-The Kani harnesses for `mesh_revocation` and `actuation` are written but **not run**
-(the full CBMC pass doesn't fit this machine's 3.3 GB WSL).
+The Kani harnesses for `mesh_revocation` and `actuation` were written but not run
+when this report was produced. **Addendum, same day:** they were then run
+individually in WSL and verify (16/16 with the v0B and lease harnesses), after the
+revocation harnesses' unwind bound was raised from 4 to 10 (`memcmp` needed ≥ 9);
+see `evidence/kani/2026-10-06/`.
 
 ## Comparative claim
 

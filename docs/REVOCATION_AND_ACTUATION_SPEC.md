@@ -248,7 +248,7 @@ The five decisions above were approved as proposed. Implemented on
 
 - **Part B:** `oasis-rt/src/mesh_revocation.rs` and `oasis-rt/src/actuation.rs`,
   with 28 tests plus 3 quorum tests in `oasis-operator-key`, and 6 Kani harnesses
-  (written, not run: the 3.3 GB WSL can't hold the CBMC pass). Library tests went
+  (verified individually in WSL: 13/16 on the first run, because the revocation harnesses' unwind bound was too small for `memcmp`; 16/16 after the fix, `evidence/kani/2026-10-06/`). Library tests went
   466 → 494, workspace 533, 0 failed; `no_std` `thumbv6m` builds.
 - **Part C** on 3 RP2040 boards, stamp `6daa0bc`:
   `evidence/silicon/2026-10-06/ef/REPORT.md`.
