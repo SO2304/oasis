@@ -142,17 +142,7 @@ pub fn parse_orv1(b: &[u8]) -> Result<ParsedRevocation, RevReject> {
     if b.len() < fps_end + 1 {
         return Err(RevReject::Malformed);
     }
-    let mut fps: Vec<Fp> = Vec::with_capacity(count);
-    for i in 0..count {
-        let mut fp = [0u8; FP_LEN];
-        fp.copy_from_slice(&b[HEAD_LEN + i * FP_LEN..HEAD_LEN + (i + 1) * FP_LEN]);
-        if let Some(prev) = fps.last() {
-            if fp <= *prev {
-                return Err(RevReject::Malformed); // not strictly ascending
-            }
-        }
-        fps.push(fp);
-    }
+    let fps = parse_fps(&b[HEAD_LEN..fps_end], count)?;
     let nsig = b[fps_end] as usize;
     if nsig == 0 || nsig > MAX_SIGS || b.len() != fps_end + 1 + nsig * SIG_ENTRY_LEN {
         return Err(RevReject::Malformed);
@@ -167,6 +157,57 @@ pub fn parse_orv1(b: &[u8]) -> Result<ParsedRevocation, RevReject> {
         sigs.push((pk, sg));
     }
     Ok(ParsedRevocation { network_id, epoch, issued_at, fps, sigs })
+}
+
+/// `count` fingerprints from `b` (exactly `count * FP_LEN` bytes), strictly
+/// ascending (canonical: one encoding per set, no duplicates).
+fn parse_fps(b: &[u8], count: usize) -> Result<Vec<Fp>, RevReject> {
+    if b.len() != count * FP_LEN {
+        return Err(RevReject::Malformed);
+    }
+    let mut fps: Vec<Fp> = Vec::with_capacity(count);
+    for i in 0..count {
+        let mut fp = [0u8; FP_LEN];
+        fp.copy_from_slice(&b[i * FP_LEN..(i + 1) * FP_LEN]);
+        if let Some(prev) = fps.last() {
+            if fp <= *prev {
+                return Err(RevReject::Malformed); // not strictly ascending
+            }
+        }
+        fps.push(fp);
+    }
+    Ok(fps)
+}
+
+/// Revocation body carried inside an `OAU1` authority container (kind 1):
+/// `epoch u64 | issued_at u64 | count u16 | fp[8] * count`. The network id comes
+/// from the container header and the signatures from its sigblock, so the result
+/// has no `sigs`; the caller passes the container's verification result as
+/// `sig_ok` to [`revocation_transition`]. Same canonical rules as `ORV1`.
+pub fn parse_revocation_body(network_id: [u8; 8], b: &[u8]) -> Result<ParsedRevocation, RevReject> {
+    if b.len() < 18 {
+        return Err(RevReject::Malformed);
+    }
+    let epoch = rd_u64(b, 0);
+    let issued_at = rd_u64(b, 8);
+    let count = u16::from_le_bytes([b[16], b[17]]) as usize;
+    if count > MAX_REVOKED {
+        return Err(RevReject::Malformed);
+    }
+    let fps = parse_fps(&b[18..], count)?;
+    Ok(ParsedRevocation { network_id, epoch, issued_at, fps, sigs: Vec::new() })
+}
+
+/// Encode an `OAU1` revocation body (see [`parse_revocation_body`]).
+pub fn encode_revocation_body(epoch: u64, issued_at: u64, fps: &[Fp]) -> Vec<u8> {
+    let mut b = Vec::with_capacity(18 + fps.len() * FP_LEN);
+    b.extend_from_slice(&epoch.to_le_bytes());
+    b.extend_from_slice(&issued_at.to_le_bytes());
+    b.extend_from_slice(&(fps.len() as u16).to_le_bytes());
+    for fp in fps {
+        b.extend_from_slice(fp);
+    }
+    b
 }
 
 /// `a ⊇ b` for strictly ascending slices.
