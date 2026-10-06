@@ -275,7 +275,8 @@ fn self_test() -> bool {
     }
 }
 
-/// At boot, before anything long runs (the bootloader's watchdog is still running).
+/// At the main-loop entry, once the whole init has run (the bootloader's watchdog is
+/// still running until the caller stops it).
 pub fn boot_confirm(up: &mut Updater) -> BootOutcome {
     match up.get_state() {
         Ok(State::Swap) => {

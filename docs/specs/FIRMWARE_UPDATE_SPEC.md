@@ -71,7 +71,8 @@ Le plancher est un `u64` monotone stocké avec **`tx_lease::DualSlotStore`**
 plus grand gagne, et une écriture déchirée ne perd que la valeur en cours
 d'écriture.
 
-Au premier démarrage d'une nouvelle image (état `Swap`), dans l'ordre :
+Au premier démarrage d'une nouvelle image (état `Swap`), **à l'entrée de la boucle
+principale** (toute l'initialisation a abouti), dans l'ordre :
 1. auto-test : clés et état OASIS lisibles, vérification hybride d'un vecteur connu ;
 2. `plancher = max(plancher, ma version)`, rendu durable ;
 3. `mark_booted()` ;
@@ -84,6 +85,11 @@ Au premier démarrage d'une nouvelle image (état `Swap`), dans l'ordre :
 - Si l'auto-test échoue, l'image ne s'est pas confirmée : le chien de garde (≤ 8 s)
   ou le gestionnaire de panique redémarre la carte, et le chargeur revient en
   arrière.
+- **Changement (2026-10-07)** : la confirmation se faisait d'abord juste après le
+  chargement des clés, puis le chien de garde était arrêté. Un blocage dans la suite
+  de l'initialisation (routeur, fenêtre v0B, réserve de compteurs, liste de
+  révocation) n'aurait alors été rattrapé ni par le chien de garde ni par le retour.
+  Elle est déplacée à l'entrée de la boucle principale.
 - **Changement** : dans le firmware chargé par le chargeur, la panique fait
   `sys_reset` au lieu d'entrer en BOOTSEL, sinon le retour automatique n'aurait pas
   lieu.

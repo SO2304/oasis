@@ -43,17 +43,20 @@ use usb_device::device::{StringDescriptors, UsbDevice};
 use usb_device::prelude::{UsbDeviceBuilder, UsbVidPid};
 use usbd_serial::SerialPort;
 
-use oasis_rt::mesh::{mesh_v0b_verify, mesh_v10_verify, MeshDecision, MeshEdPub, MeshEdSeed, MeshPubRegistry, MeshRouter};
-use oasis_rt::spore_crypto::CounterTracker;
 use oasis_rt::actuation::parse_oac1;
 use oasis_rt::mesh::inner_slice;
+use oasis_rt::mesh::{
+    mesh_v0b_verify, mesh_v10_verify, MeshDecision, MeshEdPub, MeshEdSeed, MeshPubRegistry,
+    MeshRouter,
+};
+use oasis_rt::spore_crypto::CounterTracker;
 
 #[path = "../ef.rs"]
 mod ef;
-#[path = "../pq.rs"]
-mod pq;
 #[path = "../enroll.rs"]
 mod enroll;
+#[path = "../pq.rs"]
+mod pq;
 #[cfg(feature = "bootloaded")]
 #[path = "../update.rs"]
 mod update;
@@ -292,7 +295,12 @@ fn main() -> ! {
     #[cfg(feature = "bootloaded")]
     update::crumb(0xA2);
     let sio = hal::Sio::new(pac.SIO);
-    let pins = hal::gpio::Pins::new(pac.IO_BANK0, pac.PADS_BANK0, sio.gpio_bank0, &mut pac.RESETS);
+    let pins = hal::gpio::Pins::new(
+        pac.IO_BANK0,
+        pac.PADS_BANK0,
+        sio.gpio_bank0,
+        &mut pac.RESETS,
+    );
 
     // UART0 full-duplex: TX = GP0 (pin 1), RX = GP1 (pin 2).
     let mut uart0: Uart0 = UartPeripheral::new(
@@ -353,30 +361,27 @@ fn main() -> ! {
     update::stage(3); // identity, owner, registry, policy loaded
     #[cfg(feature = "bootloaded")]
     update::crumb(0xA4);
-    // Phase 1.3: confirm a freshly swapped image (self-test, floor, mark_booted)
-    // while the bootloader's watchdog still runs, then stop the watchdog.
+    // Phase 1.3: the bootloader's watchdog keeps running through the whole init. A
+    // freshly swapped image confirms itself (self-test, floor, mark_booted) only at
+    // the main-loop entry, then stops the watchdog: a hang or fault anywhere in the
+    // init resets the board before the confirmation, and the bootloader reverts.
     #[cfg(feature = "bootloaded")]
     let mut fw_aligned = [0u8; 1];
     #[cfg(feature = "bootloaded")]
     let mut fw_up = update::updater(&mut fw_aligned);
     #[cfg(feature = "bootloaded")]
-    let fw_boot = update::boot_confirm(&mut fw_up);
-    #[cfg(feature = "bootloaded")]
-    {
-        if fw_boot == update::BootOutcome::SelfTestFailed {
-            // Not confirmed: reset now, the bootloader reverts to the previous image.
-            cortex_m::peripheral::SCB::sys_reset();
-        }
-        watchdog.disable();
-        update::stage(4); // confirmed (if swapped), watchdog stopped
-        update::crumb(0xA5);
-    }
+    let mut fw_boot = update::BootOutcome::Normal; // decided at the main-loop entry
     #[cfg(feature = "bootloaded")]
     let mut guard_cleared = false;
     // v0B router: handles v0A envelopes as a superset (origin_wrap/process
     // unchanged) AND v0B (origin_wrap_v0b/process_v0b dispatch). The registry starts
     // empty and is filled only from enrollment attestations.
-    let mut router = MeshRouter::new_v0b(my_fp, NETWORK_ID, MeshEdSeed(my_seed), MeshPubRegistry::new());
+    let mut router = MeshRouter::new_v0b(
+        my_fp,
+        NETWORK_ID,
+        MeshEdSeed(my_seed),
+        MeshPubRegistry::new(),
+    );
     pqs.install_registry(&mut router);
     // A v0B router is strict by default (legacy envelopes dropped, no downgrade).
     // This test firmware also hosts the earlier v0A commands (o/R/F/T/X/N), so it
@@ -391,8 +396,23 @@ fn main() -> ! {
     // byte-for-byte across a reboot of the relay (same counter => must be rejected).
     let mut last_v0b = [0u8; MAX_ENV];
     let mut last_v0b_len = 0usize;
-    io.log("BOOT", format_args!("uart-mesh board={} fp={} UART0 tx=GP0 rx=GP1 @115200", BOARD_ID, Hx(&my_fp)));
-    io.log("IDENTITY_BOOT", format_args!("source={},attempts={},fp={}", id_source, id_attempts, Hx(&my_fp)));
+    io.log(
+        "BOOT",
+        format_args!(
+            "uart-mesh board={} fp={} UART0 tx=GP0 rx=GP1 @115200",
+            BOARD_ID,
+            Hx(&my_fp)
+        ),
+    );
+    io.log(
+        "IDENTITY_BOOT",
+        format_args!(
+            "source={},attempts={},fp={}",
+            id_source,
+            id_attempts,
+            Hx(&my_fp)
+        ),
+    );
     // T8: restore the persisted v0B counter window so a post-reboot replay is
     // rejected. Must happen BEFORE processing any v0B envelope.
     match persist::load() {
@@ -407,14 +427,24 @@ fn main() -> ! {
     let mut lstore = DualSlotStore::new(FlashSlots);
     let mut lease = TxLease::boot(&lstore, TX_LEASE_BLOCK);
     router.set_tx_counter(lease.resume_point());
-    io.log("LEASE_BOOT", format_args!("resume={},ceiling={}", lease.resume_point(), lease.ceiling()));
+    io.log(
+        "LEASE_BOOT",
+        format_args!(
+            "resume={},ceiling={}",
+            lease.resume_point(),
+            lease.ceiling()
+        ),
+    );
     // boot_id for the actuation gate's time base = this boot's lease resume point.
     // Force one durable reservation NOW so the next boot resumes strictly higher,
     // even if this boot never receives a command (otherwise two boots could share
     // a boot_id and a command stamped for the previous boot would look fresh).
     let boot_id = lease.resume_point();
     if !lease.ensure(boot_id.saturating_add(1), &mut lstore) {
-        io.log("LEASE_FAIL", format_args!("boot reservation failed; boot_id={} not unique", boot_id));
+        io.log(
+            "LEASE_FAIL",
+            format_args!("boot reservation failed; boot_id={} not unique", boot_id),
+        );
     }
 
     // Part C: actuator output on GP25 (on-board LED) + revocation/actuation state.
@@ -423,10 +453,19 @@ fn main() -> ! {
     let mut efs = ef::Ef::new(boot_id);
     match efs.restore(&mut router, &pqs.owner) {
         Ok(Some((e, by_current))) => {
-            pqs.rev_signer = if by_current { pq::RevSigner::Current } else { pq::RevSigner::Previous };
+            pqs.rev_signer = if by_current {
+                pq::RevSigner::Current
+            } else {
+                pq::RevSigner::Previous
+            };
             io.log(
                 "REV_BOOT",
-                format_args!("restored_epoch={},revoked={},signed_by_current_owner={}", e, efs.rev.revoked.len(), by_current),
+                format_args!(
+                    "restored_epoch={},revoked={},signed_by_current_owner={}",
+                    e,
+                    efs.rev.revoked.len(),
+                    by_current
+                ),
             )
         }
         Ok(None) => io.log("REV_BOOT", format_args!("no_saved_list")),
@@ -451,6 +490,14 @@ fn main() -> ! {
         io.poll();
         #[cfg(feature = "bootloaded")]
         if !guard_cleared {
+            fw_boot = update::boot_confirm(&mut fw_up);
+            if fw_boot == update::BootOutcome::SelfTestFailed {
+                // Not confirmed: reset now, the bootloader reverts to the previous image.
+                cortex_m::peripheral::SCB::sys_reset();
+            }
+            watchdog.disable();
+            update::stage(4); // confirmed (if swapped), watchdog stopped
+            update::crumb(0xA5);
             update::boot_guard_ok();
             update::crumb(0xA6);
             guard_cleared = true;
@@ -485,16 +532,26 @@ fn main() -> ! {
             let writes_before = lease.writes();
             let any_input = n > 0 || line_done;
             let lease_ok = !any_input
-                || lease.ensure(router.tx_counter().saturating_add(CMD_MAX_ORIGINATIONS), &mut lstore);
+                || lease.ensure(
+                    router.tx_counter().saturating_add(CMD_MAX_ORIGINATIONS),
+                    &mut lstore,
+                );
             if !lease_ok {
-                io.log("LEASE_FAIL", format_args!("tx={},ceiling={}", router.tx_counter(), lease.ceiling()));
+                io.log(
+                    "LEASE_FAIL",
+                    format_args!("tx={},ceiling={}", router.tx_counter(), lease.ceiling()),
+                );
             }
             let line_done = line_done && lease_ok;
             let n = if lease_ok { n } else { 0 };
             if lease.writes() != writes_before {
                 io.log(
                     "LEASE_PERSIST",
-                    format_args!("ceiling={},writes_since_boot={}", lease.ceiling(), lease.writes()),
+                    format_args!(
+                        "ceiling={},writes_since_boot={}",
+                        lease.ceiling(),
+                        lease.writes()
+                    ),
                 );
             }
             // `@P<hex>`: originate a v0B envelope carrying the PC-built payload
@@ -539,7 +596,9 @@ fn main() -> ! {
             }
             if line_done && line_len >= 1 && (line[0] == b'F' || line[0] == b'T') {
                 let tamper = if line[0] == b'T' {
-                    core::str::from_utf8(&line[1..line_len]).ok().and_then(|t| t.parse::<usize>().ok())
+                    core::str::from_utf8(&line[1..line_len])
+                        .ok()
+                        .and_then(|t| t.parse::<usize>().ok())
                 } else {
                     None
                 };
@@ -562,8 +621,17 @@ fn main() -> ! {
                         if !id_mixed && !enrolled {
                             match enroll::rekey_identity(&my_seed, &nonce) {
                                 Some(s2) => {
-                                    let fp2 = oasis_rt::identity::fingerprint(&oasis_rt::identity::public_key(&s2));
-                                    io.log("REKEYED", format_args!("old_fp={},new_fp={},rebooting", Hx(&my_fp), Hx(&fp2)));
+                                    let fp2 = oasis_rt::identity::fingerprint(
+                                        &oasis_rt::identity::public_key(&s2),
+                                    );
+                                    io.log(
+                                        "REKEYED",
+                                        format_args!(
+                                            "old_fp={},new_fp={},rebooting",
+                                            Hx(&my_fp),
+                                            Hx(&fp2)
+                                        ),
+                                    );
                                     for _ in 0..200_000 {
                                         io.poll();
                                     }
@@ -574,13 +642,23 @@ fn main() -> ! {
                         } else {
                             io.log(
                                 "IDENTITY",
-                                format_args!("pk={},fp={},mixed={},enrolled={}", Hx(&my_pk), Hx(&my_fp), id_mixed, enrolled),
+                                format_args!(
+                                    "pk={},fp={},mixed={},enrolled={}",
+                                    Hx(&my_pk),
+                                    Hx(&my_fp),
+                                    id_mixed,
+                                    enrolled
+                                ),
                             );
-                            let sig = oasis_rt::identity::pop_sign(&my_seed, &NETWORK_ID, &challenge);
+                            let sig =
+                                oasis_rt::identity::pop_sign(&my_seed, &NETWORK_ID, &challenge);
                             io.log("POP", format_args!("sig={}", Hx(&sig)));
                         }
                     }
-                    _ => io.log("E_BAD", format_args!("need 128 hex chars (challenge + nonce)")),
+                    _ => io.log(
+                        "E_BAD",
+                        format_args!("need 128 hex chars (challenge + nonce)"),
+                    ),
                 }
             }
             // Entropy statistics on 100 000 fresh raw bits + health tests on 4 096 (never the seed).
@@ -608,7 +686,18 @@ fn main() -> ! {
             if line_done && line_len >= 1 && line[0] == b'L' {
                 let msg = pqs.stage.clone();
                 let (done, g) = pqs.complete(&mut efs, &mut router, &msg);
-                finish_authority(&mut io, &mut router, &mut uart0, &mut lease, &mut lstore, &pqs, &efs, &msg, done, &g);
+                finish_authority(
+                    &mut io,
+                    &mut router,
+                    &mut uart0,
+                    &mut lease,
+                    &mut lstore,
+                    &pqs,
+                    &efs,
+                    &msg,
+                    done,
+                    &g,
+                );
             }
             if line_done && line_len >= 1 && line[0] == b'W' {
                 io.log(
@@ -627,7 +716,16 @@ fn main() -> ! {
                     ),
                 );
                 for e in &pqs.registry.entries {
-                    io.log("PEER", format_args!("fp={},role={},perms={},seq={}", Hx(&e.fp), e.role, e.permissions, e.seq));
+                    io.log(
+                        "PEER",
+                        format_args!(
+                            "fp={},role={},perms={},seq={}",
+                            Hx(&e.fp),
+                            e.role,
+                            e.permissions,
+                            e.seq
+                        ),
+                    );
                 }
             }
             // Phase 1.3: signed firmware update (see update.rs).
@@ -635,7 +733,10 @@ fn main() -> ! {
             if line_done && line_len >= 9 && line[0] == b'U' {
                 let mut off = [0u8; 4];
                 let mut data = [0u8; 256];
-                match (ef::hex_decode(&line[1..9], &mut off), ef::hex_decode(&line[9..line_len], &mut data)) {
+                match (
+                    ef::hex_decode(&line[1..9], &mut off),
+                    ef::hex_decode(&line[9..line_len], &mut data),
+                ) {
                     (Some(4), Some(n)) => {
                         let o = u32::from_be_bytes(off) as usize;
                         match fw_up.write_firmware(o, &data[..n]) {
@@ -644,7 +745,9 @@ fn main() -> ! {
                                     io.log("DFU_PROGRESS", format_args!("written_to={}", o + n));
                                 }
                             }
-                            Err(_) => io.log("DFU_WRITE_FAIL", format_args!("offset={},len={}", o, n)),
+                            Err(_) => {
+                                io.log("DFU_WRITE_FAIL", format_args!("offset={},len={}", o, n))
+                            }
                         }
                     }
                     _ => io.log("DFU_BAD_HEX", format_args!("chars={}", line_len)),
@@ -735,7 +838,10 @@ fn main() -> ! {
                 ef::wipe_rev_sectors();
                 pq::wipe_policy_sectors();
                 enroll::wipe_sectors();
-                io.log("PERSIST_WIPED", format_args!("all persistence erased; resetting"));
+                io.log(
+                    "PERSIST_WIPED",
+                    format_args!("all persistence erased; resetting"),
+                );
                 for _ in 0..200_000 {
                     io.poll();
                 }
@@ -774,13 +880,19 @@ fn main() -> ! {
                 let mid = router.tx_counter();
                 let env = router.origin_wrap(b"OASIS-uart-hello");
                 send_framed(&mut uart0, &env);
-                io.log("ORIGINATED", format_args!("msg_id={},len={}", mid, env.len()));
+                io.log(
+                    "ORIGINATED",
+                    format_args!("msg_id={},len={}", mid, env.len()),
+                );
             }
             // ── v0B originate (payload/counter/network bound). Run on A.
             if rx[..n].contains(&b'O') {
                 if let Some(env) = router.origin_wrap_v0b(b"OASIS-v0b-hello") {
                     send_framed(&mut uart0, &env);
-                    io.log("V0B_ORIGINATED", format_args!("counter={},len={}", router.tx_counter(), env.len()));
+                    io.log(
+                        "V0B_ORIGINATED",
+                        format_args!("counter={},len={}", router.tx_counter(), env.len()),
+                    );
                 }
             }
             // ── T8: originate a v0B envelope AND store its exact bytes for a
@@ -790,7 +902,10 @@ fn main() -> ! {
                     last_v0b_len = env.len().min(MAX_ENV);
                     last_v0b[..last_v0b_len].copy_from_slice(&env[..last_v0b_len]);
                     send_framed(&mut uart0, &env);
-                    io.log("V0B_T8_TX", format_args!("counter={},len={}", router.tx_counter(), env.len()));
+                    io.log(
+                        "V0B_T8_TX",
+                        format_args!("counter={},len={}", router.tx_counter(), env.len()),
+                    );
                 }
             }
             // ── T8: replay the stored envelope byte-for-byte (same counter). After
@@ -862,7 +977,10 @@ fn main() -> ! {
                     let mut forged = orig.clone();
                     forged[99..].copy_from_slice(b"OASIS-v0b-FAKE"); // swap payload, keep sig
                     send_framed(&mut uart0, &forged);
-                    io.log("V0B_SWAP_TX", format_args!("forged_content_kept_sig,len={}", forged.len()));
+                    io.log(
+                        "V0B_SWAP_TX",
+                        format_args!("forged_content_kept_sig,len={}", forged.len()),
+                    );
                     cortex_m::asm::delay(37_500_000); // ~300 ms gap (avoid FIFO overrun)
                     send_framed(&mut uart0, &orig);
                     io.log("V0B_REAL_TX", format_args!("len={}", orig.len()));
@@ -906,7 +1024,10 @@ fn main() -> ! {
                     "V0B_TIMING",
                     format_args!(
                         "v0a_sign_us={},v0b_sign_us={},v0a_verify_us={},v0b_verify_us={}",
-                        median5(&mut a_sign), median5(&mut b_sign), median5(&mut a_ver), median5(&mut b_ver)
+                        median5(&mut a_sign),
+                        median5(&mut b_sign),
+                        median5(&mut a_ver),
+                        median5(&mut b_ver)
                     ),
                 );
             }
@@ -968,13 +1089,21 @@ fn main() -> ! {
                 // arrives — otherwise the 2nd frame overruns B's 32-byte RX FIFO.
                 cortex_m::asm::delay(37_500_000); // ~300 ms @125 MHz
                 send_framed(&mut uart0, &env); // identical bytes => identical msg_id
-                io.log("REPLAY_TX2", format_args!("replay_same_msg_id,len={}", env.len()));
+                io.log(
+                    "REPLAY_TX2",
+                    format_args!("replay_same_msg_id,len={}", env.len()),
+                );
             }
             // ── Task 2: forge / MitM. Build an envelope that CLAIMS origin fp=A
             //    but is signed with a bad seed. Downstream verify must fail. Run on B.
             if rx[..n].contains(&b'F') {
                 // Claims the first enrolled peer's fingerprint (A's compiled one before 1.2).
-                let claimed = pqs.registry.entries.first().map(|e| e.fp).unwrap_or([0xAA; 8]);
+                let claimed = pqs
+                    .registry
+                    .entries
+                    .first()
+                    .map(|e| e.fp)
+                    .unwrap_or([0xAA; 8]);
                 let mut forger = MeshRouter::new_ed25519_signed(
                     claimed,
                     MeshEdSeed([0x99u8; 32]), // NOT A's real seed
@@ -982,7 +1111,10 @@ fn main() -> ! {
                 );
                 let env = forger.origin_wrap(b"FORGED-as-A");
                 send_framed(&mut uart0, &env);
-                io.log("FORGE_TX", format_args!("claim=A,bad_seed,len={}", env.len()));
+                io.log(
+                    "FORGE_TX",
+                    format_args!("claim=A,bad_seed,len={}", env.len()),
+                );
             }
             // ── Task 4: TTL. Origin TTL=0 => the receiving node (B) is terminal
             //    (Arrived forward=false) and does NOT relay to C. Run on A.
@@ -1012,8 +1144,7 @@ fn main() -> ! {
             //    bypassing anti-replay) across 3 escalating corruption levels. The
             //    wire frame is corrupted on a COPY just before TX; A never panics.
             if rx[..n].contains(&b'N') {
-                let seed =
-                    unsafe { (*pac::TIMER::ptr()).timerawl().read().bits() } ^ 0x1357_9BDF;
+                let seed = unsafe { (*pac::TIMER::ptr()).timerawl().read().bits() } ^ 0x1357_9BDF;
                 let mut fi = FaultInjector::new(seed);
                 let (mut txd, mut dropped, mut truncd, mut cryptod) = (0u32, 0u32, 0u32, 0u32);
                 // 50 packets/phase (not the spec's 100): each packet costs a ~341 ms
@@ -1173,26 +1304,48 @@ fn main() -> ! {
                             // under this node's own counters (store-and-forward, spec §3).
                             "OFR1" => {
                                 relay = false;
-                                let hdr = oasis_rt::fragment::parse_ofr1(inner).map(|(h, _)| (h.idx, h.count));
+                                let hdr = oasis_rt::fragment::parse_ofr1(inner)
+                                    .map(|(h, _)| (h.idx, h.count));
                                 let out = pqs.push_fragment(origin, inner);
                                 let (idx, count) = hdr.unwrap_or((0, 0));
                                 let tag = match &out {
                                     FragOutcome::Incomplete => "incomplete",
                                     FragOutcome::Duplicate => "duplicate",
                                     FragOutcome::Complete(_) => "complete",
-                                    FragOutcome::Rejected(oasis_rt::fragment::FragReject::Malformed) => "rejected_malformed",
-                                    FragOutcome::Rejected(oasis_rt::fragment::FragReject::NoSlot) => "rejected_no_slot",
-                                    FragOutcome::Rejected(oasis_rt::fragment::FragReject::HashMismatch) => {
-                                        "rejected_hash_mismatch"
-                                    }
+                                    FragOutcome::Rejected(
+                                        oasis_rt::fragment::FragReject::Malformed,
+                                    ) => "rejected_malformed",
+                                    FragOutcome::Rejected(
+                                        oasis_rt::fragment::FragReject::NoSlot,
+                                    ) => "rejected_no_slot",
+                                    FragOutcome::Rejected(
+                                        oasis_rt::fragment::FragReject::HashMismatch,
+                                    ) => "rejected_hash_mismatch",
                                 };
                                 io.log(
                                     "FRAG_RX",
-                                    format_args!("origin={},idx={},count={},outcome={}", Hx(&origin), idx, count, tag),
+                                    format_args!(
+                                        "origin={},idx={},count={},outcome={}",
+                                        Hx(&origin),
+                                        idx,
+                                        count,
+                                        tag
+                                    ),
                                 );
                                 if let FragOutcome::Complete(msg) = out {
                                     let (done, g) = pqs.complete(&mut efs, &mut router, &msg);
-                                    finish_authority(&mut io, &mut router, &mut uart0, &mut lease, &mut lstore, &pqs, &efs, &msg, done, &g);
+                                    finish_authority(
+                                        &mut io,
+                                        &mut router,
+                                        &mut uart0,
+                                        &mut lease,
+                                        &mut lstore,
+                                        &pqs,
+                                        &efs,
+                                        &msg,
+                                        done,
+                                        &g,
+                                    );
                                 }
                             }
                             "ORV1" => {
@@ -1210,7 +1363,8 @@ fn main() -> ! {
                                         d == oasis_rt::mesh_revocation::RevDecision::Applied
                                     ),
                                 );
-                                relay = forward && d == oasis_rt::mesh_revocation::RevDecision::Applied;
+                                relay =
+                                    forward && d == oasis_rt::mesh_revocation::RevDecision::Applied;
                             }
                             // Actuation command for the actuator this board hosts (C).
                             "OAC1" if BOARD_ID == "C" => {
@@ -1234,7 +1388,10 @@ fn main() -> ! {
                         }
                         if relay {
                             send_framed(&mut uart0, &envelope);
-                            io.log("RELAYED", format_args!("msg_id={},hops={}", msg_id, hops_seen));
+                            io.log(
+                                "RELAYED",
+                                format_args!("msg_id={},hops={}", msg_id, hops_seen),
+                            );
                         }
                     }
                     MeshDecision::Drop(reason) => {
@@ -1243,7 +1400,9 @@ fn main() -> ! {
                         // still logged as a gate decision so its outcome is on record.
                         let e = &owned[..elen];
                         if BOARD_ID == "C" && elen >= 99 + oasis_rt::actuation::OAC1_LEN {
-                            if let Some(cmd) = parse_oac1(&e[99..99 + oasis_rt::actuation::OAC1_LEN]) {
+                            if let Some(cmd) =
+                                parse_oac1(&e[99..99 + oasis_rt::actuation::OAC1_LEN])
+                            {
                                 let mut origin = [0u8; 8];
                                 origin.copy_from_slice(&e[14..22]);
                                 let d = efs.decide(&router, &pqs.registry, &origin, false, &cmd);
@@ -1297,9 +1456,14 @@ fn finish_authority(
         ),
     );
     match done {
-        pq::Done::Revocation(_) => {
-            io.log("REV", format_args!("source=OAU1,epoch={},revoked={}", efs.rev.epoch, efs.rev.revoked.len()))
-        }
+        pq::Done::Revocation(_) => io.log(
+            "REV",
+            format_args!(
+                "source=OAU1,epoch={},revoked={}",
+                efs.rev.epoch,
+                efs.rev.revoked.len()
+            ),
+        ),
         pq::Done::Enroll(_) | pq::Done::Own(_) => io.log(
             "STATE",
             format_args!(
@@ -1315,7 +1479,9 @@ fn finish_authority(
     }
     if done.forward() {
         // Re-originated fragments use this node's counters: make them durable first.
-        let need = router.tx_counter().saturating_add(oasis_rt::fragment::MAX_FRAGMENTS as u64);
+        let need = router
+            .tx_counter()
+            .saturating_add(oasis_rt::fragment::MAX_FRAGMENTS as u64);
         if lease.ensure(need, lstore) {
             send_fragments(io, router, uart, msg, None);
         } else {
@@ -1335,7 +1501,13 @@ fn finish_authority(
 /// run lost 9 of 14 fragments to FIFO overruns (evidence/silicon/2026-10-06/enroll/).
 const FRAG_GAP_US: u32 = 100_000;
 
-fn send_fragments(io: &mut Io, router: &mut MeshRouter, uart: &mut Uart0, msg: &[u8], tamper: Option<usize>) {
+fn send_fragments(
+    io: &mut Io,
+    router: &mut MeshRouter,
+    uart: &mut Uart0,
+    msg: &[u8],
+    tamper: Option<usize>,
+) {
     let mut frags = match fragment(msg, pq::FRAG_MAX) {
         Some(f) => f,
         None => {
@@ -1387,7 +1559,11 @@ impl Io<'_> {
     }
     fn log(&mut self, event: &str, value: core::fmt::Arguments) {
         let mut l = Line::new();
-        let _ = write!(l, "OASIS|{}|UART|{}|{}|mesh|{}\r\n", BOARD_ID, event, value, GIT_HASH);
+        let _ = write!(
+            l,
+            "OASIS|{}|UART|{}|{}|mesh|{}\r\n",
+            BOARD_ID, event, value, GIT_HASH
+        );
         let mut data: &[u8] = l.bytes();
         let mut guard = 0u32;
         while !data.is_empty() && guard < 400_000 {
@@ -1432,7 +1608,11 @@ fn crc8(data: &[u8]) -> u8 {
     for &b in data {
         crc ^= b;
         for _ in 0..8 {
-            crc = if crc & 0x80 != 0 { (crc << 1) ^ 0x07 } else { crc << 1 };
+            crc = if crc & 0x80 != 0 {
+                (crc << 1) ^ 0x07
+            } else {
+                crc << 1
+            };
         }
     }
     crc
@@ -1499,7 +1679,9 @@ struct FaultInjector {
 }
 impl FaultInjector {
     fn new(seed: u32) -> Self {
-        FaultInjector { rng: Rng::new(seed) }
+        FaultInjector {
+            rng: Rng::new(seed),
+        }
     }
     /// Corrupt the on-the-wire frame `buf` in place. Returns the (possibly
     /// truncated) length to transmit, or `None` if the frame is dropped entirely.
@@ -1540,7 +1722,12 @@ struct Deframer {
 }
 impl Deframer {
     fn new() -> Self {
-        Deframer { state: 0, len: 0, idx: 0, buf: [0; MAX_ENV] }
+        Deframer {
+            state: 0,
+            len: 0,
+            idx: 0,
+            buf: [0; MAX_ENV],
+        }
     }
     fn push(&mut self, b: u8) -> DfOut<'_> {
         match self.state {
@@ -1557,7 +1744,11 @@ impl Deframer {
             3 => {
                 self.len |= (b as usize) << 8;
                 self.idx = 0;
-                self.state = if self.len == 0 || self.len > MAX_ENV { 0 } else { 4 };
+                self.state = if self.len == 0 || self.len > MAX_ENV {
+                    0
+                } else {
+                    4
+                };
             }
             4 => {
                 self.buf[self.idx] = b;
