@@ -63,31 +63,31 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
 
   kani-proofs:
-    name: Kani proofs (${{ matrix.shard.name }})
+    name: Kani proofs (${{ matrix.shard }})
     runs-on: ubuntu-latest
     # Authoritative formal-verification run for all #[kani::proof] harnesses.
-    # CBMC is RAM-heavy: a 3.3 GB WSL2 VM could NOT finish the full suite.
-    # On hosted runners, -j 2 was killed (exit 143, ~14 min) and -j 1 on the
-    # whole suite hit the 90-min job timeout. So the suite is sharded by module;
-    # `--harness` matches any harness whose full path contains the filter.
-    # Every harness must match a shard (checked by the coverage step below).
-    timeout-minutes: 120
+    # oasis-rt/kani_shards.sh assigns each harness to exactly one shard (checked
+    # by kani-shard-coverage). Harnesses that do not fit the 600 s budget run
+    # alone in a heavy-* shard with 60 min; they count as verified only when
+    # their shard is green. History: -j 2 on the whole suite was killed (exit
+    # 143), -j 1 hit the 90-min job timeout.
+    timeout-minutes: ${{ matrix.minutes }}
     strategy:
       fail-fast: false
       matrix:
-        shard:
-          - name: mesh-ac-af
-            filters: "mesh::kani_proofs::proof_ac_ mesh::kani_proofs::proof_ad_ mesh::kani_proofs::proof_ae_ mesh::kani_proofs::proof_af_"
-          - name: mesh-ag-aj
-            filters: "mesh::kani_proofs::proof_ag_ mesh::kani_proofs::proof_ah_ mesh::kani_proofs::proof_ai_ mesh::kani_proofs::proof_aj_"
-          - name: mesh-core-v0b
-            filters: "mesh::kani_proofs::proof_mesh_ mesh::kani_proofs::proof_v0b_"
-          - name: spinal-synapse
-            filters: "spinal::kani_proofs:: synapse::kani_proofs::"
-          - name: authority
-            filters: "tx_lease::kani_proofs:: mesh_revocation::kani_proofs:: actuation::kani_proofs:: hal::kani_proofs:: hyper_state::kani_proofs::"
-          - name: other-modules
-            filters: "services::kani_proofs:: actions::kani_proofs:: world_model::kani_proofs:: topics::kani_proofs:: tension::kani_proofs:: reflex::kani_proofs:: emotion::kani_proofs:: efference::kani_proofs:: morpho::kani_proofs:: federation::kani_proofs:: dreams::kani_proofs:: branching::kani_proofs:: timers::kani_proofs:: transforms::kani_proofs:: parameters::kani_proofs::"
+        include:
+          - { shard: mesh-ac-af, harness_timeout: 600s, minutes: 120 }
+          - { shard: mesh-ag-aj, harness_timeout: 600s, minutes: 120 }
+          - { shard: mesh-core-v0b, harness_timeout: 600s, minutes: 120 }
+          - { shard: spinal-synapse, harness_timeout: 600s, minutes: 120 }
+          - { shard: authority, harness_timeout: 600s, minutes: 120 }
+          - { shard: other-modules, harness_timeout: 600s, minutes: 120 }
+          - { shard: heavy-proof_ae_snapshot_internal_consistency, harness_timeout: 3600s, minutes: 75 }
+          - { shard: heavy-proof_ae_capacity_consumed_monotonic, harness_timeout: 3600s, minutes: 75 }
+          - { shard: heavy-proof_ag_reset_count_extrapolation, harness_timeout: 3600s, minutes: 75 }
+          - { shard: heavy-proof_ah_arithmetic_tolerance_symmetric, harness_timeout: 3600s, minutes: 75 }
+          - { shard: heavy-proof_m4_fitness_monotone_in_goal, harness_timeout: 3600s, minutes: 75 }
+          - { shard: heavy-proof_m3_pain_monotone_in_magnitude, harness_timeout: 3600s, minutes: 75 }
     defaults:
       run:
         working-directory: oasis-rt
@@ -104,26 +104,25 @@ jobs:
       - name: cargo kani --lib (shard)
         run: |
           H=""
-          for f in ${{ matrix.shard.filters }}; do H="$H --harness $f"; done
-          cargo kani --lib $H -Z unstable-options --harness-timeout 600s -j 1 --output-format terse
+          for h in $(./kani_shards.sh "${{ matrix.shard }}"); do H="$H --harness $h"; done
+          [ -n "$H" ] || { echo "::error::shard ${{ matrix.shard }} has no harness"; exit 1; }
+          cargo kani --lib $H --exact -Z unstable-options --harness-timeout ${{ matrix.harness_timeout }} -j 1 --output-format terse
 
   kani-shard-coverage:
-    name: Kani shard coverage (every harness in a shard)
+    name: Kani shard coverage (every harness in exactly one shard)
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    defaults:
+      run:
+        working-directory: oasis-rt
     steps:
       - uses: actions/checkout@v4
-      - name: Check every kani::proof module is listed in a shard
+      - name: Every harness maps to one shard, and every shard is in the CI matrix
         run: |
-          missing=0
-          for f in $(grep -rl 'kani::proof' oasis-rt/src); do
-            m=$(echo "$f" | sed -E 's#oasis-rt/src/##; s#/kani_proofs\.rs$##; s#\.rs$##; s#/#::#g')
-            grep -qE "[ \"]$m::kani_proofs::" .github/workflows/ci.yml || { echo "::error::$f ($m) is in no Kani shard"; missing=1; }
+          ./kani_shards.sh --check
+          for s in $(./kani_shards.sh --all | awk '{print $1}' | sort -u); do
+            grep -q "shard: $s," ../.github/workflows/ci.yml || { echo "::error::shard $s is not in the CI matrix"; exit 1; }
           done
-          for p in $(grep -A3 'kani::proof' oasis-rt/src/mesh/kani_proofs.rs | grep -oE 'fn proof_[a-z0-9]+_' | sed 's/fn //' | sort -u); do
-            grep -q "mesh::kani_proofs::$p" .github/workflows/ci.yml || { echo "::error::mesh harness prefix $p is in no shard"; missing=1; }
-          done
-          exit $missing
 
   docker-build:
     name: Docker image build + healthcheck
