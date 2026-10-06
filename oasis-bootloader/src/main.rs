@@ -131,6 +131,15 @@ fn main() -> ! {
         for b in iser.to_le_bytes().iter().chain(ispr.to_le_bytes().iter()) {
             crumb_hex(&mut *f, *b);
         }
+        // What the jump will use: the application's vector table (initial MSP, reset
+        // vector) and its first code word, as read through XIP right now.
+        crumb(&mut *f, 0xD2);
+        for addr in [0x1000_8000u32, 0x1000_8004, 0x1000_8100] {
+            let w = unsafe { (addr as *const u32).read_volatile() };
+            for b in w.to_le_bytes() {
+                crumb_hex(&mut *f, b);
+            }
+        }
         crumb(&mut *f, 0xB9);
     });
     // Hand the application a clean interrupt state, as after a reset: every NVIC line
