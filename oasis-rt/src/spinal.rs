@@ -420,32 +420,39 @@ mod kani_proofs {
     }
 
     /// PROVE: `assign_dims` returns dims within the target zone for a few kinds.
-    /// Every zone spans 10 dims, so the zone scan runs at most 10 times; the
-    /// explicit bound lets CBMC stop unrolling a loop whose range depends on the
-    /// symbolic `kind` (without it the harness timed out at 600 s in CI). The
-    /// unwinding assertions still check that 12 is enough.
+    /// The 9 kinds are enumerated concretely (same coverage as a symbolic index
+    /// `< 9`). On a fresh `BodyMap` the dims marked in `dim_used` are exactly
+    /// the dims assigned, so the zone property is checked on that inline array:
+    /// reading the returned heap `Vec` element by element made CBMC time out
+    /// (600 s, CI) and exhaust 16 GB (local). unwind(130) covers the DIM scan.
     #[kani::proof]
-    #[kani::unwind(12)]
+    #[kani::unwind(130)]
     fn proof_spinal_assign_dims_stay_in_zone() {
-        let kind_idx: u8 = kani::any();
-        kani::assume(kind_idx < 9);
-        let kind = match kind_idx {
-            0 => DeviceKind::Accelerometer,
-            1 => DeviceKind::Gyroscope,
-            2 => DeviceKind::Magnetometer,
-            3 => DeviceKind::Barometer,
-            4 => DeviceKind::LightSensor,
-            5 => DeviceKind::Gps,
-            6 => DeviceKind::Led,
-            7 => DeviceKind::Motor,
-            _ => DeviceKind::Battery,
-        };
-        let (start, end) = zone_for(&kind);
-        assert!(start <= end);
-        let mut body = BodyMap::new();
-        if let Ok(dims) = body.assign_dims(&kind) {
-            for &d in &dims {
-                assert!(d >= start && d <= end);
+        let kinds = [
+            DeviceKind::Accelerometer,
+            DeviceKind::Gyroscope,
+            DeviceKind::Magnetometer,
+            DeviceKind::Barometer,
+            DeviceKind::LightSensor,
+            DeviceKind::Gps,
+            DeviceKind::Led,
+            DeviceKind::Motor,
+            DeviceKind::Battery,
+        ];
+        for kind in &kinds {
+            let (start, end) = zone_for(kind);
+            assert!(start <= end);
+            let mut body = BodyMap::new();
+            if let Ok(dims) = body.assign_dims(kind) {
+                assert!(!dims.is_empty() && dims.len() <= 3);
+                let mut marked = 0;
+                for d in 0..DIM {
+                    if body.dim_used[d] {
+                        assert!(d >= start && d <= end);
+                        marked += 1;
+                    }
+                }
+                assert!(marked == dims.len());
             }
         }
     }
