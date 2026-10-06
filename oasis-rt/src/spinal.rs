@@ -420,7 +420,12 @@ mod kani_proofs {
     }
 
     /// PROVE: `assign_dims` returns dims within the target zone for a few kinds.
+    /// Every zone spans 10 dims, so the zone scan runs at most 10 times; the
+    /// explicit bound lets CBMC stop unrolling a loop whose range depends on the
+    /// symbolic `kind` (without it the harness timed out at 600 s in CI). The
+    /// unwinding assertions still check that 12 is enough.
     #[kani::proof]
+    #[kani::unwind(12)]
     fn proof_spinal_assign_dims_stay_in_zone() {
         let kind_idx: u8 = kani::any();
         kani::assume(kind_idx < 9);
