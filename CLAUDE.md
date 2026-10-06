@@ -198,7 +198,7 @@ Performance trade across the 3 mesh variants (Linux WSL, K=10 medians):
 | Altitude hold closed-loop | 1.94 m vs 2.0 m target (±6 cm) | ✅ |
 | Spore v7 loss + FEC real UDP | bench + loss proxy: 98% @ 30% uniform, 82-90% @ 30% burst | ✅ |
 | RFC 8439 ChaCha20-Poly1305 vector | test vector matches byte-for-byte | ✅ |
-| All 11 mechanisms compile + test | 455 Rust tests across 30 modules | ✅ |
+| All 11 mechanisms compile + test | 494 Rust tests across 33 modules | ✅ |
 | Android daemon 3h+ run | session_v0_5 on S23 FE, 121 290 ticks | ⚠️ claimed; logs not in repo |
 | **MCU cross-compile** (`thumbv7em-none-eabi`) | `cargo build --target thumbv7em-none-eabi --lib --no-default-features --features mesh_bloom_mcu --release` | ✅ 0 errors |
 | **A/B vs ROS 2 Jazzy** (Linux intra-process, K=10 medians) | OASIS 241 ns vs rclcpp intra 5 624 ns vs rclcpp DDS 52 411 ns at 16 B — 23–217× faster | ✅ measured |
@@ -325,7 +325,7 @@ payload size via function-call dispatch; rclcpp's cost is executor
 ## Mental loop (specialist discipline)
 
 1. **Is it proven?** — ruthless test or it doesn't exist
-2. **Does it break?** — 455 Rust tests + 120 Kani proof harnesses must pass before and after
+2. **Does it break?** — 494 Rust tests + 129 Kani proof harnesses must pass before and after
 3. **Is it bounded?** — fear ≤ 5×, entropy [0,1], latency < 1 ms, lux < 100 000
 4. **Is it honest?** — every mechanism explicitly PROVEN vs EXPERIMENTAL
 5. **Is it banded?** — **no single-shot bench number in the repo**. K=10 median ± half-spread or equivalent (Spore loss bench uses N=200 internal trials). Single-number claims are suspect.
