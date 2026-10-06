@@ -3,12 +3,14 @@
 Six harnesses added with `oasis-rt/src/authority.rs` and `oasis-rt/src/fragment.rs`
 (spec `docs/specs/PQ_AUTHORITY_SPEC.md`). Run in WSL (Ubuntu, 3.3 GB RAM,
 `cargo-kani 0.67.0`) on a fresh clone of the committed tree, with
-`run_pq_harnesses.sh <commit>` (`cargo kani --lib --harness … --harness-timeout 300s`).
+`run_pq_harnesses.sh <commit>` (runs 1-2) and `run_pq_harnesses_stub.sh <commit>`
+(run 3, adds the stubbed harness and `-Z stubbing`).
 
 | Run | Tree | Result | Exit | Log |
 |---|---|---|---|---|
 | 1 | `d5dfebd` | **5 verified, 1 FAILED**: `proof_auth_precheck_no_downgrade` refuted (`Failed Checks: "known kind and suite only"`) | 1 | `kani_pq_run1.log` |
 | 2 | `3e67254` | **6 verified, 0 failures** | 0 | `kani_pq_run2.log` |
+| 3 | `19053d7` | **7 verified, 0 failures** (the 6 above + `proof_frag_reassembler_never_panics`, `-Z stubbing`) | 0 | `kani_pq_run3.log` |
 
 **Run 1 found a real defect.** `AuthPolicy::min_suite` returns `u8::MAX` for an
 unknown kind, and `suite_rank(u8::MAX) == 0`, so `precheck` accepted an unknown
@@ -19,7 +21,7 @@ but `precheck` relied on that. Fixed in `3e67254` (`precheck` returns
 `pq_precheck_refuses_unknown_kind_and_suite`. The harness itself was not changed
 between the two runs.
 
-Proven properties (run 2):
+Proven properties (run 3):
 
 | Harness | Property |
 |---|---|
@@ -28,6 +30,7 @@ Proven properties (run 2):
 | `proof_auth_parse_total` | `parse_oau1` never panics on any input ≤ 96 bytes; an accepted message has a known kind, a supported suite, a 64-byte Ed25519 signature and exact length |
 | `proof_auth_precheck_no_downgrade` | `precheck` passes only on the right network, for a known kind, with a suite at least as strong as the policy requires |
 | `proof_frag_parse_in_bounds` | `parse_ofr1` never panics on any input ≤ 40 bytes; an accepted fragment is non-empty, lies inside the message and inside its own stride |
+| `proof_frag_reassembler_never_panics` | two arbitrary byte strings (≤ 20 B) from 3 possible origins at arbitrary times: `Reassembler::push` never panics, never writes outside a slot buffer, never holds more than 2 slots. SHA-256 is stubbed with an arbitrary digest (`#[kani::stub]`), since the bounds property doesn't depend on it |
 | `proof_frag_completion_mask` | the completion bitmap has exactly `count` bits for every `count` in 1..=32 and covers every valid index |
 
 Limits, stated plainly:
@@ -37,8 +40,12 @@ Limits, stated plainly:
   sigVer 15/15, byte-for-byte match with `libcrux-ml-dsa` over 8 seeds), not proven.
 - Inputs are bounded: 96 bytes for `parse_oau1` (so the 2 420-byte ML-DSA branch is
   out of reach of that harness) and 40 bytes for `parse_ofr1`.
-- The `Reassembler` state machine is covered by unit tests, not by Kani.
-- The full 135-harness suite was not run locally (it doesn't fit in 3.3 GB). That
+- `proof_frag_reassembler_never_panics` covers two pushes with chunks ≤ 4 bytes,
+  with SHA-256 stubbed. Longer sequences and the hash check itself are unit-tested.
+  Negative control (working tree, not committed): weakening `parse_ofr1`'s chunk-length
+  check to `chunk.len() > s` made this harness and `proof_frag_parse_in_bounds` both
+  fail (0 verified, 2 failures).
+- The full 136-harness suite was not run locally (it doesn't fit in 3.3 GB). That
   is left to the `kani-proofs` CI job.
 
 Runner fix: the 2026-10-06 E/F runner (`../run_new_harnesses.sh`) printed `$?`
