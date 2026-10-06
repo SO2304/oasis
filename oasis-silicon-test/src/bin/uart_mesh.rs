@@ -1162,6 +1162,13 @@ fn finish_authority(
 /// own v0B envelope. `tamper = Some(i)`: flip the last byte of fragment `i` AFTER
 /// fragmentation (test only), so its v0B signature is valid but the reassembled
 /// message no longer hashes to `msg_id`.
+/// Pause after each fragment. The wire has no flow control and the receiver polls
+/// its 32-byte RX FIFO only between frames, so the sender's period must exceed the
+/// receiver's per-frame work: v0B sign 178 ms + 26 ms on the wire, against v0B
+/// verify 185 ms + logging. Without this gap the margin was ~10 ms and a Phase 1.2
+/// run lost 9 of 14 fragments to FIFO overruns (evidence/silicon/2026-10-06/enroll/).
+const FRAG_GAP_US: u32 = 100_000;
+
 fn send_fragments(io: &mut Io, router: &mut MeshRouter, uart: &mut Uart0, msg: &[u8], tamper: Option<usize>) {
     let mut frags = match fragment(msg, pq::FRAG_MAX) {
         Some(f) => f,
@@ -1179,6 +1186,10 @@ fn send_fragments(io: &mut Io, router: &mut MeshRouter, uart: &mut Uart0, msg: &
         match router.origin_wrap_v0b(f) {
             Some(env) => {
                 send_framed(uart, &env);
+                let t0 = now_us();
+                while now_us().wrapping_sub(t0) < FRAG_GAP_US {
+                    io.poll();
+                }
                 io.log(
                     "FRAG_TX",
                     format_args!(
