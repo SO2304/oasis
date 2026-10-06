@@ -88,10 +88,19 @@ Verified on three wired RP2040 boards (A→B→C), full write-up in
 - **Replay after relay power loss** — relay's counter window restored from flash
   after a physical USB power-cut; the old counter is refused `stale counter`.
 
-**Downgrade (fixed 2026-10-06):** a v0B router used to accept v8/v9/v0A; it is now strict by default (`v0b_strict_router_rejects_legacy_downgrade`). Silicon re-run in strict mode pending.
+**Downgrade (fixed and silicon-verified 2026-10-06):** a v0B router used to
+accept v8/v9/v0A; it is now strict by default
+(`v0b_strict_router_rejects_legacy_downgrade`). On silicon a strict relay refused a
+v0A envelope and accepted it only after `k` (negative control); in strict mode
+150/150 bit-flipped packets were traced and 0 accepted —
+`evidence/silicon/2026-10-06/followup/REPORT.md`.
 
-**Known liveness gap (honest):** the sender-side counter lease is **not yet
-implemented**, so an origin that loses power cannot resume talking to a relay
-that persisted its counter until its counter passes the remembered high-water
-mark. Receiver persistence is sufficient for the security property, not for
-availability. See the report's "Finding" section.
+**Byte-exact replay across a relay power-cut:** the captured envelope, re-sent
+byte for byte after the relay was unplugged, was refused `stale counter` from the
+flash-restored window.
+
+**Sender reboot (liveness gap closed):** with the sender counter lease
+(`oasis_rt::tx_lease`) an origin unplugged mid-session resumed above its persisted
+ceiling (counter 1280 after 163) and the relay accepted it. Before the lease it
+restarted at 1 and was refused. Limits: a wiped or re-provisioned device restarts
+at 0; endurance is estimated, not measured.

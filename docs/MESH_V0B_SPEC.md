@@ -172,17 +172,25 @@ cycles). Production policy is write-coalescing — persist at most once per `L`
 messages (`L = 256`); the silicon test flushes on demand (`P`) instead, which
 persists the *exact* window and is strictly stronger for the test.
 
-**Sender — NOT yet implemented (liveness gap found by T8).** During the T8
-power-cut the *origin* was also reset, its `tx_counter` restarted at 1, and the
-relay (correctly remembering `highest = 165`) then refused **every** counter the
-origin could produce. Receiver persistence secures the protocol but starves
-availability. The fix is the symmetric **counter lease** on the sender: persist a
-counter *ceiling* ahead of use in blocks of `L = 256` and resume **from the
-ceiling** after a reboot, so a counter is never reused and the sender always
-resumes above anything it previously sent (cost: up to `L−1` counters skipped per
-reboot, harmless since receivers require strict progress, not contiguity).
-Until this exists, a v0B origin that loses power cannot resume talking to relays
-that persisted its counter.
+**Sender — DONE and silicon-proven (2026-10-06 follow-up).** T8 had found the
+liveness gap: a rebooted origin restarted at counter 1 and every relay that
+persisted it refused all its messages. `oasis_rt::tx_lease` closes it: the sender
+persists a counter *ceiling* ahead of use (blocks of `L = 256`), never issues a
+counter above the durable ceiling, and resumes **at** the persisted ceiling after
+boot. `DualSlotStore` alternates two checksummed slots so a torn write leaves the
+previous ceiling readable. 9 tests (incl. 10 000 random reboots with ~2 % torn
+writes, no counter reused; 40 writes per 10 000 messages) and 3 Kani proofs (the
+counter after a reboot exceeds every counter before it; never issue above the
+durable ceiling; a failed write issues nothing). On silicon, A was unplugged after
+sending counters 154–163; it came back at `tx=1279` (ceiling read from flash), sent
+counter 1280, and the relay accepted it —
+`evidence/silicon/2026-10-06/followup/REPORT.md` test 4.
+
+Limits: up to ~1 279 counters are skipped per reboot in the firmware (it reserves
+`tx + 1024` before each command buffer) — harmless; a wiped or re-provisioned
+device restarts at 0 and will be refused by relays that remember it; a power cut
+*during* a flash write was tested on the PC simulator only; flash endurance is an
+estimate (~5 × 10⁷ counters at 100 k cycles × 2 sectors), not a measurement.
 
 ---
 
@@ -256,8 +264,9 @@ job / a ≥16 GB Linux host, not on local WSL.
 ## 9. Status (2026-10-06)
 
 Phase-1 decisions, as resolved and built:
-1. **Counter lease `L = 256`**, last 4 KiB flash sector. Receiver side
-   implemented and silicon-proven (T8); **sender side still open** — see §5.
+1. **Counter lease `L = 256`**. Receiver window in the last 4 KiB flash sector,
+   sender ceiling in two alternating sectors; both implemented and silicon-proven
+   (T8, then the follow-up's byte-exact replay and sender-reboot tests) — see §5.
 2. **Folded into the existing `mesh_v10` cargo feature** (v0B builds on the v0A
    Ed25519 machinery, and this keeps the MCU build command unchanged).
 3. **`MAX_TTL = 8`** (`DEFAULT_TTL`).
@@ -268,5 +277,11 @@ proofs**; cost bench `bench_mesh_v0b` (v0B ≈ v0A + ~1 %); silicon validation o
 3 RP2040 boards (`evidence/silicon/2026-10-06/REPORT_MESH_V0B.md`) — 0/150
 bit-flips accepted, suppression defeated, T8 passed across a real power-cut.
 
-Open: the sender-side counter lease (§5), and LoRa/over-the-air (this chain is
-a wire; SX1262 is still mock-tested only).
+Follow-up (same day, `evidence/silicon/2026-10-06/followup/`): strict mode on
+silicon — 150/150 bit-flips traced, 0 accepted, magic flips always rejected as
+legacy; downgrade refused (negative control with `k`); byte-exact replay across a
+power-cut of B refused `stale counter`; sender lease across a power-cut of A —
+the rebooted origin was accepted.
+
+Open: LoRa/over-the-air (this chain is a wire; SX1262 is still mock-tested only);
+receiver-side write coalescing (the chip flushes the window on demand).
