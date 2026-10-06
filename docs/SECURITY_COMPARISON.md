@@ -11,7 +11,7 @@ widely used meshes.
   reproduce: the `v0b_*` tests in [oasis-rt/src/mesh/tests.rs](../oasis-rt/src/mesh/tests.rs),
   the Kani proofs in [oasis-rt/src/mesh/kani_proofs.rs](../oasis-rt/src/mesh/kani_proofs.rs),
   and (Phase 3) the silicon logs under `evidence/silicon/`.
-- **Competitor cells** summarise behaviour from the sources cited in
+- **Reticulum cells marked Verified** were checked against `markqvist/Reticulum` commit `e40191b` (2026-10-06 review). **Other competitor cells** summarise behaviour from the sources cited in
   `prompts/MESH_V0B_SECURITY.md`. I have **not** independently checked those
   repositories in this session, so each is marked **[non vérifié]** — the
   citation is the prompt author's, not mine. Where I rely only on general
@@ -22,12 +22,12 @@ widely used meshes.
 
 | Attack | OASIS v0B | Reticulum | Meshtastic | Thread |
 |---|---|---|---|---|
-| **Payload modified in flight** | Rejected at every relay — payload is bound via `SHA-256(payload)` in the Ed25519-signed data. Test `v0b_content_swap_rejected_real_still_passes`, Kani `proof_v0b_preimage_binds_payload_digest`. | Relays don't crypto-check data packets; integrity only end-to-end **[non vérifié: RNS/Transport.py l.2018-2045]** | Channel AES-CTR gives confidentiality; integrity/auth of broadcast content not per-hop verified **[non vérifié]** | Network-key MIC gives link integrity to anyone holding the shared key **[général, non vérifié]** |
+| **Payload modified in flight** | Rejected at every relay — payload is bound via `SHA-256(payload)` in the Ed25519-signed data. Test `v0b_content_swap_rejected_real_still_passes`, Kani `proof_v0b_preimage_binds_payload_digest`. | Relays don't crypto-check data packets; integrity only end-to-end. **Verified** in `RNS/Transport.py` l.2018-2045 (commit `e40191b`): forward on path table, hop count and transport id only | Channel AES-CTR gives confidentiality; integrity/auth of broadcast content not per-hop verified **[non vérifié]** | Network-key MIC gives link integrity to anyone holding the shared key **[général, non vérifié]** |
 | **Message suppression (keep sig, swap content, poison dedup)** | Defeated: forged content fails the signature *before* any dedup/counter state is touched, so the real message still arrives. Test `v0b_content_swap_rejected_real_still_passes`. | N/A in the same form (no per-packet sig to keep) but no per-hop content auth either **[non vérifié]** | **[non vérifié]** | **[non vérifié]** |
 | **Forged origin (signed with another key)** | Rejected — relay looks up the claimed origin's registered Ed25519 key. Test `v0b_forged_origin_rejected`. | Announces are validated; data packets have no source address by design **[non vérifié: validate_announce]** | DMs/admin signed since 2.5, verified at destination not per-hop **[non vérifié]** | Any network-key holder is "authentic" to the link **[général, non vérifié]** |
-| **Immediate replay** | Rejected by the per-origin counter window. Test `v0b_immediate_replay_rejected`. | Short-term dedup cache **[non vérifié: Transport.py l.2123-2160]** | **[non vérifié]** | Frame counter **[général, non vérifié]** |
-| **Replay after relay reboot** | Rejected — counter high-water mark is **persisted** and restored on boot. Test `v0b_replay_after_reboot_rejected` (+ Phase 3 silicon T8). | RAM dedup cache lost on restart ⇒ old packets re-accepted **[non vérifié]** | **[non vérifié]** | Depends on counter persistence **[général, non vérifié]** |
-| **Replay after dedup-cache reset/overflow** | Rejected — the counter window is independent of the RAM Bloom. Test `v0b_replay_after_bloom_reset_rejected`. | Bounded cache ⇒ replay possible past the window **[non vérifié]** | **[non vérifié]** | **[général, non vérifié]** |
+| **Immediate replay** | Rejected by the per-origin counter window. Test `v0b_immediate_replay_rejected`. | Packet-hash dedup list, up to 1 M entries (`hashlist_maxsize`, Transport.py l.247). It is a list of hashes, not a signed counter. **Verified** | **[non vérifié]** | Frame counter **[général, non vérifié]** |
+| **Replay after relay reboot** | Rejected — counter high-water mark is **persisted** and restored on boot. Test `v0b_replay_after_reboot_rejected` (+ Phase 3 silicon T8). | **Persisted:** the packet-hash list is saved to storage and reloaded at start (`Transport.py` l.339-343, `save_packet_hashlist` l.3745-3769). Entries not yet saved at an abrupt power loss may be lost; the save schedule was not checked. Unlike OASIS, nothing binds freshness into a signature a relay can verify. **Verified (code)** | **[non vérifié]** | Depends on counter persistence **[général, non vérifié]** |
+| **Replay after dedup-cache reset/overflow** | Rejected — the counter window is independent of the RAM Bloom. Test `v0b_replay_after_bloom_reset_rejected`. | Bounded hash list (1 M entries, rotated in halves, l.832-833): a packet older than the retained list can be replayed **(code read; not tested)** | **[non vérifié]** | **[général, non vérifié]** |
 | **Message from another network** | Rejected before signature — `network_id` filter + the id is in the signed data. Test `v0b_foreign_network_rejected`. | Network segregation differs (no signed network id per packet) **[non vérifié]** | Different channel key ⇒ undecryptable, but relayed first **[non vérifié]** | Different network key **[général, non vérifié]** |
 | **Revoked node** | Rejected at the first hop, before signature. Test `v0b_revoked_origin_rejected`. | **[non vérifié]** | **[non vérifié]** | Rekey the whole network **[général, non vérifié]** |
 | **TTL/hops tampering** | Bounded on receipt (`ttl, hops, ttl+hops ≤ MAX_TTL`); hard anti-amplification is accept-once via the signed counter, not ttl. Test `v0b_ttl_inflation_bounded`. | Hop limit enforced; unsigned **[non vérifié]** | Hop limit; unsigned **[non vérifié]** | Mesh-local hop limits **[général, non vérifié]** |
@@ -87,6 +87,8 @@ Verified on three wired RP2040 boards (A→B→C), full write-up in
   dropped (`bad mesh signature`) and the real message still reaches C.
 - **Replay after relay power loss** — relay's counter window restored from flash
   after a physical USB power-cut; the old counter is refused `stale counter`.
+
+**Downgrade (fixed 2026-10-06):** a v0B router used to accept v8/v9/v0A; it is now strict by default (`v0b_strict_router_rejects_legacy_downgrade`). Silicon re-run in strict mode pending.
 
 **Known liveness gap (honest):** the sender-side counter lease is **not yet
 implemented**, so an origin that loses power cannot resume talking to a relay

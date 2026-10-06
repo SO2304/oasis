@@ -17,7 +17,7 @@ relay, and verifies **before** mutating any state.
 | # | Task | Result | Log |
 |---|---|---|---|
 | 1 | v0B relay A→B→C | ✅ verified at each hop (`sig=verified`, hops 0→1) | `v0b_relay_{B,C}.log` |
-| 2 | Pre-CRC bit-flip sweep, 3×50 | ✅ **0/150 accepted** (v0A was 12/50 on 2026-10-04) | `v0b_bitflip_sweep_B_run{1,2,3}.log` |
+| 2 | Pre-CRC bit-flip sweep, 3×50 sent | ✅ **0/147 accepted** of the 147 that were logged (3 not logged, see §6) (v0A was 12/50 on 2026-10-04) | `v0b_bitflip_sweep_B_run{1,2,3}.log` |
 | 3 | Content-swap (suppression) | ✅ forged dropped `bad mesh signature`, real relayed; C got only the real one | `v0b_swap_{B,C}.log` |
 | 4 | Reboot-replay after real power-cut (T8) | ✅ old counter dropped `stale counter` from the **flash-restored** window | `v0b_t8_*.log` |
 | — | On-chip cost v0B vs v0A | +1.0 % sign, +0.7 % verify | `v0b_timing_A.log` |
@@ -158,3 +158,41 @@ elf2uf2-rs target/thumbv6m-none-eabi/release/uart_mesh uf2/uart_A.uf2   # repeat
 stty -F /dev/ttyS8 115200 raw -echo -ixon
 exec 3<>/dev/ttyS8; printf 'O' >&3
 ```
+
+
+---
+
+## 6. Independent review notes (2026-10-06)
+
+A second pass re-read every log in this folder, the v0B code and tests, and re-ran
+`cargo test --workspace --release` on x86_64 Linux. Corrections and findings:
+
+1. **Bit-flip count.** Each sweep run logged 49 lines, not 50: 147 outcomes are on
+   record, all `DROP`, none `ARRIVED`. Three packets left no trace on B (most likely
+   lost on the wire before the deframer). The headline is therefore **0/147 logged
+   accepted**, not 0/150.
+2. **T8 is a freshness test, not a byte-exact replay.** After the power-cut, A sent a
+   *newly signed* envelope with an old counter (3). B refused it from the
+   flash-restored window, which proves the persisted window is enforced. A byte-for-
+   byte replay of the captured `counter=165` envelope (`Z` then `z`) was not run;
+   it is queued for the next silicon session.
+3. **Downgrade found and fixed.** A `new_v0b` router still accepted and forwarded
+   v8/v9/v0A envelopes, including a payload-swapped v0A and a v0A replayed after a
+   reboot (reproduced on the host). The sweep touched this path once (run 2: a flip
+   turned the magic into v9, logged `v9 rejected by v0A-only router`). **Fix:** a v0B
+   router is now strict by default and drops every non-v0B envelope with
+   `"legacy envelope rejected by strict v0B router"`; `set_allow_legacy(true)` is an
+   explicit migration opt-in. Tests `v0b_strict_router_rejects_legacy_downgrade` and
+   `v0b_allow_legacy_is_explicit_opt_in`. The test firmware boots with legacy allowed
+   (it still hosts the v0A commands) and gains `K` (strict) / `k` (legacy). **The
+   silicon sweep must be re-run with `K` sent to every node.**
+4. **Checksums.** 13 of 29 entries failed `sha256sum -c`: they were hashed with CRLF
+   line endings (and, for `v0b_t8_postcut_B.log`, an LF annotation line followed by
+   CRLF capture lines) and committed with LF. Every original hash was reproduced
+   from the committed bytes before being replaced, so no content changed. Entries
+   now hold the LF hashes (29/29 OK), and `.gitattributes` marks `evidence/**` as
+   binary so git no longer rewrites line endings.
+5. **Signing cost.** With a cached keypair (what a router does), Ed25519 signing
+   costs ≈174 ms on the M0+, not the 341 ms reported by the 2026-10-04 T6. T6 called
+   `mesh_v10_sign(&seed, …)`, which re-derives the keypair on every call (a second
+   scalar multiplication). Verify stays ≈178 ms.
