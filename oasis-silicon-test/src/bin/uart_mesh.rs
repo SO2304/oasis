@@ -35,6 +35,47 @@ use oasis_rt::mesh::{
     mesh_v0b_verify, mesh_v10_pubkey_from_seed, mesh_v10_verify, MeshDecision, MeshEdSeed,
     MeshPubRegistry, MeshRouter,
 };
+use oasis_rt::spore_crypto::CounterTracker;
+use oasis_rt::tx_lease::{DualSlotStore, SlotIo, TxLease, TX_LEASE_BLOCK, TX_LEASE_RECORD_LEN};
+
+/// Upper bound on counters a single USB command buffer can consume (the
+/// commands sum to <= 868: X=600, N=200, G=50, Y=12, others 1 each). One
+/// durable reservation covering this is made BEFORE any command in the buffer
+/// originates, so no counter is ever used above the persisted ceiling.
+const CMD_MAX_ORIGINATIONS: u64 = 1024;
+
+/// Sender counter lease on flash: two alternating 4 KiB sectors (below the
+/// receiver-window sector at 0x1FF000). A torn write damages only one slot.
+const LEASE_SECTORS: [u32; 2] = [0x1F_D000, 0x1F_E000];
+struct FlashSlots;
+impl SlotIo for FlashSlots {
+    fn read(&self, slot: usize) -> [u8; TX_LEASE_RECORD_LEN] {
+        let p = (0x1000_0000usize + LEASE_SECTORS[slot] as usize) as *const u8;
+        let mut r = [0u8; TX_LEASE_RECORD_LEN];
+        for (i, b) in r.iter_mut().enumerate() {
+            *b = unsafe { core::ptr::read_volatile(p.add(i)) };
+        }
+        r
+    }
+    fn write(&mut self, slot: usize, rec: &[u8; TX_LEASE_RECORD_LEN]) -> bool {
+        let mut buf = [0xFFu8; 256]; // flash program granularity
+        buf[..TX_LEASE_RECORD_LEN].copy_from_slice(rec);
+        cortex_m::interrupt::free(|_| unsafe {
+            rp2040_flash::flash::flash_range_erase(LEASE_SECTORS[slot], 4096, true);
+            rp2040_flash::flash::flash_range_program(LEASE_SECTORS[slot], &buf, true);
+        });
+        true // durability is confirmed by DualSlotStore's read-back
+    }
+}
+
+/// Test-harness only: erase both lease sectors (factory reset).
+fn wipe_lease_sectors() {
+    cortex_m::interrupt::free(|_| unsafe {
+        for s in LEASE_SECTORS {
+            rp2040_flash::flash::flash_range_erase(s, 4096, true);
+        }
+    });
+}
 
 #[global_allocator]
 static HEAP: Heap = Heap::empty();
@@ -96,6 +137,13 @@ mod persist {
             rp2040_flash::flash::flash_range_program(SECTOR, &buf, true);
         });
         true
+    }
+
+    /// Test-harness only: erase the receiver-window sector.
+    pub fn wipe() {
+        cortex_m::interrupt::free(|_| unsafe {
+            rp2040_flash::flash::flash_range_erase(SECTOR, 4096, true);
+        });
     }
 
     /// Read back the persisted tracker bytes (XIP-mapped), or None if absent.
@@ -235,12 +283,46 @@ fn main() -> ! {
         },
         None => io.log("PERSIST_NONE", format_args!("no saved v0b window")),
     }
+    // Sender lease: resume AT the persisted ceiling, so every counter emitted
+    // after this boot exceeds every counter emitted before it.
+    let mut lstore = DualSlotStore::new(FlashSlots);
+    let mut lease = TxLease::boot(&lstore, TX_LEASE_BLOCK);
+    router.set_tx_counter(lease.resume_point());
+    io.log("LEASE_BOOT", format_args!("resume={},ceiling={}", lease.resume_point(), lease.ceiling()));
 
     loop {
         io.poll();
 
         let mut rx = [0u8; 16];
         if let Ok(n) = io.serial.read(&mut rx) {
+            // Make every counter this buffer could consume durable FIRST. On
+            // failure nothing in the buffer runs (no counter above the ceiling).
+            let writes_before = lease.writes();
+            let n = if n > 0
+                && !lease.ensure(router.tx_counter().saturating_add(CMD_MAX_ORIGINATIONS), &mut lstore)
+            {
+                io.log("LEASE_FAIL", format_args!("tx={},ceiling={}", router.tx_counter(), lease.ceiling()));
+                0
+            } else {
+                n
+            };
+            if lease.writes() != writes_before {
+                io.log(
+                    "LEASE_PERSIST",
+                    format_args!("ceiling={},writes_since_boot={}", lease.ceiling(), lease.writes()),
+                );
+            }
+            // Test-harness factory reset of BOTH persistence areas (receiver
+            // window + sender lease) and of the RAM state. Only for a clean start.
+            if rx[..n].contains(&b'!') {
+                persist::wipe();
+                wipe_lease_sectors();
+                let empty = CounterTracker::new().to_bytes();
+                let _ = router.restore_counter_tracker(&empty);
+                lease = TxLease::boot(&lstore, TX_LEASE_BLOCK);
+                router.set_tx_counter(lease.resume_point());
+                io.log("PERSIST_WIPED", format_args!("tx={},ceiling={}", router.tx_counter(), lease.ceiling()));
+            }
             if rx[..n].contains(&b'b') {
                 hal::rom_data::reset_to_usb_boot(0, 0);
             }
@@ -284,15 +366,43 @@ fn main() -> ! {
                 let mut rng = Rng::new(seed);
                 let mut txd = 0u32;
                 io.log("V0B_SWEEP", format_args!("Phase (Pre-CRC v0B bitflip,50)"));
-                for _ in 0..50u32 {
-                    if let Some(mut env) = router.origin_wrap_v0b(b"OASIS-v0b-nz") {
+                for seq in 1..=50u32 {
+                    // Payload ends in a 3-digit sequence number; the relay logs the
+                    // last 3 envelope bytes, so every packet is traceable end to end.
+                    let mut pl = *b"OASIS-nz-seq000";
+                    pl[12] = b'0' + ((seq / 100) % 10) as u8;
+                    pl[13] = b'0' + ((seq / 10) % 10) as u8;
+                    pl[14] = b'0' + (seq % 10) as u8;
+                    if let Some(mut env) = router.origin_wrap_v0b(&pl) {
                         let idx = rng.upto(env.len() as u32) as usize;
                         let bit = rng.upto(8) as u8;
+                        let field = match idx {
+                            0..=5 => "magic",
+                            6..=13 => "network",
+                            14..=21 => "origin",
+                            22..=29 => "counter",
+                            30 => "ttl",
+                            31..=32 => "hops",
+                            33..=34 => "plen",
+                            35..=98 => "sig",
+                            _ => "payload",
+                        };
                         env[idx] ^= 1u8 << bit; // single-bit corruption, pre-CRC
                         let mut wire = [0u8; MAX_ENV + 8];
                         let wlen = frame_into(&mut wire, &env);
                         uart0.write_full_blocking(&wire[..wlen]);
                         txd += 1;
+                        io.log(
+                            "SWEEP_TX",
+                            format_args!(
+                                "seq={:03},counter={},idx={},bit={},field={}",
+                                seq,
+                                router.tx_counter(),
+                                idx,
+                                bit,
+                                field
+                            ),
+                        );
                     }
                     io.poll();
                     cortex_m::asm::delay(6_250_000); // ~50 ms
@@ -360,8 +470,14 @@ fn main() -> ! {
                 io.log(
                     "STATUS",
                     format_args!(
-                        "rx_bytes={},frames={},crc_fails={}",
-                        rx_total, frame_total, crc_fails
+                        "rx_bytes={},frames={},crc_fails={},tx={},lease_ceiling={},lease_writes={},a_last_seen={}",
+                        rx_total,
+                        frame_total,
+                        crc_fails,
+                        router.tx_counter(),
+                        lease.ceiling(),
+                        lease.writes(),
+                        router.v0b_last_seen(&fp_for("A"))
                     ),
                 );
             }
@@ -541,6 +657,36 @@ fn main() -> ! {
                 };
                 if elen == 0 {
                     continue;
+                }
+                // Per-packet receive trace: frame index, counter field as received
+                // and the last 3 envelope bytes (the sweep's sequence number), so a
+                // lost packet is identifiable rather than merely absent.
+                {
+                    let e = &owned[..elen];
+                    let ctr = if elen >= 30 {
+                        u64::from_le_bytes([e[22], e[23], e[24], e[25], e[26], e[27], e[28], e[29]])
+                    } else {
+                        0
+                    };
+                    let mut seq = [b'?'; 3];
+                    if elen >= 3 {
+                        seq.copy_from_slice(&e[elen - 3..elen]);
+                    }
+                    for b in seq.iter_mut() {
+                        if !b.is_ascii_graphic() {
+                            *b = b'?';
+                        }
+                    }
+                    io.log(
+                        "RXF",
+                        format_args!(
+                            "n={},len={},ctr={},seq={}",
+                            frame_total,
+                            elen,
+                            ctr,
+                            core::str::from_utf8(&seq).unwrap_or("???")
+                        ),
+                    );
                 }
                 match router.process(&owned[..elen]) {
                     MeshDecision::Arrived {
