@@ -110,12 +110,16 @@ static HEAP: Heap = Heap::empty();
 fn on_panic(_: &core::panic::PanicInfo) -> ! {
     #[cfg(not(feature = "bootloaded"))]
     hal::rom_data::reset_to_usb_boot(0, 0);
+    #[cfg(feature = "bootloaded")]
+    update::crumb(0xAE);
     cortex_m::peripheral::SCB::sys_reset();
 }
 #[cortex_m_rt::exception]
 unsafe fn HardFault(_ef: &cortex_m_rt::ExceptionFrame) -> ! {
     #[cfg(not(feature = "bootloaded"))]
     hal::rom_data::reset_to_usb_boot(0, 0);
+    #[cfg(feature = "bootloaded")]
+    update::crumb(0xAF);
     cortex_m::peripheral::SCB::sys_reset();
 }
 
@@ -243,6 +247,8 @@ fn main() -> ! {
     // Phase 1.3: boot guard + init breadcrumbs (update.rs), before anything that could hang.
     #[cfg(feature = "bootloaded")]
     let (guard_failed, guard_prev_stage) = update::boot_guard_enter();
+    #[cfg(feature = "bootloaded")]
+    update::crumb(0xA1);
     let mut pac = pac::Peripherals::take().unwrap();
     let mut watchdog = hal::Watchdog::new(pac.WATCHDOG);
     let clocks = hal::clocks::init_clocks_and_plls(
@@ -257,6 +263,8 @@ fn main() -> ! {
     .ok()
     .unwrap();
 
+    #[cfg(feature = "bootloaded")]
+    update::crumb(0xA2);
     let sio = hal::Sio::new(pac.SIO);
     let pins = hal::gpio::Pins::new(pac.IO_BANK0, pac.PADS_BANK0, sio.gpio_bank0, &mut pac.RESETS);
 
@@ -295,6 +303,8 @@ fn main() -> ! {
     let mut io = Io { usb_dev, serial };
     #[cfg(feature = "bootloaded")]
     update::stage(2); // clocks, UART and USB objects created
+    #[cfg(feature = "bootloaded")]
+    update::crumb(0xA3);
     // Phase 1.2: identity generated on this board at first boot, never output.
     enroll::rosc_enable();
     let id_boot = enroll::boot_identity();
@@ -315,6 +325,8 @@ fn main() -> ! {
     let mut pqs = pq::Pq::boot();
     #[cfg(feature = "bootloaded")]
     update::stage(3); // identity, owner, registry, policy loaded
+    #[cfg(feature = "bootloaded")]
+    update::crumb(0xA4);
     // Phase 1.3: confirm a freshly swapped image (self-test, floor, mark_booted)
     // while the bootloader's watchdog still runs, then stop the watchdog.
     #[cfg(feature = "bootloaded")]
@@ -331,6 +343,7 @@ fn main() -> ! {
         }
         watchdog.disable();
         update::stage(4); // confirmed (if swapped), watchdog stopped
+        update::crumb(0xA5);
     }
     #[cfg(feature = "bootloaded")]
     let mut guard_cleared = false;
@@ -413,6 +426,7 @@ fn main() -> ! {
         #[cfg(feature = "bootloaded")]
         if !guard_cleared {
             update::boot_guard_ok();
+            update::crumb(0xA6);
             guard_cleared = true;
         }
 
@@ -659,6 +673,19 @@ fn main() -> ! {
                         guard_prev_stage
                     ),
                 );
+            }
+            // Read-only flash dump (diagnostics): `@X<offset 8 hex>` prints 64 bytes.
+            if line_done && line_len == 9 && line[0] == b'X' {
+                let mut o = [0u8; 4];
+                if ef::hex_decode(&line[1..9], &mut o) == Some(4) {
+                    let off = u32::from_be_bytes(o) as usize & 0x1F_FFC0;
+                    let p = (0x1000_0000usize + off) as *const u8;
+                    let mut b = [0u8; 64];
+                    for (i, x) in b.iter_mut().enumerate() {
+                        *x = unsafe { core::ptr::read_volatile(p.add(i)) };
+                    }
+                    io.log("FLASH", format_args!("off={:06x},bytes={}", off, Hx(&b)));
+                }
             }
             if line_done && line_len >= 1 && line[0] == b'I' {
                 io.log(

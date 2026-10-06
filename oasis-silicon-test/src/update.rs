@@ -177,6 +177,28 @@ pub fn raise_floor() -> bool {
     target == f || floor_store().store(target)
 }
 
+// ── boot breadcrumbs (Phase 1.3 bring-up diagnostics) ─────────────────────────
+// Same sector and scheme as oasis-bootloader: one byte appended at the first 0xFF of
+// 0x1F0000. App codes: 0xA1 entry, 0xA2 clocks, 0xA3 USB objects, 0xA4 state loaded,
+// 0xA5 confirmed + watchdog stopped, 0xA6 main loop, 0xAE panic, 0xAF HardFault.
+pub const CRUMB_OFFSET: u32 = 0x1F_0000;
+
+pub fn crumb(b: u8) {
+    let base = XIP_BASE + CRUMB_OFFSET as usize;
+    for off in 0..4096usize {
+        if unsafe { core::ptr::read_volatile((base + off) as *const u8) } == 0xFF {
+            let addr = CRUMB_OFFSET + off as u32;
+            let page = addr & !0xFF;
+            let mut buf = [0xFFu8; 256];
+            buf[(addr - page) as usize] = b;
+            cortex_m::interrupt::free(|_| unsafe {
+                rp2040_flash::flash::flash_range_program(page, &buf, true);
+            });
+            return;
+        }
+    }
+}
+
 // ── boot guard: never strand a board ─────────────────────────────────────────
 // Watchdog SCRATCH2/3 persist across soft and watchdog resets (the bootrom's USB
 // boot uses SCRATCH0/1 and 4..7). SCRATCH2 counts boots that did not reach the main
