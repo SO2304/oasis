@@ -85,8 +85,10 @@ jobs:
         run: |
           cargo install --locked kani-verifier
           cargo kani setup
+      # -Z stubbing: proof_frag_reassembler_never_panics replaces SHA-256 with an
+      # arbitrary digest (#[kani::stub]); without the flag that harness fails.
       - name: cargo kani --lib (all proof harnesses)
-        run: cargo kani --lib -Z unstable-options --harness-timeout 600s -j 1 --output-format terse
+        run: cargo kani --lib -Z unstable-options -Z stubbing --harness-timeout 600s -j 1 --output-format terse
 
   docker-build:
     name: Docker image build + healthcheck

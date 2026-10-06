@@ -37,3 +37,30 @@ fn proof_frag_completion_mask() {
     kani::assume(idx < count);
     assert!(all & (1u32 << idx) != 0);
 }
+
+/// Stand-in for SHA-256 in `proof_frag_reassembler_never_panics`: any digest. The
+/// bounds property does not depend on the hash value, and the real SHA-256 rounds
+/// would dominate the solver. Hash checking itself is unit-tested.
+fn any_msg_id(_msg: &[u8]) -> [u8; 8] {
+    kani::any()
+}
+
+/// PROVE: two arbitrary byte strings pushed from arbitrary origins (3 possible) at
+/// arbitrary times never make `Reassembler::push` panic or write outside a slot
+/// buffer, and never hold more than `REASSEMBLY_SLOTS` reassemblies.
+/// Needs `-Z stubbing`.
+#[kani::proof]
+#[kani::stub(crate::fragment::msg_id_of, any_msg_id)]
+#[kani::unwind(21)]
+fn proof_frag_reassembler_never_panics() {
+    let mut r = Reassembler::new();
+    for _ in 0..2 {
+        let buf: [u8; 20] = kani::any();
+        let len: usize = kani::any();
+        kani::assume(len <= 20);
+        let o: u8 = kani::any();
+        kani::assume(o < 3);
+        let _ = r.push([o; 8], kani::any(), &buf[..len]);
+        assert!(r.in_use() <= REASSEMBLY_SLOTS);
+    }
+}
