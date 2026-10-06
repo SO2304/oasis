@@ -1012,3 +1012,97 @@ fn proof_ad_per_call_overhead_constant() {
     let _ = per_call_branches; // O(1) regardless of threshold
     assert!(per_call_branches < 100, "per-call overhead is constant (O(1)), independent of threshold");
 }
+
+// ───────── v0B (SPORE\x0B) proofs: pure, security-bearing properties ─────────
+// These cover the NOVEL layer of v0B — the panic-free parser and the signed
+// preimage that binds content (via the payload digest), the counter and the
+// network. The stateful properties (verify-before-remember, monotone counter
+// window) transit Ed25519 and a BTreeMap, which Kani cannot unroll tractably;
+// those are covered by the deterministic unit tests in tests.rs
+// (v0b_invalid_then_valid_accepted, v0b_bitflip_* with last_seen==0,
+// v0b_reorder_within_window_accept_once).
+
+/// PROVE: the v0B header parser never panics on a full-length buffer.
+#[cfg(feature = "mesh_v10")]
+#[kani::proof]
+fn proof_v0b_parse_never_panics_full() {
+    let env: [u8; MESH_V0B_HEADER_LEN] = kani::any();
+    let _ = v0b_try_parse_header(&env);
+}
+
+/// PROVE: a sub-header buffer parses to None (and never panics).
+#[cfg(feature = "mesh_v10")]
+#[kani::proof]
+fn proof_v0b_parse_never_panics_short() {
+    let env: [u8; MESH_V0B_HEADER_LEN - 1] = kani::any();
+    assert!(v0b_try_parse_header(&env).is_none(), "sub-header buffer must parse to None");
+}
+
+/// PROVE: header+payload parses without panic for any bytes.
+#[cfg(feature = "mesh_v10")]
+#[kani::proof]
+fn proof_v0b_parse_never_panics_with_payload() {
+    let env: [u8; MESH_V0B_HEADER_LEN + 4] = kani::any();
+    let _ = v0b_try_parse_header(&env);
+}
+
+/// PROVE: distinct payload digests ⇒ distinct signed preimages (content bound).
+#[cfg(feature = "mesh_v10")]
+#[kani::proof]
+fn proof_v0b_preimage_binds_payload_digest() {
+    let d1: [u8; 32] = kani::any();
+    let d2: [u8; 32] = kani::any();
+    kani::assume(d1 != d2);
+    let p1 = mesh_v0b_signed_preimage([0; MESH_V0B_NETWORK_LEN], [0; FP_LEN], 0, 0, &d1);
+    let p2 = mesh_v0b_signed_preimage([0; MESH_V0B_NETWORK_LEN], [0; FP_LEN], 0, 0, &d2);
+    assert!(p1 != p2, "distinct payload digests must give distinct signed preimages");
+}
+
+/// PROVE: distinct counters ⇒ distinct signed preimages (freshness bound).
+#[cfg(feature = "mesh_v10")]
+#[kani::proof]
+fn proof_v0b_preimage_binds_counter() {
+    let c1: u64 = kani::any();
+    let c2: u64 = kani::any();
+    kani::assume(c1 != c2);
+    let d = [0u8; 32];
+    let p1 = mesh_v0b_signed_preimage([0; MESH_V0B_NETWORK_LEN], [0; FP_LEN], c1, 0, &d);
+    let p2 = mesh_v0b_signed_preimage([0; MESH_V0B_NETWORK_LEN], [0; FP_LEN], c2, 0, &d);
+    assert!(p1 != p2, "distinct counters must give distinct signed preimages");
+}
+
+/// PROVE: distinct network ids ⇒ distinct signed preimages (domain separation).
+#[cfg(feature = "mesh_v10")]
+#[kani::proof]
+fn proof_v0b_preimage_binds_network() {
+    let n1: [u8; MESH_V0B_NETWORK_LEN] = kani::any();
+    let n2: [u8; MESH_V0B_NETWORK_LEN] = kani::any();
+    kani::assume(n1 != n2);
+    let d = [0u8; 32];
+    let p1 = mesh_v0b_signed_preimage(n1, [0; FP_LEN], 0, 0, &d);
+    let p2 = mesh_v0b_signed_preimage(n2, [0; FP_LEN], 0, 0, &d);
+    assert!(p1 != p2, "distinct network ids must give distinct signed preimages");
+}
+
+/// PROVE: layout constants are consistent and the domain tag always prefixes
+/// the signed preimage (no cross-context signature reuse).
+#[cfg(feature = "mesh_v10")]
+#[kani::proof]
+fn proof_v0b_preimage_domain_separated_and_consistent() {
+    assert_eq!(
+        MESH_V0B_HEADER_LEN,
+        6 + MESH_V0B_NETWORK_LEN + FP_LEN + 8 + 1 + 2 + 2 + MESH_ED_SIG_LEN
+    );
+    assert_eq!(MESH_V0B_PREIMAGE_LEN, 14 + MESH_V0B_NETWORK_LEN + FP_LEN + 8 + 2 + 32);
+    let net: [u8; MESH_V0B_NETWORK_LEN] = kani::any();
+    let fpr: [u8; FP_LEN] = kani::any();
+    let ctr: u64 = kani::any();
+    let plen: u16 = kani::any();
+    let dig: [u8; 32] = kani::any();
+    let pre = mesh_v0b_signed_preimage(net, fpr, ctr, plen, &dig);
+    let mut i = 0;
+    while i < 14 {
+        assert!(pre[i] == MESH_V0B_DOMAIN[i], "domain tag must prefix the signed preimage");
+        i += 1;
+    }
+}

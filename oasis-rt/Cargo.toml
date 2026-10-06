@@ -135,5 +135,9 @@ name = "bench_mesh_signed"
 path = "src/bin/bench_mesh_signed.rs"
 
 [[bin]]
+name = "bench_mesh_v0b"
+path = "src/bin/bench_mesh_v0b.rs"
+
+[[bin]]
 name = "bench_payload_sweep"
 path = "src/bin/bench_payload_sweep.rs"

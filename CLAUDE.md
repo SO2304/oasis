@@ -17,12 +17,14 @@ removed content now lives in baseline commit `d8681c5`. The 4 std crates
 are a Cargo **workspace** (`resolver = "2"`); the 3 MCU crates are
 *excluded* so `mesh_bloom_mcu` feature-unification can no longer shrink
 the host Bloom (64 KiB → 2 KiB). Re-measured headline numbers (commands
-reproduce them): **443 lib tests** (`cargo test --workspace --release`),
-**113 Kani proof harnesses** (`grep -rE 'kani::proof' oasis-rt/src | wc -l`;
-full CBMC pass *not* re-run this session — slow under WSL), **30 modules**,
-**18 `[[bin]]`**, **32 `src/*.rs`** files (largest module now `spore_crypto.rs`
-2583 L; `mesh.rs` was split 2026-06-02 — its tests + 46 Kani proofs moved to
-`src/mesh/{tests,kani_proofs}.rs`, leaving a 1099 L protocol core). ⚠️ The per-file line counts in the tree
+reproduce them): **455 lib tests** (`cargo test --workspace --release`; 444
+before mesh v0B, +11 `v0b_*`),
+**120 Kani proof harnesses** (`grep -rE 'kani::proof' oasis-rt/src | wc -l`;
+113 before v0B, +7; full CBMC pass *not* re-run — slow under WSL), **30 modules**,
+**19 `[[bin]]`**, **32 `src/*.rs`** files (largest module now `spore_crypto.rs`
+2583 L; `mesh.rs` was split 2026-06-02 — its tests + Kani proofs moved to
+`src/mesh/{tests,kani_proofs}.rs`; the protocol core is **1509 L** after mesh v0B
+was added 2026-10-06). ⚠️ The per-file line counts in the tree
 below are stale snapshots (drift +20 % to +115 %); the authoritative
 source is `wc -l oasis-rt/src/*.rs`.
 
@@ -160,6 +162,7 @@ Out of 11 mechanisms, 6 are validated on real hardware (PROVEN), 5 are cabled in
 | `SPORE\x08` | v8 multi-hop mesh envelope (unsigned) | flooding + TTL + Bloom dedup |
 | `SPORE\x09` | v9 mesh + HMAC-SHA256-8 over (magic\|\|msg_id\|\|origin_fp) | **external-attacker resistance on mesh header** (shared MAC key) |
 | `SPORE\x0A` | v0A mesh + Ed25519 per-node signature | **insider resistance** — compromised node with PSK still can't forge other senders |
+| `SPORE\x0B` | v0B mesh + Ed25519 over `"OASIS-MESH-v0B"‖network_id‖origin_fp‖counter‖payload_len‖SHA-256(payload)` + persisted 128-bit counter window + relay-enforced revocation | **payload forgery, message suppression, post-reboot replay, cross-network replay, revoked origins** — all rejected at the first hop. v0A signed only 22 header bytes, so payload swaps kept a valid signature (12/50 accepted on silicon) and poisoned dedup to suppress the real message. ⚠️ `ttl`/`hops` stay unsigned (they mutate per hop) — range-checked only; sender-side counter lease **not yet implemented** (liveness gap, see `docs/MESH_V0B_SPEC.md` §5) |
 
 Threat model: **19 of 23 threats covered in-protocol** (remaining: disk
 wipe, operator key compromise, rogue pairing, post-quantum, traffic
@@ -173,6 +176,7 @@ Performance trade across the 3 mesh variants (Linux WSL, K=10 medians):
 | v8 unsigned | 123 ns ±3.5% | 201 ns ±99% ⚠️ | trusted local bus |
 | v9 HMAC-SHA256-8 | 431 ns ±7% | 551 ns ±26% | external-attacker model |
 | v0A Ed25519 (cached kp) | 250 814 ns ±9% | 134 935 ns ±19% | insider-resistant auth — ~580× v9 cost, use for low-frequency authority broadcasts only |
+| v0B Ed25519 + SHA-256(payload) | 251 596 ns ±25% | 125 585 ns ±1.3% | payload/counter/network-bound + persisted anti-replay + revocation. **≈ v0A + 1 %** (the SHA-256 is noise next to Ed25519, flat to 1 KB) — same "low-frequency authenticated broadcast" guidance, but this is the one to use when relays are untrusted. `bench_mesh_v0b`, K=10, 15 B |
 
 ---
 
@@ -180,25 +184,26 @@ Performance trade across the 3 mesh variants (Linux WSL, K=10 medians):
 
 | Capability | Evidence | Status |
 |---|---|---|
-| **443 unit tests pass in parallel** | `cargo test --workspace --release` | ✅ |
-| **113 Kani proof harnesses** (46 in mesh.rs) | `cargo kani --lib` (WSL) — full CBMC pass NOT re-run 2026-06-02 (slow under WSL); 4/4 sampled passed | ⚠️ count verified, end-to-end pass not reproduced |
+| **455 unit tests pass in parallel** (444 + 11 mesh v0B) | `cargo test --workspace --release` | ✅ |
+| **120 Kani proof harnesses** (53 in mesh) | `cargo kani --lib` (WSL) — full CBMC pass NOT re-run 2026-06-02 (slow under WSL); 4/4 sampled passed | ⚠️ count verified, end-to-end pass not reproduced |
 | MAVLink v2 CRC + signing + replay | 29 in-suite tests + 300 real PX4 frames | ✅ |
 | Ed25519 federation + signing | `ed25519_signing_roundtrip` + tamper rejection | ✅ |
 | **Ed25519 per-node mesh signing (v0A)** | 10 tests inc. `v10_spoofed_origin_fp_rejected` | ✅ |
+| **Mesh v0B — payload-bound, fresh, domain-separated (`SPORE\x0B`)** | 11 `v0b_*` tests (one per attack: exhaustive bit-flip of every signed byte, content-swap suppression, forged origin, immediate replay, post-reboot replay, post-Bloom-reset replay, foreign network, revoked origin, ttl inflation, invalid-then-valid, reorder-accept-once) + 7 Kani proofs (parser totality; preimage binds payload-digest/counter/network) + `bench_mesh_v0b`. Builds `no_std` `thumbv6m`. **Silicon (3× RP2040, stamp `d285ef4`)**: 0/150 pre-CRC bit-flips accepted (v0A: 12/50), suppression defeated, **T8 reboot-replay rejected across a real USB power-cut** from the flash-restored counter window, on-chip cost +1 %. See `docs/MESH_V0B_SPEC.md`, `docs/SECURITY_COMPARISON.md`, `evidence/silicon/2026-10-06/REPORT_MESH_V0B.md`. ⚠️ Sender-side counter lease NOT implemented → an origin that loses power is locked out of relays that persisted its counter (liveness, not security). | ✅ |
 | Auto-arm PX4 via OASIS | PX4 log: `Armed by external command` | ✅ |
 | Auto-takeoff via OASIS | PX4 log: `Takeoff detected` | ✅ |
 | 4-waypoint mission complete | 3 WAYPOINT_REACHED events in adapter log | ✅ (1 successful run) |
 | Altitude hold closed-loop | 1.94 m vs 2.0 m target (±6 cm) | ✅ |
 | Spore v7 loss + FEC real UDP | bench + loss proxy: 98% @ 30% uniform, 82-90% @ 30% burst | ✅ |
 | RFC 8439 ChaCha20-Poly1305 vector | test vector matches byte-for-byte | ✅ |
-| All 11 mechanisms compile + test | 443 Rust tests across 30 modules | ✅ |
+| All 11 mechanisms compile + test | 455 Rust tests across 30 modules | ✅ |
 | Android daemon 3h+ run | session_v0_5 on S23 FE, 121 290 ticks | ⚠️ claimed; logs not in repo |
 | **MCU cross-compile** (`thumbv7em-none-eabi`) | `cargo build --target thumbv7em-none-eabi --lib --no-default-features --features mesh_bloom_mcu --release` | ✅ 0 errors |
 | **A/B vs ROS 2 Jazzy** (Linux intra-process, K=10 medians) | OASIS 241 ns vs rclcpp intra 5 624 ns vs rclcpp DDS 52 411 ns at 16 B — 23–217× faster | ✅ measured |
 | 7/7 rclcpp core primitives matched | pub/sub + services + actions + tf2 + timer + parameters + params-events (8/8 incl. tf) | ✅ |
 | Real hardware test (Pixhawk + quad) | **none** | ❌ |
 | External crypto audit | **none** | ❌ |
-| Real MCU hardware boot | full T0–T6 suite (ChaCha20-Poly1305 RFC 8439, X25519 RFC 7748, Ed25519 sign/verify/tamper, R14 gate, mesh v8/v9/v0A incl. forge-reject, on-silicon timing) **PASS 3× on THREE RP2040 boards** (9/9 runs green, identical timing across all three). Plus a **wired-UART A→B→C v0A mesh relay** across 3 boards with per-hop Ed25519 verification (`uart_mesh.rs`, §10 of the report). ⚠️ Not over-the-air — **no LoRa radio**; no energy/secure-element/flight; T8 flash-persistence not done. ⚠️ Independent review (§13 errata): T5-v9 tamper check was a dedup false positive, T0 was hard-coded PASS, T4 lacked a negative control — fixed in firmware, **re-run on the boards pending**. See `evidence/silicon/2026-10-04/REPORT.md` | ✅ (T0/T4/T5-v9 re-run pending) |
+| Real MCU hardware boot | full T0–T6 suite (ChaCha20-Poly1305 RFC 8439, X25519 RFC 7748, Ed25519 sign/verify/tamper, R14 gate, mesh v8/v9/v0A incl. forge-reject, on-silicon timing) **PASS 3× on THREE RP2040 boards** (9/9 runs green). ⚠️ An independent review found 3 **test-quality** defects in the 2026-10-04 run — T0 echoed a hard-coded clock (never measured), T5-v9's tamper drop was a dedup false-positive (MAC verifier never reached), T4 had no negative control. All three **corrected and re-verified on silicon 2026-10-06** (3 boards × 3 runs, 9/9 green): T0 now measures the core clock (±1 %: 124.9986 MHz vs 125 MHz, per-board variance), T5-v9 asserts `Drop("bad mesh mac")` on a fresh router, T4 proves `blocked=50/50 && nominal_false_blocks=0/50`. The OASIS crypto/R14/mesh logic was **not** changed — only the tests. Plus a **wired-UART A→B→C v0A mesh relay** with per-hop Ed25519 verification (`uart_mesh.rs`, §10). ⚠️ Not over-the-air — **no LoRa radio**; no energy/secure-element/flight; T8 flash-persistence not done. See `evidence/silicon/2026-10-06/REPORT.md` (corrected) + `evidence/silicon/2026-10-04/REPORT.md` §13 (erratum). | ✅ |
 
 ---
 
@@ -305,7 +310,7 @@ payload size via function-call dispatch; rclcpp's cost is executor
 | R2 | Inter-agent comms only via tension field (never direct calls) |
 | R5 | Validation on all mutations |
 | R9 | No physical agent without safety sandbox active |
-| R10 | Files < 400 lines (exceptions: spore.rs, spore_crypto.rs, mavlink_min.rs, federation.rs, mesh.rs — cohesive crypto/protocol modules; mesh.rs tests + Kani proofs were split into src/mesh/ to shrink the core 3049→1099 L) |
+| R10 | Files < 400 lines (exceptions: spore.rs, spore_crypto.rs, mavlink_min.rs, federation.rs, mesh.rs — cohesive crypto/protocol modules; mesh.rs tests + Kani proofs were split into src/mesh/ to shrink the core 3049→1099 L, now **1509 L** after mesh v0B — tests live in src/mesh/tests.rs 1090 L, proofs in src/mesh/kani_proofs.rs 1108 L) |
 | R13 | Inter-agent comms via vectorial tension |
 | R14 | No physical action if entropy > critical threshold |
 | R15 | Sensor loss = entropy spike + actuation freeze |
@@ -318,7 +323,7 @@ payload size via function-call dispatch; rclcpp's cost is executor
 ## Mental loop (specialist discipline)
 
 1. **Is it proven?** — ruthless test or it doesn't exist
-2. **Does it break?** — 443 Rust tests + 113 Kani proof harnesses must pass before and after
+2. **Does it break?** — 455 Rust tests + 120 Kani proof harnesses must pass before and after
 3. **Is it bounded?** — fear ≤ 5×, entropy [0,1], latency < 1 ms, lux < 100 000
 4. **Is it honest?** — every mechanism explicitly PROVEN vs EXPERIMENTAL
 5. **Is it banded?** — **no single-shot bench number in the repo**. K=10 median ± half-spread or equivalent (Spore loss bench uses N=200 internal trials). Single-number claims are suspect.

@@ -229,7 +229,33 @@ B's verifier. Run (`SWEEP_DONE tx=196, phase4_crypto=50`):
 
 No crash across all 200 packets; all three boards alive throughout.
 
-## 13. Errata — independent review (2026-10-05)
+---
+
+## 13. ERRATUM (2026-10-06) — three test-quality defects found by independent review
+
+An independent review of this run found that three on-chip tests **passed for
+the wrong reason**. These are defects in the *tests*, not in the OASIS
+crypto/R14/mesh logic (which was not modified):
+
+- **T0 clock** — printed `PASS` from a hard-coded `125000000Hz` config constant;
+  it never measured the clock, so it could not have failed.
+- **T5 v9** — tampered the inner payload byte (which the v9 HMAC does not cover);
+  the resulting drop was `"duplicate"` (dedup), not `"bad mesh mac"`. The MAC
+  verifier was never actually exercised.
+- **T4 R14 gate** — counted only blocked high-signal faults, with no negative
+  control; a gate that blocks everything would also have scored 50/50.
+
+All three were corrected and **re-verified on the same 3 boards on 2026-10-06**
+(3 × 3 = 9 runs, 9/9 green): T0 now measures the core clock over a 100 ms window
+(±1 %), T5-v9 asserts `Drop("bad mesh mac")` against a fresh router, T4 adds a
+negative control (`nominal_false_blocks=0/50`). Corrected evidence + full
+write-up: **`../2026-10-06/REPORT.md`**. The "9/9 PASS" headline of §1–§4 above
+therefore stands only as corrected by that re-run — read the two reports together.
+
+## 14. Errata detail — independent review notes (2026-10-05)
+
+Items 1–3 below were re-run on silicon on 2026-10-06 (see §13). Items 4–7 are
+corrections to this report and to the build.
 
 A second pass re-read every raw log, the firmware source and the SHA-256 list,
 re-derived the T3 Ed25519 KAT with an independent library (Python `cryptography`:
@@ -273,6 +299,3 @@ pubkey and signature match), and replayed the T5 logic on the host. Corrections:
    every Linux target. **Fixed:** guarded with `target_arch = "aarch64"`; the
    command now passes on x86_64 Linux (480 tests, 0 failed; oasis-rt 444).
 
-Results in §2 for T0, T4 and T5-v9 should be read as superseded until the fixed
-firmware is re-run on the three boards. T1, T2, T3, T5-v8, T5-v0A, T6 and the UART
-mesh results (§10–§12b) stand.

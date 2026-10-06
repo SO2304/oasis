@@ -484,6 +484,7 @@ dependencies = [
  "embedded-alloc",
  "oasis-rt",
  "rp2040-boot2",
+ "rp2040-flash",
  "rp2040-hal",
  "usb-device",
  "usbd-serial",
@@ -560,6 +561,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7c92f344f63f950ee36cf4080050e4dce850839b9175da38f9d2ffb69b4dbb21"
 dependencies = [
  "crc-any",
+]
+
+[[package]]
+name = "rp2040-flash"
+version = "0.5.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "84d87ca0ed01cb0e5e0752fbe4c1948cc5b0ca2d3187067892ce36559e01fd1b"
+dependencies = [
+ "rp2040-hal",
 ]
 
 [[package]]
