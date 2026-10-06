@@ -63,13 +63,20 @@ fn crumb<F: NorFlash + ReadNorFlash>(flash: &mut F, b: u8) {
 #[entry]
 fn main() -> ! {
     // Leave the clocks close to their power-on state: ring oscillator only, XOSC and
-    // both PLLs untouched. The application (rp2040-hal) then initialises its clocks
-    // exactly as after a cold boot. With the default crystal + PLL config the first
-    // boot of the application under this bootloader never reached USB (2026-10-06,
-    // evidence/silicon/2026-10-06/fwupdate/).
-    let p = embassy_rp::init(embassy_rp::config::Config::new(
-        embassy_rp::clocks::ClockConfig::rosc(),
-    ));
+    // both PLLs untouched, so the application (rp2040-hal) initialises its clocks as
+    // after a cold boot. The ROSC is set to the one configuration embassy-rp documents
+    // as nominal (6.5 MHz: Medium range, divider 16). ClockConfig::rosc() asks for an
+    // unmeasured 140 MHz (High range): flash is read at half the system clock, and an
+    // uncalibrated fast ROSC can corrupt XIP fetches. Bring-up history:
+    // evidence/silicon/2026-10-06/fwupdate/.
+    let mut clocks = embassy_rp::clocks::ClockConfig::rosc();
+    clocks.rosc = Some(embassy_rp::clocks::RoscConfig {
+        hz: 6_500_000,
+        range: embassy_rp::clocks::RoscRange::Medium,
+        drive_strength: [0; 8],
+        div: 16,
+    });
+    let p = embassy_rp::init(embassy_rp::config::Config::new(clocks));
 
     let mut flash = WatchdogFlash::<FLASH_SIZE>::start(p.FLASH, p.WATCHDOG, Duration::from_secs(8));
     // What the previous boot left: application stage (SCRATCH3) and guard count.
