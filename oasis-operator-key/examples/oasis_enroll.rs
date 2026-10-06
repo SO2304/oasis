@@ -10,6 +10,7 @@
 //!   oasis_enroll revoke <owner> <epoch> <fp>..       -> hybrid OAU1 revocation (hex)
 //!   oasis_enroll offer <old> <new> <seq>             -> ownership offer, signed by <old> (hex)
 //!   oasis_enroll accept <new> <seq> <offer_hex_file> -> acceptance, signed by <new> (hex)
+//!   oasis_enroll fw-manifest <owner> <version> <image.bin> [hw_id] -> firmware manifest (OAU1 kind 3, hybrid)
 
 use ml_dsa::{Keypair, MlDsa44, SigningKey, B32};
 use oasis_operator_key::sign_with_seed;
@@ -17,9 +18,11 @@ use oasis_rt::authority::{
     encode_oau1, kind, signed_message, AUTH_DOMAIN, SUITE_ED25519, SUITE_HYBRID,
 };
 use oasis_rt::enrollment::{encode_attestation, Attestation};
+use oasis_rt::firmware::{encode_manifest, image_version, Manifest, HW_ID};
 use oasis_rt::identity::{fingerprint, pop_verify};
 use oasis_rt::mesh_revocation::{encode_revocation_body, Fp};
 use oasis_rt::ownership::{encode_accept, encode_offer, offer_digest, OwnerKeys};
+use sha2::{Digest, Sha256};
 
 const NETWORK_ID: [u8; 8] = *b"OASISnet";
 
@@ -159,6 +162,37 @@ fn main() {
                     SUITE_HYBRID,
                     &encode_accept(seq, &offer_digest(&offer))
                 ))
+            );
+        }
+        Some("fw-manifest") => {
+            let o = owner(&a[1]);
+            let version: u32 = a[2].parse().unwrap();
+            let img = std::fs::read(&a[3]).expect("image file");
+            // The manifest must describe the image: refuse to sign a mismatch.
+            assert_eq!(
+                image_version(&img),
+                Some(version),
+                "image version header != requested version"
+            );
+            let hw_id: [u8; 8] = match a.get(4) {
+                Some(h) => h.as_bytes().try_into().expect("hw_id: 8 ASCII bytes"),
+                None => HW_ID,
+            };
+            let m = Manifest {
+                version,
+                image_len: img.len() as u32,
+                sha256: Sha256::digest(&img).into(),
+                hw_id,
+            };
+            eprintln!(
+                "manifest: version={} image_len={} sha256={}",
+                version,
+                img.len(),
+                hex(&m.sha256)
+            );
+            println!(
+                "{}",
+                hex(&o.sign(kind::FIRMWARE_MANIFEST, SUITE_HYBRID, &encode_manifest(&m)))
             );
         }
         _ => eprintln!("usage: see the header of oasis-operator-key/examples/oasis_enroll.rs"),

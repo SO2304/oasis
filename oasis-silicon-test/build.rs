@@ -8,12 +8,25 @@ fn main() {
     // Make memory.x available to the linker (copied into OUT_DIR, which is on
     // the linker search path).
     let out = PathBuf::from(env::var("OUT_DIR").unwrap());
-    File::create(out.join("memory.x"))
+    // Phase 1.3: an application under oasis-bootloader links at ACTIVE (0x10008000).
+    // The chosen map is written to OUT_DIR/memory.x; no memory.x may sit in the crate
+    // root, or the linker would find that one first (it did, before the rename).
+    let memory: &[u8] = if env::var_os("CARGO_FEATURE_BOOTLOADED").is_some() {
+        include_bytes!("memory_bootloaded.x")
+    } else {
+        include_bytes!("memory_standalone.x")
+    };
+    File::create(out.join("memory.x")).unwrap().write_all(memory).unwrap();
+    println!("cargo:rerun-if-changed=memory_bootloaded.x");
+    // Firmware version for the update gate (Phase 1.3): OASIS_FW_VERSION, default 1.
+    println!("cargo:rerun-if-env-changed=OASIS_FW_VERSION");
+    let ver: u32 = env::var("OASIS_FW_VERSION").ok().and_then(|v| v.parse().ok()).unwrap_or(1);
+    File::create(out.join("fwinfo.rs"))
         .unwrap()
-        .write_all(include_bytes!("memory.x"))
+        .write_all(format!("pub const FW_VERSION: u32 = {};\n", ver).as_bytes())
         .unwrap();
     println!("cargo:rustc-link-search={}", out.display());
-    println!("cargo:rerun-if-changed=memory.x");
+    println!("cargo:rerun-if-changed=memory_standalone.x");
     println!("cargo:rerun-if-changed=build.rs");
 
     // Board identity, baked in at build time -> becomes the USB-CDC serial

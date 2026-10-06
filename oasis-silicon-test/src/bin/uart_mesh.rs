@@ -20,6 +20,9 @@
 //! hex><nonce hex>` identity + proof of possession (first call before enrollment mixes
 //! the nonce into the key once and reboots), `@N` entropy statistics, `@L` run the staged
 //! message through the authority gate locally (then store-and-forward), `@W` who-am-I.
+//! Phase 1.3 (feature `bootloaded`, `update.rs`): `@U<offset 8 hex><data hex>` write
+//! the new image into DFU, `@M` check the staged manifest (`@Q`) against it and, if
+//! accepted, mark the update and reset (the bootloader swaps), `@V` version/floor.
 
 #![no_std]
 #![no_main]
@@ -51,6 +54,9 @@ mod ef;
 mod pq;
 #[path = "../enroll.rs"]
 mod enroll;
+#[cfg(feature = "bootloaded")]
+#[path = "../update.rs"]
+mod update;
 use oasis_rt::fragment::{fragment, FragOutcome};
 use oasis_rt::tx_lease::{DualSlotStore, SlotIo, TxLease, TX_LEASE_BLOCK, TX_LEASE_RECORD_LEN};
 
@@ -97,17 +103,24 @@ fn wipe_lease_sectors() {
 #[global_allocator]
 static HEAP: Heap = Heap::empty();
 
+// Standalone build: a crash reboots into BOOTSEL (visible, reflashable). Under the
+// A/B bootloader (Phase 1.3) it resets instead, so that an image which has not
+// confirmed itself is reverted by the bootloader rather than parked in BOOTSEL.
 #[panic_handler]
 fn on_panic(_: &core::panic::PanicInfo) -> ! {
+    #[cfg(not(feature = "bootloaded"))]
     hal::rom_data::reset_to_usb_boot(0, 0);
-    loop {}
+    cortex_m::peripheral::SCB::sys_reset();
 }
 #[cortex_m_rt::exception]
 unsafe fn HardFault(_ef: &cortex_m_rt::ExceptionFrame) -> ! {
+    #[cfg(not(feature = "bootloaded"))]
     hal::rom_data::reset_to_usb_boot(0, 0);
-    loop {}
+    cortex_m::peripheral::SCB::sys_reset();
 }
 
+// boot2 belongs to the bootloader when there is one.
+#[cfg(not(feature = "bootloaded"))]
 #[link_section = ".boot2"]
 #[used]
 pub static BOOT2: [u8; 256] = rp2040_boot2::BOOT_LOADER_W25Q080;
@@ -295,6 +308,22 @@ fn main() -> ! {
     let my_fp = oasis_rt::identity::fingerprint(&my_pk);
     // Owner, enrolled-node registry and authority policy, all from flash.
     let mut pqs = pq::Pq::boot();
+    // Phase 1.3: confirm a freshly swapped image (self-test, floor, mark_booted)
+    // while the bootloader's watchdog still runs, then stop the watchdog.
+    #[cfg(feature = "bootloaded")]
+    let mut fw_aligned = [0u8; 1];
+    #[cfg(feature = "bootloaded")]
+    let mut fw_up = update::updater(&mut fw_aligned);
+    #[cfg(feature = "bootloaded")]
+    let fw_boot = update::boot_confirm(&mut fw_up);
+    #[cfg(feature = "bootloaded")]
+    {
+        if fw_boot == update::BootOutcome::SelfTestFailed {
+            // Not confirmed: reset now, the bootloader reverts to the previous image.
+            cortex_m::peripheral::SCB::sys_reset();
+        }
+        watchdog.disable();
+    }
     // v0B router: handles v0A envelopes as a superset (origin_wrap/process
     // unchanged) AND v0B (origin_wrap_v0b/process_v0b dispatch). The registry starts
     // empty and is filled only from enrollment attestations.
@@ -545,6 +574,74 @@ fn main() -> ! {
                 for e in &pqs.registry.entries {
                     io.log("PEER", format_args!("fp={},role={},perms={},seq={}", Hx(&e.fp), e.role, e.permissions, e.seq));
                 }
+            }
+            // Phase 1.3: signed firmware update (see update.rs).
+            #[cfg(feature = "bootloaded")]
+            if line_done && line_len >= 9 && line[0] == b'U' {
+                let mut off = [0u8; 4];
+                let mut data = [0u8; 256];
+                match (ef::hex_decode(&line[1..9], &mut off), ef::hex_decode(&line[9..line_len], &mut data)) {
+                    (Some(4), Some(n)) => {
+                        let o = u32::from_be_bytes(off) as usize;
+                        match fw_up.write_firmware(o, &data[..n]) {
+                            Ok(()) => {
+                                if (o + n) % 65536 < n || n < 256 {
+                                    io.log("DFU_PROGRESS", format_args!("written_to={}", o + n));
+                                }
+                            }
+                            Err(_) => io.log("DFU_WRITE_FAIL", format_args!("offset={},len={}", o, n)),
+                        }
+                    }
+                    _ => io.log("DFU_BAD_HEX", format_args!("chars={}", line_len)),
+                }
+            }
+            #[cfg(feature = "bootloaded")]
+            if line_done && line_len >= 1 && line[0] == b'M' {
+                let msg = pqs.stage.clone();
+                let keys = pqs.owner.current.keys();
+                let t0 = now_us();
+                match update::install(&mut fw_up, &pqs.policy, &keys, &msg) {
+                    Ok(v) => {
+                        io.log(
+                            "FW_INSTALL",
+                            format_args!(
+                                "accepted,version={},running={},floor={},check_us={},resetting_for_swap",
+                                v,
+                                update::FW_VERSION,
+                                update::floor(),
+                                now_us().wrapping_sub(t0)
+                            ),
+                        );
+                        for _ in 0..300_000 {
+                            io.poll();
+                        }
+                        cortex_m::peripheral::SCB::sys_reset();
+                    }
+                    Err(r) => io.log(
+                        "FW_INSTALL",
+                        format_args!(
+                            "refused={:?},running={},floor={},check_us={}",
+                            r,
+                            update::FW_VERSION,
+                            update::floor(),
+                            now_us().wrapping_sub(t0)
+                        ),
+                    ),
+                }
+            }
+            #[cfg(feature = "bootloaded")]
+            if line_done && line_len >= 1 && line[0] == b'V' {
+                io.log(
+                    "FW_STATUS",
+                    format_args!(
+                        "version={},floor={},boot={:?},bootloader_state={},fp={}",
+                        update::FW_VERSION,
+                        update::floor(),
+                        fw_boot,
+                        update::state_name(&mut fw_up),
+                        Hx(&my_fp)
+                    ),
+                );
             }
             if line_done && line_len >= 1 && line[0] == b'I' {
                 io.log(

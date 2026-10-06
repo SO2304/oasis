@@ -35,6 +35,8 @@ oasis-rt = { path = "../oasis-rt", features = ["std", "mesh_v10"] }
 ml-dsa = { version = "=0.1.1", default-features = false }
 # OS RNG for the enrollment tool's challenge and nonce (examples/oasis_enroll.rs).
 getrandom = "0.2"
+# SHA-256 of firmware images for oasis_enroll fw-manifest (same version as oasis-rt).
+sha2 = { version = "0.11.0", default-features = false }
 
 [features]
 default = []
