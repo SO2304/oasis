@@ -71,3 +71,40 @@ Meshtastic). C'est la place à prendre. Dans l'ordre :
 - Thread : [Silicon Labs, OpenThread Security](https://docs.silabs.com/openthread/latest/thread-fundamentals/09-security)
 - Meshtastic : [Updated Security Implementation](https://meshtastic.org/docs/development/reference/encryption-technical/) ; [Encryption limitations](https://meshtastic.org/docs/about/overview/encryption/limitations/) ; [Mesh Broadcast Algorithm](https://meshtastic.org/docs/overview/mesh-algo/)
 - microReticulum : [Reticulum Community Wiki](https://reticulum.miraheze.org/wiki/MicroReticulum)
+
+## 4. microReticulum, le concurrent direct (lu dans son code, 2026-10-06)
+
+Source : `attermann/microReticulum`, commit `40fa628` (2026-07-20), version 0.5.0,
+licence Apache-2.0, environ 40 000 lignes de C++ plus ArduinoJson, MsgPack,
+`attermann/Crypto` et `microStore`. C'est un portage C++ de Reticulum, compatible
+avec lui (tests d'interopérabilité avec Python dans `test_interop/`).
+
+### Là où OASIS se différencie
+
+| Point | microReticulum | OASIS | Preuve OASIS |
+|---|---|---|---|
+| Vérification des données par chaque relais | ❌ Le relais vérifie qu'il est le prochain saut, puis « Just increase hop count and transmit », sans aucun contrôle cryptographique (`Transport.cpp` l.1980-2000, identique à Reticulum) | ✅ Origine, contenu, fraîcheur et réseau vérifiés à chaque saut (v0B) | 0/150 inversions acceptées sur silicium |
+| Anti-rejeu | Liste d'empreintes de paquets persistée (`_packet_hashlist`, `PersistedBytesList`), bornée, non signée | Compteur signé par l'origine, fenêtre persistée, vérifiable par chaque relais ; réserve de compteurs côté émetteur | Rejeu à l'octet près refusé après une coupure, émetteur redémarré accepté |
+| Exclure un nœud compromis | Listes « blackhole » locales ou par abonnement | Révocation signée par l'opérateur (k-sur-n possible), à époque croissante, propagée, persistée, appliquée par chaque relais | Silicium : origine révoquée rejetée au premier saut, y compris après coupure |
+| Lien avec les actionneurs | Aucun | Porte d'actionnement à 7 conditions (ordre signé, autorité, non révoqué, non expiré, R14, limites, non rejoué) | 3 preuves Kani + LED sur silicium |
+| Langage et preuves | C++ ; tests unitaires et d'interopérabilité ; pas de vérification formelle | Rust, 133 harnais Kani, 16 nouveaux exécutés et vérifiés | `evidence/kani/2026-10-06/` |
+| Preuves publiées | Pas de logs sur silicium publiés | Logs bruts, firmware et SHA-256 vérifiés dans un clone frais | `evidence/silicon/` |
+| Cible | ESP32, nRF52840 (Cortex-M4F) ; un fichier de carte RP2040 (RAK11300) existe, mais aucune cible RP2040 dans `platformio.ini` | Cortex-M0+ sans FPU (RP2040), validé sur 3 cartes | `evidence/silicon/` |
+
+### Là où microReticulum est devant
+
+| Point | microReticulum | OASIS |
+|---|---|---|
+| Radio LoRa réelle | ✅ Matériel RNode, nombreuses cartes LoRa | ❌ Pilote SX1262 testé sur mock seulement |
+| Routage | ✅ Annonces et table de chemins : un paquet suit un chemin | ❌ Inondation avec TTL : chaque paquet occupe tout le réseau, coûteux en temps d'antenne LoRa |
+| Écosystème | ✅ Compatible Reticulum : Sideband, NomadNet, LXMF | ❌ Aucun |
+| Liens chiffrés et gros transferts | ✅ `Link` avec confidentialité persistante, `Resource` | ⚠️ Couche spore (v4/v5/v7), pas reliée au mesh v0B |
+| Anonymat de l'émetteur | ✅ Par conception | ❌ Incompatible avec le filtrage au relais |
+| Coût par saut | Quasi nul (pas de vérification) | ≈ 178 ms de vérification Ed25519 sur Cortex-M0+ |
+
+### Non mesuré des deux côtés
+
+- RAM et flash réellement utilisées : microReticulum ne publie pas de chiffres ;
+  OASIS ne connaît que des réservations (tas de 160 Ko) et la taille du firmware
+  (≈ 136 Ko de flash).
+- Consommation d'énergie.
