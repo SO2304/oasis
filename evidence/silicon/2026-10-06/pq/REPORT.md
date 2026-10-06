@@ -68,7 +68,7 @@ ACVP sigVer vectors.
 Version pin: the first run (`09_bench_A_lx0.0.11pre1.log`, `00_sizes_lx0.0.11pre1.log`,
 stamp `1b00414`) used `libcrux-ml-dsa 0.0.11-pre.1`, a pre-release published the same
 day. It was re-pinned to the latest stable release, 0.0.10 (2026-07-15), in `98ecb35`
-before the 9 runs above. Same code size, times within 0.1 %.
+before the 9 runs above. Code size within 4 bytes, times within 0.1 %.
 
 Lockfile note: commit `98ecb35` pins `libcrux-ml-dsa = "=0.0.10"` in
 `oasis-silicon-test/Cargo.toml`, but its `oasis-silicon-test/Cargo.lock` still
@@ -76,3 +76,24 @@ listed 0.0.11-pre.1, because the lock was committed before the silicon crate was
 rebuilt. The exact pin forced cargo to re-resolve at build time, so the images
 above contain 0.0.10. The lockfile actually used is committed together with this
 report.
+
+## 2. The device path after the switch (stamp `be3d47b`)
+
+`oasis_rt::authority::mldsa44_verify` now calls libcrux. `pq_bench` was rewired so that
+its labels stay true: `PQ_RC_*` calls RustCrypto `ml-dsa` directly, `PQ_LX_*` goes
+through `oasis_rt` (the production path), and `PQ_AUTH_*` is the full gate. 3 boards ×
+1 run × K = 5, 57 lines, **0 FAIL** (`11_bench_device_path_{A,B,C}.log`).
+
+| Operation | Run medians (A / B / C) | Peak stack |
+|---|---|---:|
+| **Full hybrid gate `verify_authority`** (parse, precheck, ML-DSA-44 via libcrux, Ed25519) | 377.08 / 377.04 / 377.10 ms | **48 724 B** |
+| ML-DSA-44 via `oasis_rt` (libcrux) | 197.99 / 198.06 / 198.03 ms | 48 564 B |
+| ML-DSA-44, `ml-dsa` called directly | 177.98 / 177.97 / 178.00 ms | 102 476 B |
+
+**Peak stack depends on the call site, not only on the crate.** Through `oasis_rt`,
+libcrux takes 3 768 B more than in the bake-off closure (48 564 vs 44 796). That is
+the copy of the key and the signature into owned arrays (1 312 + 2 420 = 3 732 B).
+RustCrypto `ml-dsa` called directly peaks at 102 476 B, against 84 020 B through the
+old `oasis_rt` function, because inlining differs. libcrux uses about half as much
+in both arrangements, so the decision holds. The figure that sizes the firmware is
+the gate: **48.7 KB of stack, 377 ms**.

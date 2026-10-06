@@ -1,6 +1,6 @@
 # Kani — Phase 1.1 harnesses (OAU1 authority + OFR1 fragmentation)
 
-Six harnesses added with `oasis-rt/src/authority.rs` and `oasis-rt/src/fragment.rs`
+Seven harnesses (six, then one more in run 3) added with `oasis-rt/src/authority.rs` and `oasis-rt/src/fragment.rs`
 (spec `docs/specs/PQ_AUTHORITY_SPEC.md`). Run in WSL (Ubuntu, 3.3 GB RAM,
 `cargo-kani 0.67.0`) on a fresh clone of the committed tree, with
 `run_pq_harnesses.sh <commit>` (runs 1-2) and `run_pq_harnesses_stub.sh <commit>`
@@ -11,6 +11,7 @@ Six harnesses added with `oasis-rt/src/authority.rs` and `oasis-rt/src/fragment.
 | 1 | `d5dfebd` | **5 verified, 1 FAILED**: `proof_auth_precheck_no_downgrade` refuted (`Failed Checks: "known kind and suite only"`) | 1 | `kani_pq_run1.log` |
 | 2 | `3e67254` | **6 verified, 0 failures** | 0 | `kani_pq_run2.log` |
 | 3 | `19053d7` | **7 verified, 0 failures** (the 6 above + `proof_frag_reassembler_never_panics`, `-Z stubbing`) | 0 | `kani_pq_run3.log` |
+| 4 | `be3d47b` | **7 verified, 0 failures**: rerun after `authority.rs` switched its ML-DSA-44 verifier to `libcrux-ml-dsa` (harnesses unchanged; checks that the crate still compiles and verifies under Kani) | 0 | `kani_pq_run4.log` |
 
 **Run 1 found a real defect.** `AuthPolicy::min_suite` returns `u8::MAX` for an
 unknown kind, and `suite_rank(u8::MAX) == 0`, so `precheck` accepted an unknown
@@ -21,7 +22,7 @@ but `precheck` relied on that. Fixed in `3e67254` (`precheck` returns
 `pq_precheck_refuses_unknown_kind_and_suite`. The harness itself was not changed
 between the two runs.
 
-Proven properties (run 3):
+Proven properties (runs 3 and 4):
 
 | Harness | Property |
 |---|---|
