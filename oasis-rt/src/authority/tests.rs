@@ -251,6 +251,28 @@ fn pq_policy_monotone_and_persisted() {
 }
 
 #[test]
+fn pq_policy_two_slots_merge_to_the_strongest() {
+    let mut raised = AuthPolicy::default();
+    assert!(raised.raise(kind::REVOCATION, SUITE_HYBRID));
+    let (old, new) = (AuthPolicy::default().to_bytes(), raised.to_bytes());
+    let blank = [0xFFu8; POLICY_RECORD_LEN];
+    // Both written: the new policy.
+    assert_eq!(AuthPolicy::from_slots(&new, &new), raised);
+    // Power cut while writing slot 0 (torn) after the raise: slot 1 still old, so
+    // the device restarts on the old policy; while writing slot 1: slot 0 is new.
+    let mut torn = new;
+    torn[6] ^= 0xFF;
+    assert_eq!(AuthPolicy::from_slots(&torn, &old), AuthPolicy::default());
+    assert_eq!(AuthPolicy::from_slots(&new, &torn), raised);
+    // Order never matters; erased flash and garbage fall back to the default,
+    // which is never weaker than the default.
+    assert_eq!(AuthPolicy::from_slots(&old, &new), raised);
+    assert_eq!(AuthPolicy::from_slots(&new, &old), raised);
+    assert_eq!(AuthPolicy::from_slots(&blank, &blank), AuthPolicy::default());
+    assert_eq!(AuthPolicy::from_slots(&[], b"junk"), AuthPolicy::default());
+}
+
+#[test]
 fn pq_policy_update_message_is_hybrid_only() {
     let mlpk = ml_pub(&ML_SEED);
     let mut pol = AuthPolicy::default();

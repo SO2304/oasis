@@ -220,6 +220,22 @@ impl AuthPolicy {
         }
         Some(p)
     }
+
+    /// Policy from two persisted slots: the default raised by every valid record.
+    /// The policy only rises, so the merge is the strongest of the two; a slot torn
+    /// by a power cut is ignored and the other still holds the previous policy.
+    /// The device writes the new record to both slots, one after the other.
+    pub fn from_slots(a: &[u8], b: &[u8]) -> Self {
+        let mut p = AuthPolicy::default();
+        for r in [a, b] {
+            if let Some(q) = AuthPolicy::from_bytes(r) {
+                for (k, &s) in q.min_suite.iter().enumerate() {
+                    p.raise((k + 1) as u8, s);
+                }
+            }
+        }
+        p
+    }
 }
 
 /// Cheap checks, before any signature verification: network, kind, then downgrade.

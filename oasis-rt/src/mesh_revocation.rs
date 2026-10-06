@@ -271,7 +271,7 @@ pub fn should_serve_catchup(my_epoch: u64, neighbour_epoch: u64) -> bool {
     my_epoch > neighbour_epoch
 }
 
-// ─── persistence: two alternating slots holding the last accepted ORV1 blob ───
+// ─── persistence: two alternating slots holding the last accepted ORV1 or OAU1 blob ───
 
 /// Raw access to two slots of up to `cap()` bytes (e.g. two flash sectors).
 pub trait BlobSlots {
@@ -317,10 +317,23 @@ pub fn decode_blob_record(r: &[u8]) -> Option<Vec<u8>> {
     Some(blob.to_vec())
 }
 
+/// Epoch of a persisted revocation blob: a legacy `ORV1` list or an `OAU1`
+/// revocation (Phase 1.1). Signatures are NOT checked here; the caller re-verifies
+/// the blob it loads before applying it.
+pub fn blob_epoch(blob: &[u8]) -> Option<u64> {
+    if let Ok(p) = parse_orv1(blob) {
+        return Some(p.epoch);
+    }
+    let a = crate::authority::parse_oau1(blob).ok()?;
+    if a.kind != crate::authority::kind::REVOCATION {
+        return None;
+    }
+    parse_revocation_body(a.network_id, a.content).ok().map(|r| r.epoch)
+}
+
 fn slot_epoch<S: BlobSlots>(s: &S, slot: usize) -> Option<(u64, Vec<u8>)> {
     let blob = decode_blob_record(&s.read(slot))?;
-    let p = parse_orv1(&blob).ok()?;
-    Some((p.epoch, blob))
+    Some((blob_epoch(&blob)?, blob))
 }
 
 /// The newest valid persisted blob (highest epoch), if any. The caller must
