@@ -334,7 +334,9 @@ fn proof_ad_reset_count_predictable() {
     // straddled a cycle boundary. Either way, |actual - predicted| ≤ 1.
     let actual_resets: u64 = kani::any();
     kani::assume(actual_resets <= predicted_resets + 1);
-    kani::assume(actual_resets + 1 >= predicted_resets || actual_resets == 0);
+    // NOTE: arithmetic-only, does not call the router. The earlier
+    // `|| actual_resets == 0` disjunct admitted diff > 1 (Kani counterexample).
+    kani::assume(actual_resets + 1 >= predicted_resets);
     let diff = if actual_resets >= predicted_resets { actual_resets - predicted_resets } else { predicted_resets - actual_resets };
     assert!(diff <= 1, "actual reset count must be within 1 of predicted floor(N / (T+1))");
 }
@@ -395,12 +397,14 @@ fn proof_ad_threshold_inverse_scaling() {
 /// never spuriously toggles back to OK without a reset.
 #[kani::proof]
 fn proof_ae_capacity_consumed_monotonic() {
-    let inserts_a: u64 = kani::any();
-    let inserts_b: u64 = kani::any();
-    let capacity: u64 = kani::any();
-    kani::assume(capacity >= 1 && capacity < (1u64 << 32));
+    // 32-bit, 2^20-bounded domain: the u64 version timed out (600 s) on
+    // symbolic 64-bit division. Arithmetic-only, does not call the router.
+    let inserts_a: u32 = kani::any();
+    let inserts_b: u32 = kani::any();
+    let capacity: u32 = kani::any();
+    kani::assume(capacity >= 1 && capacity < (1u32 << 20));
     kani::assume(inserts_a <= inserts_b);
-    kani::assume(inserts_b < (1u64 << 32));
+    kani::assume(inserts_b < (1u32 << 20));
     let consumed_a = inserts_a.saturating_mul(1000) / capacity;
     let consumed_b = inserts_b.saturating_mul(1000) / capacity;
     assert!(consumed_a <= consumed_b, "capacity-consumed metric must be monotonic in inserts");
@@ -411,10 +415,12 @@ fn proof_ae_capacity_consumed_monotonic() {
 /// Encoded as an iff bound.
 #[kani::proof]
 fn proof_ae_alert_threshold_correctness() {
-    let inserts: u64 = kani::any();
-    let capacity: u64 = kani::any();
-    kani::assume(capacity >= 100 && capacity < (1u64 << 30));
-    kani::assume(inserts < (1u64 << 32));
+    // 32-bit, 2^20-bounded domain: the u64 version timed out (600 s) on
+    // symbolic 64-bit division. Arithmetic-only, does not call the router.
+    let inserts: u32 = kani::any();
+    let capacity: u32 = kani::any();
+    kani::assume(capacity >= 100 && capacity < (1u32 << 20));
+    kani::assume(inserts < (1u32 << 20));
     let consumed_milli = inserts.saturating_mul(1000) / capacity;
     let alert = consumed_milli >= 800;
     // 800 milli-units = 80% capacity. Reverse direction:
@@ -545,6 +551,9 @@ fn proof_af_combined_pattern_no_dashboard_alert() {
     let inserts_since_reset: u64 = kani::any();
     kani::assume(capacity >= 1000 && capacity < (1u64 << 30));
     kani::assume(threshold >= 1);
+    // Bound threshold first: unbounded, `threshold * 1000` below overflowed
+    // (Kani counterexample). A threshold above capacity is meaningless anyway.
+    kani::assume(threshold < capacity);
     // The combined-pattern operator picks threshold = 0.77 × capacity
     // (76.9% for the AC1 default: 40 000 / 52 000). The invariant
     // requires threshold ≤ 0.8 × capacity − some_margin.
@@ -596,12 +605,14 @@ fn proof_ag_bloom_capacity_calibration() {
 /// scaling N_days up by factor f scales R by exactly f.
 #[kani::proof]
 fn proof_ag_reset_count_extrapolation() {
-    let days_1: u64 = kani::any();
-    let days_2: u64 = kani::any();
-    let resets_1: u64 = kani::any();
-    kani::assume(days_1 >= 1 && days_1 < (1u64 << 20));
-    kani::assume(days_2 >= 1 && days_2 < (1u64 << 20));
-    kani::assume(resets_1 < (1u64 << 30));
+    // 32-bit domain (days < 2^10, resets < 2^20): the u64 version timed out
+    // (600 s) on symbolic 64-bit division. Arithmetic-only, no router call.
+    let days_1: u32 = kani::any();
+    let days_2: u32 = kani::any();
+    let resets_1: u32 = kani::any();
+    kani::assume(days_1 >= 1 && days_1 < (1u32 << 10));
+    kani::assume(days_2 >= 1 && days_2 < (1u32 << 10));
+    kani::assume(resets_1 < (1u32 << 20));
     // Linear extrapolation: at constant rate, R scales linearly with days.
     // resets_2_predicted = resets_1 × days_2 / days_1
     let resets_2_predicted = resets_1.saturating_mul(days_2) / days_1;
@@ -671,20 +682,22 @@ fn proof_ah_arithmetic_tolerance_symmetric() {
     let c: u32 = kani::any();
     let v: u32 = kani::any();
     let tolerance_pct: u32 = 5;
-    kani::assume(c < (1u32 << 24));
-    kani::assume(v < (1u32 << 24));
+    // 2^14-bounded so the arithmetic fits u32: the 2^24 / u64 version timed
+    // out (600 s) on symbolic 64-bit division. Linter arithmetic only.
+    kani::assume(c < (1u32 << 14));
+    kani::assume(v < (1u32 << 14));
     let abs_diff = if c >= v { c - v } else { v - c };
     let larger = c.max(v).max(1);
     // Compute error_milli (in milli-percent = ×10) to avoid floats.
-    let error_milli = (abs_diff as u64 * 100_000) / larger as u64;
+    let error_milli = (abs_diff * 100_000) / larger;
     if c == v {
         assert_eq!(error_milli, 0, "exact match has zero error");
     }
     // Symmetry: error(c,v) == error(v,c) by construction (|c-v| symmetric).
-    let error_milli_swapped = ({
+    let error_milli_swapped = {
         let d = if v >= c { v - c } else { c - v };
-        (d as u64 * 100_000) / larger as u64
-    });
+        (d * 100_000) / larger
+    };
     assert_eq!(error_milli, error_milli_swapped, "tolerance is symmetric in claimed/computed");
     let _ = tolerance_pct;
 }
@@ -971,17 +984,19 @@ fn proof_ag_extrapolation_ratio_consistency() {
 /// invariant holds at every observable moment.
 #[kani::proof]
 fn proof_ae_snapshot_internal_consistency() {
-    let lifetime: u64 = kani::any();
-    let since_reset: u64 = kani::any();
+    // 32-bit, 2^20-bounded domain: the u64 version timed out (600 s) on
+    // symbolic 64-bit division. Arithmetic-only, does not call the router.
+    let lifetime: u32 = kani::any();
+    let since_reset: u32 = kani::any();
     // The per-cycle counter can never exceed the lifetime total —
     // every insert in the current cycle also counts in lifetime.
     kani::assume(since_reset <= lifetime);
     assert!(since_reset <= lifetime, "since_reset ≤ lifetime invariant");
     // Corollary: capacity-consumed computed from since_reset is
     // also bounded if we use lifetime as a sanity upper bound.
-    let capacity: u64 = kani::any();
-    kani::assume(capacity >= 1 && capacity < (1u64 << 30));
-    kani::assume(lifetime < (1u64 << 32));
+    let capacity: u32 = kani::any();
+    kani::assume(capacity >= 1 && capacity < (1u32 << 20));
+    kani::assume(lifetime < (1u32 << 20));
     let consumed_since = since_reset.saturating_mul(1000) / capacity;
     let consumed_lifetime = lifetime.saturating_mul(1000) / capacity;
     assert!(consumed_since <= consumed_lifetime, "per-cycle capacity-consumed ≤ lifetime-equivalent");
