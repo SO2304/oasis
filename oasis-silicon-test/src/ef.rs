@@ -6,6 +6,8 @@ use alloc::vec::Vec;
 use oasis_operator_key::OperatorAuthority;
 use oasis_rt::actuation::{command_within_limits, ActCommand, Actuator, Decision, GateInput};
 use oasis_rt::authority::{kind, verify_authority, AuthPolicy};
+use oasis_rt::enrollment::{perm, Registry};
+use oasis_rt::ownership::{OwnerKeys, OwnerState};
 use oasis_rt::hal::PhysicalConstraints;
 use oasis_rt::hyper_state::{agent_new, inject_sensory, is_action_safe, Agent};
 use oasis_rt::mesh::MeshRouter;
@@ -15,15 +17,15 @@ use oasis_rt::mesh_revocation::{
 };
 use rp2040_hal::pac;
 
-/// Operator public key (the seed stays on the PC: oasis-operator-key/examples/ef_payloads.rs).
+/// Ed25519 public key of owner #1, the initial owner (the seed stays on the PC:
+/// oasis-operator-key/examples/ef_payloads.rs). After an ownership transfer, revocation
+/// lists are verified with the CURRENT owner's keys (Phase 1.2).
 pub const OPERATOR_PUB: [u8; 32] = [
     0x0b, 0xee, 0xf5, 0xa9, 0xe6, 0x79, 0xe6, 0xa3, 0xe1, 0x34, 0xfe, 0x27, 0x83, 0x7b, 0xff, 0x32, 0xc7, 0xcb, 0x5f,
     0x5d, 0x44, 0xea, 0x09, 0xbc, 0xb0, 0xe5, 0x42, 0xba, 0xd6, 0xa4, 0xc0, 0xcc,
 ];
 /// The actuator hosted by board C (on-board LED, GP25).
 pub const ACTUATOR_ID: u16 = 1;
-/// Only board A may command actuator 1 (provisioned authority table, spec F.3).
-pub const ACTUATOR_AUTHORITY: Fp = [0xAA; 8];
 pub const R14_THRESHOLD: f64 = 0.6;
 pub const LED_PIN: u32 = 25;
 
@@ -118,7 +120,6 @@ pub fn content_kind(payload: &[u8]) -> &'static str {
 
 pub struct Ef {
     pub rev: RevState,
-    auth: OperatorAuthority,
     pub act: Actuator,
     agent: Agent,
     pub sensor_lost: bool,
@@ -130,7 +131,6 @@ impl Ef {
     pub fn new(boot_id: u64) -> Self {
         Ef {
             rev: RevState::default(),
-            auth: OperatorAuthority::Single { pub_key: OPERATOR_PUB },
             act: Actuator::new(),
             agent: agent_new(3),
             sensor_lost: false,
@@ -139,12 +139,13 @@ impl Ef {
         }
     }
 
-    fn verified(&self, blob: &[u8]) -> Result<(RevDecision, Option<RevState>), RevReject> {
+    /// Verify a revocation blob (ORV1 or OAU1) against one owner's keys.
+    fn verified(&self, blob: &[u8], owner: &OwnerKeys) -> Result<(RevDecision, Option<RevState>), RevReject> {
         if blob.get(0..4) == Some(&b"OAU1"[..]) {
             // Boot restore of a persisted OAU1 revocation: signatures re-verified under
             // the DEFAULT policy. It was accepted under the policy in force at the time;
             // re-applying a policy raised since would drop a valid list at every boot.
-            let a = verify_authority(&AuthPolicy::default(), &crate::NETWORK_ID, &crate::pq::keys(), blob)
+            let a = verify_authority(&AuthPolicy::default(), &crate::NETWORK_ID, &owner.keys(), blob)
                 .map_err(|_| RevReject::BadOperatorSig)?;
             if a.kind != kind::REVOCATION {
                 return Err(RevReject::Malformed);
@@ -153,7 +154,8 @@ impl Ef {
             return Ok(revocation_transition(&self.rev, &crate::NETWORK_ID, &p, true));
         }
         let p = parse_orv1(blob)?;
-        let sig_ok = self.auth.verify_authorization(&signed_message(&p), &p.sigs).is_ok();
+        let auth = OperatorAuthority::Single { pub_key: owner.ed25519 };
+        let sig_ok = auth.verify_authorization(&signed_message(&p), &p.sigs).is_ok();
         Ok(revocation_transition(&self.rev, &crate::NETWORK_ID, &p, sig_ok))
     }
 
@@ -164,28 +166,38 @@ impl Ef {
         self.rev = new;
     }
 
-    /// Boot: restore the persisted list, re-verifying the operator signature,
-    /// BEFORE any envelope is processed. Ok(None) = nothing persisted.
-    pub fn restore(&mut self, router: &mut MeshRouter) -> Result<Option<u64>, RevReject> {
+    /// Boot: restore the persisted list, re-verifying its signature with the current
+    /// owner, else the previous one (one level, spec 1.2 §4), BEFORE any envelope is
+    /// processed. Ok(None) = nothing persisted; Ok(Some((epoch, by_current))).
+    pub fn restore(&mut self, router: &mut MeshRouter, owner: &OwnerState) -> Result<Option<(u64, bool)>, RevReject> {
         let blob = match load_latest_blob(&RevFlash) {
             Some(b) => b,
             None => return Ok(None),
         };
-        match self.verified(&blob)? {
-            (RevDecision::Applied, Some(n)) => {
-                let e = n.epoch;
-                self.apply(router, n);
-                Ok(Some(e))
+        let mut tries = [(Some(&owner.current), true), (owner.previous.as_ref(), false)];
+        let mut last = RevReject::BadOperatorSig;
+        for (keys, by_current) in tries.iter_mut() {
+            let k = match keys {
+                Some(k) => *k,
+                None => continue,
+            };
+            match self.verified(&blob, k) {
+                Ok((RevDecision::Applied, Some(n))) => {
+                    let e = n.epoch;
+                    self.apply(router, n);
+                    return Ok(Some((e, *by_current)));
+                }
+                Ok((RevDecision::Reject(r), _)) | Err(r) => last = r,
+                _ => return Ok(None),
             }
-            (RevDecision::Reject(r), _) => Err(r),
-            _ => Ok(None),
         }
+        Err(last)
     }
 
     /// Relay rule (spec E.3): verify, persist BEFORE applying, apply, and tell the
     /// caller whether to forward (only `Applied` is forwarded, once per epoch).
-    pub fn ingest_orv1(&mut self, router: &mut MeshRouter, blob: &[u8]) -> RevDecision {
-        match self.verified(blob) {
+    pub fn ingest_orv1(&mut self, router: &mut MeshRouter, blob: &[u8], owner: &OwnerKeys) -> RevDecision {
+        match self.verified(blob, owner) {
             Err(r) => RevDecision::Reject(r),
             Ok((RevDecision::Applied, Some(new))) => {
                 if !store_blob(&mut RevFlash, blob) {
@@ -219,12 +231,14 @@ impl Ef {
     }
 
     /// Actuation gate (spec F.3). Drives the LED only on `Act`.
-    pub fn decide(&mut self, router: &MeshRouter, origin: &Fp, v0b_ok: bool, cmd: &ActCommand) -> Decision {
+    /// "Authorized" = the origin is enrolled with the `ACTUATE` permission (Phase 1.2;
+    /// it was board A's compiled fingerprint before).
+    pub fn decide(&mut self, router: &MeshRouter, registry: &Registry, origin: &Fp, v0b_ok: bool, cmd: &ActCommand) -> Decision {
         inject_sensory(&mut self.agent, if self.sensor_lost { 1.0 } else { 0.0 });
         self.last_entropy = self.agent.entropy;
         let input = GateInput {
             v0b_ok,
-            authorized: cmd.actuator_id == ACTUATOR_ID && *origin == ACTUATOR_AUTHORITY,
+            authorized: cmd.actuator_id == ACTUATOR_ID && registry.allows(origin, perm::ACTUATE),
             revoked: router.is_revoked(origin),
             cmd_boot_id: cmd.boot_id,
             deadline_ms: cmd.deadline_ms,
