@@ -39,8 +39,9 @@ pub const SUITE_HYBRID: u8 = 0x03;
 pub const ED25519_SIG_LEN: usize = 64;
 pub const MLDSA44_SIG_LEN: usize = 2420;
 pub const MLDSA44_PK_LEN: usize = 1312;
-/// Upper bound on `content` (keeps a whole message under the 4 KiB reassembly cap).
-pub const MAX_AUTH_CONTENT: usize = 1024;
+/// Upper bound on `content`: a hybrid message (16 + content + 2 484) stays under the
+/// 4 KiB reassembly cap. 1 536 since Phase 1.2 (an ownership offer is 1 349 B).
+pub const MAX_AUTH_CONTENT: usize = 1536;
 const HEADER_LEN: usize = 4 + 1 + 1 + 8 + 2;
 
 /// Message kinds.
@@ -150,10 +151,12 @@ pub struct AuthPolicy {
 }
 
 impl Default for AuthPolicy {
-    /// Migration start: Ed25519 accepted for kinds 1-4; POLICY always hybrid.
+    /// Migration start: Ed25519 accepted for revocation, enrollment and firmware
+    /// manifests; POLICY and OWNERSHIP_TRANSFER (the trust root itself) always hybrid.
     fn default() -> Self {
         let mut min_suite = [SUITE_ED25519; KIND_COUNT];
         min_suite[(kind::POLICY - 1) as usize] = SUITE_HYBRID;
+        min_suite[(kind::OWNERSHIP_TRANSFER - 1) as usize] = SUITE_HYBRID;
         AuthPolicy { min_suite }
     }
 }
