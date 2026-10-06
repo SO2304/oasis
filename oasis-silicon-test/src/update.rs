@@ -223,6 +223,14 @@ pub fn boot_guard_enter() -> (u32, u32) {
     (this_boot.saturating_sub(1), prev_stage)
 }
 
+/// Bring-up diagnostics: write any watchdog scratch register (0..=3; the bootrom's
+/// USB boot only uses 0/1 and 4..7 when it is entered).
+pub fn scratch_mark(n: usize, v: u32) {
+    let base = rp2040_hal::pac::WATCHDOG::ptr() as *mut u32;
+    // SCRATCH0 is at +0x0C; registers are 4 bytes apart.
+    unsafe { base.add(3 + n.min(3)).write_volatile(v) };
+}
+
 /// Record the init stage reached (read back by the next boot).
 pub fn stage(n: u32) {
     wd().scratch3().write(|w| unsafe { w.bits(n) });

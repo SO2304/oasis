@@ -118,9 +118,31 @@ fn on_panic(_: &core::panic::PanicInfo) -> ! {
 unsafe fn HardFault(_ef: &cortex_m_rt::ExceptionFrame) -> ! {
     #[cfg(not(feature = "bootloaded"))]
     hal::rom_data::reset_to_usb_boot(0, 0);
+    // Bring-up diagnostics: faulting PC into SCRATCH1, marker 0xFA into SCRATCH3,
+    // before any flash access (the bootloader logs both on the next boot).
     #[cfg(feature = "bootloaded")]
-    update::crumb(0xAF);
+    {
+        update::scratch_mark(1, _ef.pc());
+        update::stage(0xFA);
+        update::crumb(0xAF);
+    }
     cortex_m::peripheral::SCB::sys_reset();
+}
+
+// Bring-up diagnostics: an interrupt with no handler records its number instead of
+// spinning silently in cortex-m-rt's default loop.
+#[cfg(feature = "bootloaded")]
+#[cortex_m_rt::exception]
+unsafe fn DefaultHandler(irqn: i16) {
+    update::scratch_mark(1, 0xDEF0_0000 | (irqn as u16 as u32));
+    update::stage(0xDE);
+    loop {}
+}
+
+#[cfg(feature = "bootloaded")]
+#[cortex_m_rt::pre_init]
+unsafe fn pre_init() {
+    update::stage(0x05);
 }
 
 // boot2 belongs to the bootloader when there is one.
@@ -237,12 +259,16 @@ fn identity_failed(io: &mut Io, reason: &str) -> ! {
 
 #[hal::entry]
 fn main() -> ! {
+    #[cfg(feature = "bootloaded")]
+    update::stage(0x10);
     {
         use core::mem::MaybeUninit;
         const HEAP_SIZE: usize = 96 * 1024;
         static mut HEAP_MEM: [MaybeUninit<u8>; HEAP_SIZE] = [MaybeUninit::uninit(); HEAP_SIZE];
         unsafe { HEAP.init(core::ptr::addr_of_mut!(HEAP_MEM) as usize, HEAP_SIZE) }
     }
+    #[cfg(feature = "bootloaded")]
+    update::stage(0x11);
 
     // Phase 1.3: boot guard + init breadcrumbs (update.rs), before anything that could hang.
     #[cfg(feature = "bootloaded")]

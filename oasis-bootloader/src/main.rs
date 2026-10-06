@@ -44,6 +44,7 @@ const MAX_FAILED_BOOTS: u32 = 3;
 // RP2040 WATCHDOG (base 0x40058000): SCRATCH2 at +0x14, SCRATCH3 at +0x18 (rp-pac offsets).
 const WD_SCRATCH2: *mut u32 = 0x4005_8014 as *mut u32;
 const WD_SCRATCH3: *mut u32 = 0x4005_8018 as *mut u32;
+const WD_SCRATCH1: *mut u32 = 0x4005_8010 as *mut u32;
 
 fn crumb<F: NorFlash + ReadNorFlash>(flash: &mut F, b: u8) {
     let mut buf = [0u8; 64];
@@ -82,9 +83,16 @@ fn main() -> ! {
     // What the previous boot left: application stage (SCRATCH3) and guard count.
     let s2 = unsafe { WD_SCRATCH2.read_volatile() };
     let s3 = unsafe { WD_SCRATCH3.read_volatile() };
+    let s1 = unsafe { WD_SCRATCH1.read_volatile() };
     crumb(&mut flash, 0xC1);
-    crumb_hex(&mut flash, s3 as u8);
+    for b in s3.to_le_bytes() {
+        crumb_hex(&mut flash, b);
+    }
     crumb_hex(&mut flash, s2 as u8);
+    crumb(&mut flash, 0xC2);
+    for b in s1.to_le_bytes() {
+        crumb_hex(&mut flash, b);
+    }
     let failed = if s2 & 0xFFFF_0000 == GUARD_MAGIC {
         s2 & 0xFFFF
     } else {
