@@ -463,6 +463,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "oasis-operator-key"
+version = "0.1.0"
+dependencies = [
+ "ed25519-compact",
+ "oasis-rt",
+]
+
+[[package]]
 name = "oasis-rt"
 version = "0.3.0"
 dependencies = [
@@ -482,6 +490,7 @@ dependencies = [
  "cortex-m-rt",
  "ed25519-compact",
  "embedded-alloc",
+ "oasis-operator-key",
  "oasis-rt",
  "rp2040-boot2",
  "rp2040-flash",

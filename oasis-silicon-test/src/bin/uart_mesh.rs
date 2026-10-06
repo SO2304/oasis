@@ -36,6 +36,11 @@ use oasis_rt::mesh::{
     MeshPubRegistry, MeshRouter,
 };
 use oasis_rt::spore_crypto::CounterTracker;
+use oasis_rt::actuation::parse_oac1;
+use oasis_rt::mesh::inner_slice;
+
+#[path = "../ef.rs"]
+mod ef;
 use oasis_rt::tx_lease::{DualSlotStore, SlotIo, TxLease, TX_LEASE_BLOCK, TX_LEASE_RECORD_LEN};
 
 /// Upper bound on counters a single USB command buffer can consume (the
@@ -289,39 +294,136 @@ fn main() -> ! {
     let mut lease = TxLease::boot(&lstore, TX_LEASE_BLOCK);
     router.set_tx_counter(lease.resume_point());
     io.log("LEASE_BOOT", format_args!("resume={},ceiling={}", lease.resume_point(), lease.ceiling()));
+    // boot_id for the actuation gate's time base = this boot's lease resume point.
+    // Force one durable reservation NOW so the next boot resumes strictly higher,
+    // even if this boot never receives a command (otherwise two boots could share
+    // a boot_id and a command stamped for the previous boot would look fresh).
+    let boot_id = lease.resume_point();
+    if !lease.ensure(boot_id.saturating_add(1), &mut lstore) {
+        io.log("LEASE_FAIL", format_args!("boot reservation failed; boot_id={} not unique", boot_id));
+    }
+
+    // Part C: actuator output on GP25 (on-board LED) + revocation/actuation state.
+    let _led = pins.gpio25.into_push_pull_output();
+    ef::led_set(false);
+    let mut efs = ef::Ef::new(boot_id);
+    match efs.restore(&mut router) {
+        Ok(Some(e)) => io.log("REV_BOOT", format_args!("restored_epoch={},revoked={}", e, efs.rev.revoked.len())),
+        Ok(None) => io.log("REV_BOOT", format_args!("no_saved_list")),
+        Err(r) => io.log("REV_BOOT", format_args!("persisted_list_rejected={:?}", r)),
+    }
+    // `@P<hex>` + newline from the PC: originate a v0B envelope with that payload.
+    // Line bytes are diverted so hex digits never trigger single-byte commands.
+    let mut line = [0u8; 600];
+    let mut line_len = 0usize;
+    let mut in_line = false;
 
     loop {
         io.poll();
 
-        let mut rx = [0u8; 16];
-        if let Ok(n) = io.serial.read(&mut rx) {
-            // Make every counter this buffer could consume durable FIRST. On
-            // failure nothing in the buffer runs (no counter above the ceiling).
+        let mut raw = [0u8; 16];
+        if let Ok(n_raw) = io.serial.read(&mut raw) {
+            // Split the input: `@...` line bytes (up to a newline) go to `line`,
+            // the rest are single-byte commands.
+            let mut rx = [0u8; 16];
+            let mut n = 0usize;
+            let mut line_done = false;
+            for &byte in &raw[..n_raw] {
+                if in_line {
+                    if byte == b'\n' || byte == b'\r' {
+                        in_line = false;
+                        line_done = true;
+                    } else if line_len < line.len() {
+                        line[line_len] = byte;
+                        line_len += 1;
+                    }
+                } else if byte == b'@' {
+                    in_line = true;
+                    line_len = 0;
+                } else {
+                    rx[n] = byte;
+                    n += 1;
+                }
+            }
+            // Make every counter this buffer (commands + a completed line) could
+            // consume durable FIRST. On failure nothing in the buffer runs.
             let writes_before = lease.writes();
-            let n = if n > 0
-                && !lease.ensure(router.tx_counter().saturating_add(CMD_MAX_ORIGINATIONS), &mut lstore)
-            {
+            let any_input = n > 0 || line_done;
+            let lease_ok = !any_input
+                || lease.ensure(router.tx_counter().saturating_add(CMD_MAX_ORIGINATIONS), &mut lstore);
+            if !lease_ok {
                 io.log("LEASE_FAIL", format_args!("tx={},ceiling={}", router.tx_counter(), lease.ceiling()));
-                0
-            } else {
-                n
-            };
+            }
+            let line_done = line_done && lease_ok;
+            let n = if lease_ok { n } else { 0 };
             if lease.writes() != writes_before {
                 io.log(
                     "LEASE_PERSIST",
                     format_args!("ceiling={},writes_since_boot={}", lease.ceiling(), lease.writes()),
                 );
             }
-            // Test-harness factory reset of BOTH persistence areas (receiver
-            // window + sender lease) and of the RAM state. Only for a clean start.
+            // `@P<hex>`: originate a v0B envelope carrying the PC-built payload
+            // (operator-signed ORV1 list, or an OAC1 command). Stored for `z` replay.
+            if line_done && line_len >= 1 && line[0] == b'P' {
+                let mut pl = [0u8; 300];
+                match ef::hex_decode(&line[1..line_len], &mut pl) {
+                    Some(plen) => {
+                        if let Some(env) = router.origin_wrap_v0b(&pl[..plen]) {
+                            last_v0b_len = env.len().min(MAX_ENV);
+                            last_v0b[..last_v0b_len].copy_from_slice(&env[..last_v0b_len]);
+                            send_framed(&mut uart0, &env);
+                            io.log(
+                                "PAYLOAD_TX",
+                                format_args!(
+                                    "kind={},counter={},len={}",
+                                    ef::content_kind(&pl[..plen]),
+                                    router.tx_counter(),
+                                    env.len()
+                                ),
+                            );
+                        }
+                    }
+                    None => io.log("PAYLOAD_BAD_HEX", format_args!("chars={}", line_len - 1)),
+                }
+            }
+            // Test-harness factory reset of ALL persistence areas (receiver window,
+            // sender lease, revocation list), then a full system reset so the RAM
+            // state (incl. the router's revoked set) starts clean too.
             if rx[..n].contains(&b'!') {
                 persist::wipe();
                 wipe_lease_sectors();
-                let empty = CounterTracker::new().to_bytes();
-                let _ = router.restore_counter_tracker(&empty);
-                lease = TxLease::boot(&lstore, TX_LEASE_BLOCK);
-                router.set_tx_counter(lease.resume_point());
-                io.log("PERSIST_WIPED", format_args!("tx={},ceiling={}", router.tx_counter(), lease.ceiling()));
+                ef::wipe_rev_sectors();
+                io.log("PERSIST_WIPED", format_args!("all persistence erased; resetting"));
+                for _ in 0..200_000 {
+                    io.poll();
+                }
+                cortex_m::peripheral::SCB::sys_reset();
+            }
+            // Part C harness: simulated sensor loss (R14), LED off, E/F status.
+            if rx[..n].contains(&b'U') {
+                efs.sensor_lost = !efs.sensor_lost;
+                io.log("SENSOR", format_args!("lost={}", efs.sensor_lost));
+            }
+            if rx[..n].contains(&b'L') {
+                ef::led_set(false);
+                io.log("LED", format_args!("off,pin25={}", ef::led_pin_level()));
+            }
+            if rx[..n].contains(&b'S') {
+                let r = &efs.act.rejects;
+                io.log(
+                    "EF_STATUS",
+                    format_args!(
+                        "boot_id={},now_ms={},epoch={},revoked={},sensor_lost={},pin25={},executed={},rejects={}/{}/{}/{}/{}/{}/{}",
+                        efs.boot_id,
+                        ef::now_ms64(),
+                        efs.rev.epoch,
+                        efs.rev.revoked.len(),
+                        efs.sensor_lost,
+                        ef::led_pin_level(),
+                        efs.act.executed,
+                        r[0], r[1], r[2], r[3], r[4], r[5], r[6]
+                    ),
+                );
             }
             if rx[..n].contains(&b'b') {
                 hal::rom_data::reset_to_usb_boot(0, 0);
@@ -702,13 +804,77 @@ fn main() -> ! {
                                 msg_id, hops_seen, forward
                             ),
                         );
-                        if forward {
+                        let inner = inner_slice(&envelope);
+                        let mut origin = [0u8; 8];
+                        if envelope.len() >= 22 {
+                            origin.copy_from_slice(&envelope[14..22]);
+                        }
+                        let mut relay = forward;
+                        match ef::content_kind(inner) {
+                            // Signed revocation (spec E.3): verify, persist, apply; forward
+                            // only a fresh epoch, exactly once. Rejects/duplicates stop here.
+                            "ORV1" => {
+                                let d = efs.ingest_orv1(&mut router, inner);
+                                io.log(
+                                    "REV",
+                                    format_args!(
+                                        "decision={:?},epoch={},revoked={},persisted_before_apply={}",
+                                        d,
+                                        efs.rev.epoch,
+                                        efs.rev.revoked.len(),
+                                        d == oasis_rt::mesh_revocation::RevDecision::Applied
+                                    ),
+                                );
+                                relay = forward && d == oasis_rt::mesh_revocation::RevDecision::Applied;
+                            }
+                            // Actuation command for the actuator this board hosts (C).
+                            "OAC1" if BOARD_ID == "C" => {
+                                if let Some(cmd) = parse_oac1(inner) {
+                                    let d = efs.decide(&router, &origin, true, &cmd);
+                                    io.log(
+                                        "ACT",
+                                        format_args!(
+                                            "decision={:?},seq={},origin={:02x},entropy={:.3},pin25={}",
+                                            d,
+                                            cmd.cmd_seq,
+                                            origin[0],
+                                            efs.last_entropy,
+                                            ef::led_pin_level()
+                                        ),
+                                    );
+                                }
+                                relay = false; // consumed by the actuator
+                            }
+                            _ => {}
+                        }
+                        if relay {
                             send_framed(&mut uart0, &envelope);
                             io.log("RELAYED", format_args!("msg_id={},hops={}", msg_id, hops_seen));
                         }
                     }
                     MeshDecision::Drop(reason) => {
                         io.log("DROP", format_args!("{}", reason));
+                        // A command that fails v0B (replay, forgery, revoked origin) is
+                        // still logged as a gate decision so its outcome is on record.
+                        let e = &owned[..elen];
+                        if BOARD_ID == "C" && elen >= 99 + oasis_rt::actuation::OAC1_LEN {
+                            if let Some(cmd) = parse_oac1(&e[99..99 + oasis_rt::actuation::OAC1_LEN]) {
+                                let mut origin = [0u8; 8];
+                                origin.copy_from_slice(&e[14..22]);
+                                let d = efs.decide(&router, &origin, false, &cmd);
+                                io.log(
+                                    "ACT",
+                                    format_args!(
+                                        "decision={:?},v0b_drop={},seq={},origin={:02x},pin25={}",
+                                        d,
+                                        reason,
+                                        cmd.cmd_seq,
+                                        origin[0],
+                                        ef::led_pin_level()
+                                    ),
+                                );
+                            }
+                        }
                     }
                 }
             }
