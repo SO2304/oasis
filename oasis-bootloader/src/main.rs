@@ -63,6 +63,16 @@ fn crumb<F: NorFlash + ReadNorFlash>(flash: &mut F, b: u8) {
 
 #[entry]
 fn main() -> ! {
+    // Hold the USB controller in reset (its D+ pull-up drops) for as long as the
+    // bootloader runs. embassy_rp::init leaves USBCTRL out of its peripheral reset,
+    // so after a soft reset from an enumerated application the pull-up stayed on,
+    // unclocked, for the whole swap: the host saw a dead device and did not notice
+    // the application's microsecond-long USB reset; v2 ran but never re-enumerated
+    // (2026-10-07, evidence/silicon/2026-10-06/fwupdate/). The application's
+    // rp2040-hal UsbBus::new takes USBCTRL out of reset again.
+    // RESETS (base 0x4000C000), atomic SET alias +0x2000; USBCTRL = bit 24.
+    unsafe { (0x4000_E000 as *mut u32).write_volatile(1 << 24) };
+
     // Leave the clocks close to their power-on state: ring oscillator only, XOSC and
     // both PLLs untouched, so the application (rp2040-hal) initialises its clocks as
     // after a cold boot. The ROSC is set to the one configuration embassy-rp documents
