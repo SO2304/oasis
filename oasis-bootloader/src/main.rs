@@ -27,6 +27,24 @@ const FLASH_SIZE: usize = 2 * 1024 * 1024;
 /// 0xB1 initialised, 0xB2..0xB5 prepared (state Boot/Swap/Revert/DfuDetach), 0xB9 jumping.
 const CRUMB_OFFSET: u32 = 0x1F_0000;
 
+/// A value as two breadcrumbs `0xE0|high nibble`, `0xE0|low nibble` (never 0xFF,
+/// which would read as erased).
+fn crumb_hex<F: NorFlash + ReadNorFlash>(flash: &mut F, v: u8) {
+    crumb(flash, 0xE0 | (v >> 4));
+    crumb(flash, 0xE0 | (v & 0x0F));
+}
+
+/// Boot guard, owned by the bootloader: watchdog SCRATCH2 counts consecutive boots
+/// that did not reach the application's main loop (the application clears it there).
+/// SCRATCH2/3 persist across watchdog and soft resets (the bootrom's USB boot uses
+/// SCRATCH0/1 and 4..7). After `MAX_FAILED_BOOTS` the board enters BOOTSEL instead
+/// of jumping, so a broken application can always be reflashed over USB.
+const GUARD_MAGIC: u32 = 0x0A5E_0000;
+const MAX_FAILED_BOOTS: u32 = 3;
+// RP2040 WATCHDOG (base 0x40058000): SCRATCH2 at +0x14, SCRATCH3 at +0x18 (rp-pac offsets).
+const WD_SCRATCH2: *mut u32 = 0x4005_8014 as *mut u32;
+const WD_SCRATCH3: *mut u32 = 0x4005_8018 as *mut u32;
+
 fn crumb<F: NorFlash + ReadNorFlash>(flash: &mut F, b: u8) {
     let mut buf = [0u8; 64];
     let mut off = 0u32;
@@ -54,6 +72,23 @@ fn main() -> ! {
     ));
 
     let mut flash = WatchdogFlash::<FLASH_SIZE>::start(p.FLASH, p.WATCHDOG, Duration::from_secs(8));
+    // What the previous boot left: application stage (SCRATCH3) and guard count.
+    let s2 = unsafe { WD_SCRATCH2.read_volatile() };
+    let s3 = unsafe { WD_SCRATCH3.read_volatile() };
+    crumb(&mut flash, 0xC1);
+    crumb_hex(&mut flash, s3 as u8);
+    crumb_hex(&mut flash, s2 as u8);
+    let failed = if s2 & 0xFFFF_0000 == GUARD_MAGIC {
+        s2 & 0xFFFF
+    } else {
+        0
+    };
+    if failed >= MAX_FAILED_BOOTS {
+        unsafe { WD_SCRATCH2.write_volatile(0) };
+        crumb(&mut flash, 0xBF);
+        embassy_rp::rom_data::reset_to_usb_boot(0, 0);
+    }
+    unsafe { WD_SCRATCH2.write_volatile(GUARD_MAGIC | (failed + 1)) };
     crumb(&mut flash, 0xB1);
     let flash = Mutex::new(RefCell::new(flash));
 
@@ -66,11 +101,33 @@ fn main() -> ! {
         State::Revert => 0xB4,
         State::DfuDetach => 0xB5,
     };
+    // NVIC state at hand-over (embassy_rp::init enables IO_IRQ_BANK0, IO_IRQ_QSPI and
+    // DMA_IRQ_0): enabled (ISER) and pending (ISPR) masks go to the breadcrumbs.
+    const NVIC_ISER: *mut u32 = 0xE000_E100 as *mut u32;
+    const NVIC_ICER: *mut u32 = 0xE000_E180 as *mut u32;
+    const NVIC_ISPR: *mut u32 = 0xE000_E200 as *mut u32;
+    const NVIC_ICPR: *mut u32 = 0xE000_E280 as *mut u32;
+    const SYST_CSR: *mut u32 = 0xE000_E010 as *mut u32;
+    let (iser, ispr) = unsafe { (NVIC_ISER.read_volatile(), NVIC_ISPR.read_volatile()) };
     flash.lock(|f| {
         let mut f = f.borrow_mut();
         crumb(&mut *f, code);
+        crumb(&mut *f, 0xD1);
+        for b in iser.to_le_bytes().iter().chain(ispr.to_le_bytes().iter()) {
+            crumb_hex(&mut *f, *b);
+        }
         crumb(&mut *f, 0xB9);
     });
+    // Hand the application a clean interrupt state, as after a reset: every NVIC line
+    // disabled and not pending, SysTick off. The application (rp2040-hal) installs
+    // none of embassy's handlers, so a pending line would land in its default handler.
+    cortex_m::interrupt::disable();
+    unsafe {
+        NVIC_ICER.write_volatile(0xFFFF_FFFF);
+        NVIC_ICPR.write_volatile(0xFFFF_FFFF);
+        SYST_CSR.write_volatile(0);
+        cortex_m::interrupt::enable();
+    }
 
     unsafe { bl.load(embassy_rp::flash::FLASH_BASE as u32 + active_offset) }
 }
