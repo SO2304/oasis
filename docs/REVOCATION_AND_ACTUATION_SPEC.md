@@ -240,3 +240,34 @@ ask before it.**
 3. **A seventh condition** (`cmd_seq` strictly increasing per actuator).
 4. **Authority table provisioned statically** in v1.
 5. **Time base** = the actuator's own clock, via signed beacons with `boot_id` (§F.2).
+
+## Status (2026-10-06, end of day)
+
+The five decisions above were approved as proposed. Implemented on
+`oasis-e-f-attacks`:
+
+- **Part B:** `oasis-rt/src/mesh_revocation.rs` and `oasis-rt/src/actuation.rs`,
+  with 28 tests plus 3 quorum tests in `oasis-operator-key`, and 6 Kani harnesses
+  (written, not run: the 3.3 GB WSL can't hold the CBMC pass). Library tests went
+  466 → 494, workspace 533, 0 failed; `no_std` `thumbv6m` builds.
+- **Part C** on 3 RP2040 boards, stamp `6daa0bc`:
+  `evidence/silicon/2026-10-06/ef/REPORT.md`.
+- **Part D: deferred** (`attack-suite/DEFERRED.md`).
+
+Deviations from the text above, found while building:
+
+1. **`boot_id` uniqueness.** A boot that receives no command reserved no lease
+   block, so two boots could share a `boot_id`. Firmware now forces one durable
+   reservation at every boot. Verified on silicon: `boot_id` went 0 → 1279 across a
+   power-cut, and a command stamped for the old boot was refused.
+2. **NaN.** `hal::clamp_command` raises no flag on NaN or infinite inputs (all its
+   comparisons are false). `actuation::command_within_limits` rejects non-finite
+   values before consulting the clamp flags. `hal.rs` is unchanged.
+3. **Frame size.** `MAX_ENV` stayed at 300. A single-key list is a 99-byte v0B
+   header plus 127 + 8·n bytes of content: one fingerprint is 234 bytes on the
+   wire, two are 242, and up to 9 fit. It must be raised to 512 before carrying
+   k-of-n lists on the chip.
+4. **Roles.** The rig is wired one way (A→B→C), so on silicon the revoked node is B
+   and the enforcing relay is C (see the evidence report).
+5. **Catch-up beacons** (E.5) exist in `oasis-rt` and are tested on the PC, but are
+   not implemented in the test firmware.

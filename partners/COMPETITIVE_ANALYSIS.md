@@ -5,6 +5,15 @@ Méthode : les affirmations sur OASIS viennent du code (`oasis-rt/src/mesh.rs` s
 code ou de leur documentation, sources en bas. « À vérifier » signifie que je n'ai
 pas trouvé de source directe.
 
+**Mise à jour du 2026-10-06 (après-midi).** La colonne « OASIS après v0B +
+révocation » est désormais **mesurée** pour les axes E et F (branche
+`oasis-e-f-attacks`, preuves brutes dans `evidence/silicon/2026-10-06/ef/`). Les
+colonnes des concurrents restent issues de la lecture de leur code ou de leur
+documentation : la suite d'attaques exécutée (partie D) est **différée en attente
+d'environnement de simulation** (`attack-suite/DEFERRED.md`). Aucune comparaison
+exécutée n'existe encore, donc aucun « à vérifier » n'a été tranché, et la phrase
+« OASIS seul en tête, preuves à l'appui » ne peut pas encore être écrite.
+
 Légende : ✅ fait · ⚠️ partiel ou avec une faiblesse · ❌ absent · — sans objet
 
 ## 1. Les axes où OASIS veut gagner
@@ -15,8 +24,8 @@ Légende : ✅ fait · ⚠️ partiel ou avec une faiblesse · ❌ absent · —
 | **B. Chaque relais vérifie l'intégrité du contenu** | ❌ Le contenu n'est pas signé (12/50 inversions acceptées sur silicium) | ✅ Empreinte du contenu signée | ⚠️ Le NetMIC couvre le paquet, mais avec la clé partagée | ⚠️ Idem, clé partagée | ❌ | ❌ | — |
 | **C. Anti-rejeu qui survit à un redémarrage** | ❌ Cache de doublons en RAM uniquement : un vieux message signé est réaccepté après redémarrage ou remise à zéro du Bloom | ✅ Compteur signé + fenêtre par origine, persistés | ✅ Numéro de séquence et liste anti-rejeu persistés. ⚠️ Mais un détenteur de la clé réseau peut **saturer la liste anti-rejeu** avec de fausses entrées et bloquer les messages légitimes | ✅ Compteurs de trame (persistance : à vérifier) | ⚠️ Identifiant de paquet de 32 bits et anti-doublon ; persistance non documentée | ⚠️ Liste d'empreintes de paquets **sauvegardée sur disque** et rechargée au démarrage (`Transport.py` l.339-343, 3745-3769), mais non signée : un relais ne peut pas vérifier la fraîcheur | ✅ Compteurs de trame persistés |
 | **D. Un nœud compromis ne peut pas bloquer les messages des autres** | ❌ Remplacement du contenu → le vrai message est écarté comme doublon | ✅ Un message n'entre dans l'état du relais qu'après vérification complète | ❌ Saturation de la liste anti-rejeu possible avec la clé réseau | ❌ Clé partagée | ❌ | ⚠️ Rien n'est vérifié en transit ; seule la destination filtre | — |
-| **E. Révoquer un seul nœud sans recléfier tout le réseau** | ❌ Révocation signée (v6) côté `spore`, **`std` seulement**, et **non appliquée par les relais mesh** | ✅ Si on l'implémente en `no_std` et appliquée au relais | ⚠️ « Key Refresh » : on renouvelle la clé de tous les nœuds sauf l'exclu. Lourd mais standard | ⚠️ Changement de clé réseau pour tous | ❌ Changement manuel de la clé de canal | ⚠️ Listes « blackhole » locales ou par abonnement, sans révocation globale (choix assumé) | ✅ Désactivation côté serveur (centralisé) |
-| **F. Sûreté des actionneurs liée aux communications** (aucune action si capteurs peu fiables, MAVLink/PX4) | ✅ Porte R14, pont MAVLink | ✅ + ordre signé obligatoire (voir §3) | ❌ | ❌ | ❌ | ❌ | ❌ |
+| **E. Révoquer un seul nœud sans recléfier tout le réseau** | ❌ Révocation signée (v6) côté `spore`, **`std` seulement**, et **non appliquée par les relais mesh** | ✅ **Fait, prouvé sur silicium** : liste signée par l'opérateur (k-sur-n possible), époque strictement croissante, persistée avant application, appliquée dès le premier relais, relue en flash après coupure. ⚠️ Un nœud révoqué peut encore relayer le trafic des autres ; k-sur-n et rattrapage testés sur PC seulement | ⚠️ « Key Refresh » : on renouvelle la clé de tous les nœuds sauf l'exclu. Lourd mais standard | ⚠️ Changement de clé réseau pour tous | ❌ Changement manuel de la clé de canal | ⚠️ Listes « blackhole » locales ou par abonnement, sans révocation globale (choix assumé) | ✅ Désactivation côté serveur (centralisé) |
+| **F. Sûreté des actionneurs liée aux communications** (aucune action si capteurs peu fiables, MAVLink/PX4) | ✅ Porte R14, pont MAVLink | ✅ **Fait, prouvé sur silicium** : porte à 7 conditions (v0B, origine autorisée, non révoquée, non expirée dans l'horloge de l'actionneur, R14, limites physiques y compris NaN, numéro d'ordre croissant). Aucun ordre refusé n'a fait monter la broche ; LED non confirmée visuellement | ❌ | ❌ | ❌ | ❌ | ❌ |
 | **G. Langage sûr en mémoire + preuves formelles** | ✅ Rust, 113 harnais Kani | ✅ | ⚠️ Implémentations en C (ex. Zephyr), fuzzées et qualifiées SIG | ⚠️ OpenThread en C++, fuzzé et certifié | ❌ C++ | ⚠️ Python ; microReticulum en C++ | ⚠️ C, certifié |
 | **H. Preuves brutes publiées sur silicium** | ✅ Logs, empreintes SHA-256, firmware | ✅ | Certification à la place | Certification | ❌ | ❌ | Certification |
 

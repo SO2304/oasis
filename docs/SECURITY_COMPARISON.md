@@ -104,3 +104,31 @@ flash-restored window.
 ceiling (counter 1280 after 163) and the relay accepted it. Before the lease it
 restarted at 1 and was refused. Limits: a wiped or re-provisioned device restarts
 at 0; endurance is estimated, not measured.
+
+## Revocation (E) and actuation gate (F) — OASIS only (2026-10-06)
+
+Measured on OASIS; **no competitor was attacked**. The comparative attack suite
+(Part D of `prompts/OASIS_REVOCATION_GATE_ATTACKSUITE.md`) is **deferred pending a
+simulation environment** after the owner's 15-minute WSL timebox
+(`attack-suite/DEFERRED.md`), so every competitor column above stays as read from
+their code or documentation.
+
+| Attack | OASIS result | Evidence |
+|---|---|---|
+| Revocation signed by a non-operator key | rejected, state unchanged | `rev_wrong_key_rejected_state_unchanged` |
+| Old list replayed (lower or equal epoch) | rejected; silicon: `Rollback` at the first relay, never forwarded | `rev_old_epoch_rejected`; `evidence/silicon/2026-10-06/ef/65_*` |
+| Revoked origin keeps emitting | dropped at the first relay **before** its signature check | `rev_then_revoked_origin_dropped_before_signature`; `ef/62_*` |
+| Same, after the relay loses power | still dropped; list re-read from flash and re-verified at boot | `rev_persisted_across_reboot`; `ef/70_*`, `ef/72_*` |
+| Revoked node broadcasts a "counter-revocation" | dropped (revoked origin), and `BadOperatorSig` if anyone re-carries it | `rev_counter_revocation_by_revoked_node_rejected` |
+| Relay offline during the broadcast | catches up through epoch beacons (PC only) | `rev_disconnected_relay_catches_up` |
+| k-of-n quorum (k−1, duplicate, outsider signers) | rejected; k distinct members accepted (PC only) | `oasis-operator-key/tests/mesh_revocation.rs` |
+| Order from a registered but unauthorized node | no action | `act_unauthorized_origin`; `ef/44_*` |
+| Expired order / order stamped for a previous boot | no action | `act_expired`, `act_wrong_boot_id`; `ef/45_*`, `ef/74_*` |
+| Byte-exact replay of an executed order | stopped by v0B at the first relay | `ef/47_*` |
+| Re-sent order content (same `cmd_seq`) | no action (`StaleOrReplayed`) | `act_replayed`; `ef/51_*` |
+| Valid order with R14 unfavourable (sensor lost) | no action (on-chip entropy 0.908) | `act_r14_unsafe_sensor_loss`; `ef/54_*` |
+| Over-limit or NaN setpoint | no action — `hal::clamp_command` alone fails open on NaN; the gate checks finiteness first | `act_out_of_limits`, `act_nan_setpoint_rejected`; `ef/56_*`, `ef/57_*` |
+
+What it costs: a revoked node can still relay, drop or delay others' traffic; there
+is an exposure window before catch-up; a compromised operator quorum can revoke
+everyone; Kani harnesses for E/F are written but not run on this machine.
