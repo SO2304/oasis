@@ -17,11 +17,13 @@ removed content now lives in baseline commit `d8681c5`. The 4 std crates
 are a Cargo **workspace** (`resolver = "2"`); the 3 MCU crates are
 *excluded* so `mesh_bloom_mcu` feature-unification can no longer shrink
 the host Bloom (64 KiB → 2 KiB). Re-measured headline numbers (commands
-reproduce them): **494 lib tests** (`cargo test --workspace --release`; 444
-before mesh v0B, +11 `v0b_*`, +2 strict mode, +9 `tx_lease`, +28 `rev_*`/`act_*`),
-**129 Kani proof harnesses** (`grep -rE 'kani::proof' oasis-rt/src | wc -l`;
-113 before v0B, +7 v0B, +9 lease/revocation/actuation; full CBMC pass *not* re-run — slow under WSL), **33 modules**,
-**19 `[[bin]]`**, **32 `src/*.rs`** files (largest module now `spore_crypto.rs`
+reproduce them): **523 `oasis-rt` lib tests, 562 across the workspace**
+(`cargo test -p oasis-rt --release --lib` / `cargo test --workspace --release`,
+re-measured 2026-10-06: 495 / 534 before Phase 1.1, so the "494" this file stated
+before was one short; Phase 1.1 added 28: 16 `pq_*`, 11 `frag_*`, 1 `rev_*`),
+**136 Kani proof harnesses** (`grep -rE 'kani::proof' oasis-rt/src | wc -l`;
+113 before v0B, +7 v0B, +9 lease/revocation/actuation, +7 authority/fragment; full CBMC pass *not* re-run — slow under WSL), **35 modules**,
+**19 `[[bin]]`**, **37 `src/*.rs`** files (35 before Phase 1.1; this file said 32, stale) (largest module now `spore_crypto.rs`
 2583 L; `mesh.rs` was split 2026-06-02 — its tests + Kani proofs moved to
 `src/mesh/{tests,kani_proofs}.rs`; the protocol core is **1509 L** after mesh v0B
 was added 2026-10-06). ⚠️ The per-file line counts in the tree
@@ -166,7 +168,9 @@ Out of 11 mechanisms, 6 are validated on real hardware (PROVEN), 5 are cabled in
 
 Threat model: **19 of 23 threats covered in-protocol** (remaining: disk
 wipe, operator key compromise, rogue pairing, post-quantum, traffic
-analysis; v0A closed 2 from the prior "17 of 23" count — insider
+analysis — post-quantum only partly closed since Phase 1.1: **authority messages**
+(revocation, policy, and later enrollment/firmware/ownership) can be hybrid
+Ed25519 + ML-DSA-44, but per-hop v0B, orders and the spore layer stay classical; v0A closed 2 from the prior "17 of 23" count — insider
 forge + mesh-header spoof).
 
 Performance trade across the 3 mesh variants (Linux WSL, K=10 medians):
@@ -184,8 +188,9 @@ Performance trade across the 3 mesh variants (Linux WSL, K=10 medians):
 
 | Capability | Evidence | Status |
 |---|---|---|
-| **494 unit tests pass in parallel** (444 + 11 v0B + 2 strict + 9 lease + 28 revocation/actuation) | `cargo test --workspace --release` | ✅ |
-| **129 Kani proof harnesses** (53 in mesh, 3 lease, 3 revocation, 3 actuation) | `cargo kani --lib` (WSL) — full CBMC pass NOT re-run 2026-06-02 (slow under WSL); 4/4 sampled passed; the 16 harnesses added 2026-10-06 (v0B, lease, revocation, actuation) verified 16/16 individually (`evidence/kani/2026-10-06/`) | ⚠️ count verified, full 129-harness pass not reproduced locally (CI job) |
+| **523 `oasis-rt` lib tests / 562 workspace tests pass in parallel** (495 / 534 before Phase 1.1, +28) | `cargo test -p oasis-rt --release --lib`, `cargo test --workspace --release` | ✅ |
+| **136 Kani proof harnesses** (53 in mesh, 3 lease, 3 revocation, 3 actuation, 4 authority, 3 fragment) | `cargo kani --lib -Z stubbing` (WSL) — full CBMC pass NOT re-run (slow under WSL; 3.3 GB); the 16 harnesses added for E/F verified 16/16 individually and the 7 Phase 1.1 harnesses 7/7 (`evidence/kani/2026-10-06/`, `…/pq/`: run 1 refuted `proof_auth_precheck_no_downgrade`, a real defect, fixed in `3e67254`) | ⚠️ count verified, full 136-harness pass not reproduced locally (CI job, now with `-Z stubbing`) |
+| **Hybrid authority messages (Phase 1.1, `OAU1` + `OFR1`)** | `authority` + `fragment`: signed suite byte (Ed25519, or hybrid Ed25519 AND ML-DSA-44, FIPS 204), per-kind minimum suite never lowered and persisted in two flash slots, downgrade refused before any signature work, bounded reassembly, store-and-forward. ML-DSA-44 on device = `libcrux-ml-dsa` 0.0.10 (arithmetic/NTT/serialization formally verified; pre-1.0); RustCrypto `ml-dsa` 0.1.1 as oracle; NIST ACVP sigVer 15/15 on both; byte-for-byte keygen/sign match over 8 seeds; 20 072 single-bit flips 0 accepted. **RP2040 bake-off** (3×3×K5): libcrux 198 ms / 44.8 KB stack vs `ml-dsa` 178 ms / 84 KB; full hybrid gate **377 ms, 48.7 KB stack**; flash +125 KB. **Silicon A→B→C (stamp `1a9b461`)**: 14-fragment hybrid revocation applied and re-originated per hop; altered fragment → hash mismatch, altered message → `BadSignature`, nothing forwarded; policy raise → legacy ORV1 refused, Ed25519-only `OAU1` refused as downgrade in 4 ms; policy and hybrid list restored after a **real power cut** of B. See `docs/specs/PQ_AUTHORITY_SPEC.md`, `evidence/silicon/2026-10-06/pq/REPORT.md`. ⚠️ Wired UART only; ~7.6 s of computation per hop per hybrid message; no rate limit yet (Phase 2); kinds 2–4 verified then refused (`Unsupported`) | ✅ |
 | MAVLink v2 CRC + signing + replay | 29 in-suite tests + 300 real PX4 frames | ✅ |
 | Ed25519 federation + signing | `ed25519_signing_roundtrip` + tamper rejection | ✅ |
 | **Ed25519 per-node mesh signing (v0A)** | 10 tests inc. `v10_spoofed_origin_fp_rejected` | ✅ |
@@ -198,7 +203,7 @@ Performance trade across the 3 mesh variants (Linux WSL, K=10 medians):
 | Altitude hold closed-loop | 1.94 m vs 2.0 m target (±6 cm) | ✅ |
 | Spore v7 loss + FEC real UDP | bench + loss proxy: 98% @ 30% uniform, 82-90% @ 30% burst | ✅ |
 | RFC 8439 ChaCha20-Poly1305 vector | test vector matches byte-for-byte | ✅ |
-| All 11 mechanisms compile + test | 494 Rust tests across 33 modules | ✅ |
+| All 11 mechanisms compile + test | 523 `oasis-rt` lib tests across 35 modules | ✅ |
 | Android daemon 3h+ run | session_v0_5 on S23 FE, 121 290 ticks | ⚠️ claimed; logs not in repo |
 | **MCU cross-compile** (`thumbv7em-none-eabi`) | `cargo build --target thumbv7em-none-eabi --lib --no-default-features --features mesh_bloom_mcu --release` | ✅ 0 errors |
 | **A/B vs ROS 2 Jazzy** (Linux intra-process, K=10 medians) | OASIS 241 ns vs rclcpp intra 5 624 ns vs rclcpp DDS 52 411 ns at 16 B — 23–217× faster | ✅ measured |
@@ -325,7 +330,7 @@ payload size via function-call dispatch; rclcpp's cost is executor
 ## Mental loop (specialist discipline)
 
 1. **Is it proven?** — ruthless test or it doesn't exist
-2. **Does it break?** — 494 Rust tests + 129 Kani proof harnesses must pass before and after
+2. **Does it break?** — 562 workspace tests + 136 Kani proof harnesses must pass before and after
 3. **Is it bounded?** — fear ≤ 5×, entropy [0,1], latency < 1 ms, lux < 100 000
 4. **Is it honest?** — every mechanism explicitly PROVEN vs EXPERIMENTAL
 5. **Is it banded?** — **no single-shot bench number in the repo**. K=10 median ± half-spread or equivalent (Spore loss bench uses N=200 internal trials). Single-number claims are suspect.

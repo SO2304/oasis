@@ -97,3 +97,84 @@ RustCrypto `ml-dsa` called directly peaks at 102 476 B, against 84 020 B through
 old `oasis_rt` function, because inlining differs. libcrux uses about half as much
 in both arrangements, so the decision holds. The figure that sizes the firmware is
 the gate: **48.7 KB of stack, 377 ms**.
+
+## 3. Hybrid authority messages over the A→B→C wire (stamp `1a9b461`)
+
+Firmware `uart_mesh` with `src/pq.rs`: the authority policy lives in two flash slots,
+there is one `OFR1` reassembly per v0B origin, and `verify_authority` runs under the
+live policy with on-chip time and stack measurement. Store-and-forward: a node never
+relays a fragment as-is. It re-originates the message under its own counters, after
+a lease reservation, and only if the message changed its state.
+
+Images (`firmware_uart_pq_{A,B,C}.uf2`): text 265 040 B on A/B (C, which also
+compiles the actuator code, 288 144 B), against 139 640 B for the E/F firmware
+`6daa0bc`. RAM statics are unchanged at 98 340 B (including the 96 KiB heap), which
+leaves about 172 KB for the stack.
+
+Fragmentation: v0B header 99 B + `OFR1` 201 B = one 300-byte frame, so a 2 526-byte
+hybrid revocation takes **14 fragments**. Host harness in `harness/`; every payload
+sent is in `payloads/` (hex, built by `pq_payloads`). The wiring is one-way
+(A.GP0→B.GP1, B.GP0→C.GP1), so A only originates and C's re-originations go nowhere.
+
+Before the campaign: status (`20_*`, which also shows that B and C restored their E/F
+ORV1 list, epoch 2, with the new 4 KiB slot), factory reset `!` on all three (`21_*`),
+strict v0B `K` (`22_*`: epoch 0, default policy, `legacy_orv1_allowed=true`).
+
+| # | What was sent (from A) | B | C | Logs |
+|---|---|---|---|---|
+| 1 | Hybrid revocation, epoch 1, 14 fragments | 14/14 reassembled, `Revocation(Applied)` epoch 1, 383.3 ms, 49 244 B stack; re-originated 14 fragments | 14/14 from `bb`, `Applied` epoch 1, 381.7 ms | `30_*` |
+| 2a | Hybrid revocation epoch 2, fragment 5 altered **after** fragmentation (`@T5`; A's v0B signature on it is valid) | 14/14 received, **`rejected_hash_mismatch`** on completion, no `AUTH`, nothing sent | nothing received | `31_*` |
+| 2b | Same message with 1 bit of the signed content flipped on the PC (byte 44), cleanly re-fragmented | reassembled, **`Rejected(BadSignature)`** in 203.3 ms (ML-DSA-44 fails first, Ed25519 not attempted), nothing sent | nothing received | `32_*` |
+| — | Liveness: status after 2a/2b | `frames=42`, `tx=14` | `frames=14` (only test 1): its silence above is B's refusal, C was listening | `33_*` |
+| 3a | **Control**: legacy Ed25519-only `ORV1`, epoch 2, before any policy change | `Applied`, relayed | `Applied` | `34_*` |
+| 3b | Hybrid `POLICY`: revocations now require the hybrid suite | `Policy { changed: true, persisted: true }`, 381.5 ms, re-originated | same, 379.9 ms | `35_*` |
+| 3c | Legacy `ORV1`, epoch 3 | **`LegacyRefused`** (`min_suite_revocation=3`), epoch stays 2, not relayed | nothing received | `36_*` |
+| 3d | Ed25519-only `OAU1` revocation, epoch 3 (1 fragment) | **`Rejected(Downgrade)`** in **4.19 ms** in total (no signature verified), not relayed | nothing received | `37_*` |
+| 3e | Hybrid revocation, epoch 3 | `Applied` epoch 3, 382.7 ms, re-originated | `Applied` epoch 3, 381.3 ms | `38_*` |
+| P | **Real power cut of B** (USB unplugged by the operator after `39_*`) | after reboot (uptime 17.8 s, `boot_id` 0→1279, frame counters reset): **epoch 3, 3 revoked, `min_suite_revocation=3`, `legacy_orv1_allowed=false`** | — | `39_*`, `40_*` |
+| P1 | Legacy `ORV1`, epoch 4, after the power cut (B back in strict mode, `41_*`) | **`LegacyRefused`**, epoch stays 3 | nothing received | `42_*` |
+| P2 | Hybrid revocation, epoch 4, after the power cut | `Applied` epoch 4, 380.9 ms; re-originated under counters 1280–1293 (lease resume 1279) | `Applied` epoch 4 (counters fresh) | `43_*` |
+
+What P shows: the epoch-3 list restored at boot is the **hybrid `OAU1` blob**, the
+newest slot, re-verified at boot with ML-DSA-44 and Ed25519 under the default policy.
+A failed restore would leave epoch 0, because the loader doesn't fall back to the
+older ORV1 slot. The raised policy also survived the cut, because both of its slots
+had been written.
+
+On-chip figures: the 8 accepted or policy verifications took **379.2–383.3 ms**
+(`verify_us`). That window includes painting and scanning the free stack. The
+downgrade case (3d: 4.19 ms in total, no signature work) bounds that overhead at
+about 4 ms, consistent with the bench's clean 377 ms (§2). Peak stack depth was
+**49 244 B** on every full verification. On the downgrade path it was 38 144 B:
+`verify_authority` reserves its frame, including inlined libcrux state, at function
+entry, so the depth is reached before the precheck refuses.
+
+Log audit: 46 logs, 756 lines, all stamped `1a9b461`, LF only. No `DROP`,
+`FRAMER_CRC_FAIL`, `FRAG_TX_FAIL`, `LEASE_FAIL` or bad-hex line in the campaign. The 5
+empty logs are C's expected silences (2a, 2b, 3c, 3d, P1). Two `RXF` lines
+(`35_policy_raise_{B,C}.log`, line 13) have one extra field: that trace prints a
+fragment's last 3 bytes, and one of them was a literal `|`. Logging artifact only.
+
+## 4. Limits
+
+- **Wired UART, not radio.** No LoRa, no loss, one fixed path, one-way wiring.
+- **Store-and-forward cost.** Each hop verifies 14 v0B fragments (~178 ms each),
+  then the gate (~380 ms), then re-signs 14 fragments (~341 ms each, T6 `v0A_sign` in
+  `../board_A_run1.log`): 14 × 178 + 380 + 14 × 341 ms ≈ 7.6 s of computation per hop
+  for one hybrid revocation. It is acceptable for rare
+  authority messages and not for orders, which is why orders stay Ed25519 only
+  (spec §1). End-to-end latency was not measured (no timestamps in the logs).
+- **DoS.** A node holding a valid v0B key can make a relay run the 380 ms gate by
+  sending well-formed fragments of a bogus message (test 2b). One reassembly per
+  origin, 2 slots in total, and revocation of the origin bound this, but nothing
+  rate-limits it yet. The per-relay prefilter is Phase 2.
+- **Kinds 2–4** (enrollment, firmware manifest, ownership) are verified, then
+  refused as `Unsupported`, until Phases 1.2–1.3.
+- **A's own policy** is not raised by sending the policy message (an originator
+  doesn't process its own messages); a real deployment provisions every node.
+- **Not proven on silicon:** a torn flash write of the policy or a revocation slot
+  during a real power cut (unit-tested with a simulated tear); the 2 MB flash layout
+  under a real firmware update.
+- `verify_us` includes about 4 ms of stack measurement; §2's 377 ms is the clean figure.
+- The ML-DSA-44 implementation is formally verified only in part (arithmetic, NTT,
+  serialization) and is pre-1.0. No external audit.

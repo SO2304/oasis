@@ -85,6 +85,15 @@ formellement), en plus des vecteurs officiels du NIST (ACVP). Le choix définiti
 fait après une **mesure comparée sur RP2040** des deux candidats principaux : on
 retient le plus sûr qui tient dans la mémoire, et on documente pourquoi.
 
+**Décision (2026-10-06, après mesure) : `libcrux-ml-dsa` sur la carte**, version
+stable **0.0.10** (2026-07-15) et non la préversion 0.0.11-pre.1 d'abord épinglée.
+Mesuré sur 3 cartes × 3 passes × K = 5 (`evidence/silicon/2026-10-06/pq/REPORT.md`) :
+vérification 198 ms et **44,8 Ko** de pile, contre 178 ms et **84,0 Ko** pour `ml-dsa`
+(102 Ko selon le site d'appel). Les deux tiennent ; la règle « le plus sûr qui tient »
+retient libcrux (vérifié formellement en partie, deux fois moins de pile), au prix
+de +11 % de temps et +101 Ko de flash. `ml-dsa` reste l'oracle des tests et le
+signataire côté PC. Les deux crates Rust sont 4 à 4,5 fois plus lents que PQClean en C.
+
 ## 5. Mesures sur RP2040
 
 Taille du firmware (avant, après), pic de pile (pile peinte d'un motif connu, puis
