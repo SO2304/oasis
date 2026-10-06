@@ -1318,7 +1318,7 @@ mod tests {
     fn broadcast_creates_valid_packet() {
         let mesh = FederatedMesh::new();
         // Empty mesh should still serialize
-        let path = "/tmp/oasis-spore-test.bin";
+        let path = &std::env::temp_dir().join("oasis-spore-test.bin").to_string_lossy().into_owned();
         mesh.save(path).unwrap();
         let data = std::fs::read(path).unwrap();
         assert!(data.len() > 6, "empty mesh should serialize");

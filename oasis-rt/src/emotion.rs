@@ -503,7 +503,7 @@ mod tests {
         emo.record_pain(&pos2, 0.3, 200);
         assert_eq!(emo.pain_count, 2);
 
-        let path = "/tmp/oasis_test_pain.bin";
+        let path = &std::env::temp_dir().join("oasis_test_pain.bin").to_string_lossy().into_owned();
         emo.save_pain(path).unwrap();
 
         let mut emo2 = EmotionalState::new();
@@ -527,7 +527,7 @@ mod tests {
 
     #[test]
     fn pain_rejects_corrupt() {
-        let path = "/tmp/oasis_test_pain_bad.bin";
+        let path = &std::env::temp_dir().join("oasis_test_pain_bad.bin").to_string_lossy().into_owned();
         std::fs::write(path, b"NOT_PAIN_DATA").unwrap();
         let mut emo = EmotionalState::new();
         assert!(emo.load_pain(path).is_err());
