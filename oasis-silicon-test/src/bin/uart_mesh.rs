@@ -1228,12 +1228,12 @@ impl Io<'_> {
 }
 
 struct Line {
-    b: [u8; 160],
+    b: [u8; 320],
     n: usize,
 }
 impl Line {
     fn new() -> Self {
-        Line { b: [0; 160], n: 0 }
+        Line { b: [0; 320], n: 0 }
     }
     fn bytes(&self) -> &[u8] {
         &self.b[..self.n]
