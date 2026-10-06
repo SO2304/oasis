@@ -27,7 +27,7 @@ ed25519-compact = { version = "2", default-features = false, features = ["x25519
 oasis-operator-key = { path = "../oasis-operator-key" }
 # Phase 1.1 bake-off only (src/bin/pq_bench.rs): the formally verified ML-DSA
 # candidate, measured against RustCrypto ml-dsa (linked through oasis-rt).
-libcrux-ml-dsa = { version = "=0.0.11-pre.1", default-features = false, features = ["mldsa44"], optional = true }
+libcrux-ml-dsa = { version = "=0.0.10", default-features = false, features = ["mldsa44"], optional = true }
 
 [features]
 default = []
