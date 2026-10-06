@@ -47,6 +47,7 @@ pub mod spore_crypto;
 pub mod timers;
 pub mod topics;
 pub mod transforms;
+pub mod tx_lease;
 // mavlink_min: MAVLink v2 parser that uses std::io::Read/Write + time.
 // MCU users typically have their own MAVLink stack tied to their UART.
 #[cfg(feature = "std")]
