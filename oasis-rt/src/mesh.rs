@@ -708,6 +708,12 @@ pub struct MeshRouter {
     /// first hop, before the signature check.
     #[cfg(feature = "mesh_v10")]
     revoked: HashSet<[u8; FP_LEN]>,
+    /// v0B strict mode: when `false` (the default for a v0B router), every
+    /// non-v0B envelope (v8/v9/v0A) is dropped. Accepting them would let an
+    /// attacker downgrade to v0A, whose payload is unsigned and whose replay
+    /// protection is RAM-only. Set to `true` only during a migration.
+    #[cfg(feature = "mesh_v10")]
+    allow_legacy: bool,
 }
 
 impl MeshRouter {
@@ -740,6 +746,8 @@ impl MeshRouter {
             counter_tracker: None,
             #[cfg(feature = "mesh_v10")]
             revoked: HashSet::new(),
+            #[cfg(feature = "mesh_v10")]
+            allow_legacy: false,
         }
     }
 
@@ -772,6 +780,8 @@ impl MeshRouter {
             counter_tracker: None,
             #[cfg(feature = "mesh_v10")]
             revoked: HashSet::new(),
+            #[cfg(feature = "mesh_v10")]
+            allow_legacy: false,
         }
     }
 
@@ -813,9 +823,9 @@ impl MeshRouter {
 
     /// v0B constructor (SPORE\x0B). Like `new_ed25519_signed`, plus a
     /// `network_id` for domain separation and a persisted per-origin counter
-    /// window for verifiable freshness. Emits/accepts v0B; a v0B router also
-    /// still speaks v0A for non-v0B magics (superset), but v0B traffic is
-    /// routed through the stricter `process_v0b` pipeline.
+    /// window for verifiable freshness. Strict by default: v8/v9/v0A envelopes
+    /// are dropped (no downgrade). `set_allow_legacy(true)` re-enables them for
+    /// a migration; v0B traffic always goes through the stricter `process_v0b`.
     #[cfg(feature = "mesh_v10")]
     pub fn new_v0b(
         my_fp: [u8; FP_LEN],
@@ -831,6 +841,14 @@ impl MeshRouter {
         r.network_id = network_id;
         r.counter_tracker = Some(crate::spore_crypto::CounterTracker::new());
         r
+    }
+
+    /// Accept (or refuse, the default) legacy v8/v9/v0A envelopes on a v0B
+    /// router. Opting in re-opens the v0A downgrade (unsigned payload,
+    /// RAM-only replay protection); use it only while migrating a fleet.
+    #[cfg(feature = "mesh_v10")]
+    pub fn set_allow_legacy(&mut self, allow: bool) {
+        self.allow_legacy = allow;
     }
 
     /// True if this router is in v0B mode.
@@ -1162,6 +1180,10 @@ impl MeshRouter {
         {
             return self.process_v0b(envelope);
         }
+        #[cfg(feature = "mesh_v10")]
+        if self.counter_tracker.is_some() && !self.allow_legacy {
+            return MeshDecision::Drop("legacy envelope rejected by strict v0B router");
+        }
         let parsed = match parse_and_verify(
             envelope,
             self.signing_key.as_ref(),
@@ -1200,6 +1222,10 @@ impl MeshRouter {
             && &envelope[..6] == SPORE_V0B_MAGIC
         {
             return self.process_v0b(&envelope);
+        }
+        #[cfg(feature = "mesh_v10")]
+        if self.counter_tracker.is_some() && !self.allow_legacy {
+            return MeshDecision::Drop("legacy envelope rejected by strict v0B router");
         }
         let parsed = match parse_and_verify(
             &envelope,

@@ -10,7 +10,7 @@
 //!
 //! Wiring chain: A.GP0→B.GP1, B.GP0→C.GP1, common GND.
 //! USB-CDC control: `o`=originate, `s`=RX status, `l`=UART0 internal self-test,
-//! `b`=reboot to BOOTSEL.
+//! `b`=reboot to BOOTSEL. `K`=strict v0B (refuse v8/v9/v0A), `k`=legacy allowed.
 
 #![no_std]
 #![no_main]
@@ -211,6 +211,10 @@ fn main() -> ! {
         MeshEdSeed(seed_for(BOARD_ID)),
         registry,
     );
+    // A v0B router is strict by default (legacy envelopes dropped, no downgrade).
+    // This test firmware also hosts the earlier v0A commands (o/R/F/T/X/N), so it
+    // boots in legacy-allowed mode; send `K` on every node before a v0B-only run.
+    router.set_allow_legacy(true);
 
     let mut io = Io { usb_dev, serial };
     let mut deframer = Deframer::new();
@@ -364,6 +368,15 @@ fn main() -> ! {
             // ── T8: flush the v0B counter window to flash (explicit lease
             //    checkpoint). Production coalesces this to ~1 write per 256 msgs;
             //    the test flushes on demand before a power-cut. Run on the relay (B).
+            // ── Strict v0B (`K`) refuses v8/v9/v0A; `k` re-allows them for the v0A commands.
+            if rx[..n].contains(&b'K') {
+                router.set_allow_legacy(false);
+                io.log("MODE", format_args!("strict_v0b=true"));
+            }
+            if rx[..n].contains(&b'k') {
+                router.set_allow_legacy(true);
+                io.log("MODE", format_args!("strict_v0b=false"));
+            }
             if rx[..n].contains(&b'P') {
                 let hi_a = router.v0b_last_seen(&fp_for("A"));
                 match router.counter_tracker_bytes() {

@@ -1088,3 +1088,41 @@ fn v0b_reorder_within_window_accept_once() {
     assert!(matches!(d.process(&e2), MeshDecision::Drop("stale counter")));
     assert!(matches!(d.process(&e3), MeshDecision::Drop("stale counter")));
 }
+
+// Attack 12: downgrade. A v0B router must not accept legacy envelopes, otherwise
+// an attacker falls back to v0A (unsigned payload, RAM-only replay protection).
+#[cfg(feature = "mesh_v10")]
+#[test]
+fn v0b_strict_router_rejects_legacy_downgrade() {
+    const STRICT: &str = "legacy envelope rejected by strict v0B router";
+    let mut v0a_origin = MeshRouter::new_ed25519_signed(fp(1), ed_seed(1), build_registry(&[]));
+    let e0a = v0a_origin.origin_wrap(b"old-v0A");
+    let mut swapped = e0a.clone();
+    let last = swapped.len() - 1;
+    swapped[last] ^= 0x01;
+    let e8 = MeshRouter::new(fp(1)).origin_wrap(b"unsigned-v8");
+    let e9 = MeshRouter::new_signed(fp(1), MeshMacKey([0x42; 32])).origin_wrap(b"v9");
+
+    let mut d = v0b_dest();
+    assert!(matches!(d.process(&e0a), MeshDecision::Drop(STRICT)), "v0A must be refused");
+    assert!(matches!(d.process(&swapped), MeshDecision::Drop(STRICT)), "payload-swapped v0A must be refused");
+    assert!(matches!(d.process(&e8), MeshDecision::Drop(STRICT)), "v8 must be refused");
+    assert!(matches!(d.process(&e9), MeshDecision::Drop(STRICT)), "v9 must be refused");
+    assert!(matches!(d.process_owned(e0a.clone()), MeshDecision::Drop(STRICT)), "process_owned must be strict too");
+    // A refused legacy envelope must not affect v0B traffic.
+    let (mut o, _) = v0b_origin_and_dest();
+    let ev = o.origin_wrap_v0b(b"v0B").unwrap();
+    assert!(matches!(d.process(&ev), MeshDecision::Arrived { .. }));
+}
+
+// Opt-in legacy mode (migration only) restores the old v0A acceptance, which is
+// exactly why it is off by default.
+#[cfg(feature = "mesh_v10")]
+#[test]
+fn v0b_allow_legacy_is_explicit_opt_in() {
+    let mut v0a_origin = MeshRouter::new_ed25519_signed(fp(1), ed_seed(1), build_registry(&[]));
+    let e0a = v0a_origin.origin_wrap(b"old-v0A");
+    let mut d = v0b_dest();
+    d.set_allow_legacy(true);
+    assert!(matches!(d.process(&e0a), MeshDecision::Arrived { .. }));
+}
