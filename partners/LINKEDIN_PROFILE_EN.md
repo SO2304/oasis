@@ -50,7 +50,7 @@ Rust · Embedded Systems · Applied Cryptography · Mesh Networking · LoRa
 >
 > 1. One of our own tamper tests passed for the wrong reason: the packet was dropped as a duplicate, not by the MAC. Fixed, re-run on all boards.
 > 2. Flipping single bits before the CRC: every flip in a signed field was rejected, but 12/50 flips in the payload were accepted. The mesh header is authenticated; payload integrity has to come from the AEAD layer.
-> 3. An Ed25519 signature costs 341 ms on a Cortex-M0+. On this MCU, signing costs more energy than sending the packet over LoRa.
+> 3. An Ed25519 signature costs 174 ms on a Cortex-M0+ (we first reported 341 ms: that figure re-derived the key on every call). On this MCU, signing costs about as much energy as sending the packet over LoRa.
 >
 > What held: RFC vectors byte-exact on chip, 3-hop relay with per-hop verification, no crash under 200 corrupted packets.
 >
@@ -83,7 +83,7 @@ je te montrerai la liste avant tout envoi.
 > Hi {first_name}, I work on per-node signed mesh for cheap sensor nodes (Rust, tested on RP2040). Curious how you handle a stolen or opened node in your deployments today. Happy to share my silicon test results if useful.
 
 **Profil LoRa / Rust (personas 4, 5)**
-> Hi {first_name}, I'm testing Ed25519 per-node signatures on a Cortex-M0+: 341 ms per sign, more energy than the LoRa TX itself. Would value your take on where that trade-off makes sense.
+> Hi {first_name}, I'm testing Ed25519 per-node signatures on a Cortex-M0+: 174 ms per sign, about the energy of a LoRa TX. Would value your take on where that trade-off makes sense.
 
 **Recherche / drones / écosystème (personas 6, 7, 10)**
 > Hi {first_name}, I built a signed multi-hop mesh kernel in Rust, validated on 3 RP2040 boards with raw logs. Looking for critical feedback and field pilots. Open to a 15-min exchange?

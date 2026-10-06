@@ -135,7 +135,7 @@ vérification v0B contre v0A. Rapporte-le. N'optimise pas.
    B doit le rejeter grâce au compteur persisté en flash. C'est aussi le **T8**
    du prompt silicium initial.
 4. **Coût sur la puce** : temps de signature et de vérification v0B (minuterie
-   matérielle, K=5), comparés à v0A (341 ms / 176 ms).
+   matérielle, K=5), comparés à v0A (≈174 ms / 178 ms avec une paire de clés en cache ; 341 ms si la clé est recalculée à chaque appel).
 
 Archive les logs bruts dans `evidence/silicon/<date>/`, avec `SHA256SUMS` calculé
 **après** l'écriture finale des fichiers (fins de ligne LF) et vérifié par

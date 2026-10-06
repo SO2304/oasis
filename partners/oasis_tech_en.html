@@ -109,9 +109,11 @@ footer { font-size: 0.8rem; color: var(--muted); border-top: 1px solid var(--lin
           <tr><th>Insider impersonation (captured node signs as another)</th><td>Per-node Ed25519 origin signature, verified at every hop (v0A)</td><td><span class="tag proven">ON SILICON</span></td></tr>
           <tr><th>Replay of captured traffic</th><td>Message-id dedup at mesh layer · monotonic counter with 128-bit sliding window at transport layer (host tests)</td><td><span class="tag proven">ON SILICON</span> <small>mesh dedup</small></td></tr>
           <tr><th>Flooding / routing loops</th><td>TTL, hop count, dedup cache (Bloom auto-reset: host tests)</td><td><span class="tag proven">ON SILICON</span></td></tr>
-          <tr><th>Eavesdropping, payload tampering</th><td>ChaCha20-Poly1305 AEAD with X25519 / Noise-KK key agreement</td><td><span class="tag proven">ON SILICON</span> <small>primitives</small></td></tr>
+          <tr><th>Payload tampering by a relay</th><td>Payload digest inside the per-node signature, checked at every hop (v0B)</td><td><span class="tag proven">ON SILICON</span></td></tr>
+          <tr><th>Eavesdropping</th><td>ChaCha20-Poly1305 AEAD with X25519 / Noise-KK key agreement</td><td><span class="tag proven">ON SILICON</span> <small>primitives</small></td></tr>
           <tr><th>Compromised node stays in the network</th><td>Operator-signed revocation envelopes</td><td><span class="tag sim">HOST TESTS</span></td></tr>
-          <tr><th>Replay after power loss (counter reset)</th><td>Persisted transmit counter</td><td><span class="tag todo">NOT VALIDATED ON SILICON</span></td></tr>
+          <tr><th>Replay after a relay reboot</th><td>Signed counter, per-origin window persisted in flash (v0B)</td><td><span class="tag proven">ON SILICON</span></td></tr>
+          <tr><th>Sender reboot (counter restarts)</th><td>Sender-side counter lease</td><td><span class="tag todo">NOT IMPLEMENTED</span></td></tr>
           <tr><th>Key extraction from a captured node</th><td>None on RP2040 (no secure boot, no flash encryption). Planned: RP2350 OTP + signed boot, or a secure element</td><td><span class="tag todo">OPEN</span></td></tr>
           <tr><th>Side channels, fault injection</th><td>Not evaluated</td><td><span class="tag todo">OPEN</span></td></tr>
           <tr><th>Post-quantum adversary</th><td>Not addressed</td><td><span class="tag todo">OPEN</span></td></tr>
@@ -168,7 +170,28 @@ footer { font-size: 0.8rem; color: var(--muted); border-top: 1px solid var(--lin
         </ul>
       </div>
     </div>
-    <p class="finding">Finding from that test: 12/50 flips landed in payload or hop fields and were accepted. The mesh layer authenticates the header only. Payload integrity requires the AEAD layer above it, which is how the stack is meant to be deployed.</p>
+    <p class="finding">Finding from that test: 12/50 flips landed in payload or hop fields and were accepted, because the v0A signature covered the header only. Fixed in v0B (below).</p>
+    <div class="two">
+      <div>
+        <h3>v0B: content, freshness and network bound into the signature</h3>
+        <ul>
+          <li>Signed: origin, counter, network id, payload length and SHA-256 of the payload</li>
+          <li>Relay state changes only after full verification</li>
+          <li>Per-origin counter window persisted in flash</li>
+          <li>Strict: legacy envelopes refused (no downgrade)</li>
+          <li>Cost over v0A: +1 % sign, +0.7 % verify on the chip</li>
+        </ul>
+      </div>
+      <div>
+        <h3>v0B on silicon (2026-10-06)</h3>
+        <ul>
+          <li>Pre-CRC single-bit flips: 0 accepted of 147 logged (v0A: 12/50)</li>
+          <li>Payload swapped by a relay, signature kept: dropped, genuine message still delivered</li>
+          <li>Relay power-cut: counter window restored from flash, old counter refused</li>
+          <li>Pending: re-run in strict mode, byte-exact replay, sender counter lease</li>
+        </ul>
+      </div>
+    </div>
   </section>
 
   <section aria-labelledby="s5">
@@ -178,7 +201,7 @@ footer { font-size: 0.8rem; color: var(--muted); border-top: 1px solid var(--lin
         <thead><tr><th>Operation</th><th class="n">RP2040 (measured)</th><th class="n">x86 host</th><th>Implication</th></tr></thead>
         <tbody>
           <tr><th>Mesh wrap, keyed MAC</th><td class="n">0.73 ms</td><td class="n">431 ns</td><td>Routine traffic</td></tr>
-          <tr><th>Per-node signature (sign)</th><td class="n">341 ms</td><td class="n">251 µs</td><td>Low-rate authority messages only</td></tr>
+          <tr><th>Per-node signature (sign)</th><td class="n">174 ms</td><td class="n">251 µs</td><td>Cached keypair. Low-rate authority messages only</td></tr>
           <tr><th>Per-node signature (verify)</th><td class="n">176 ms</td><td class="n">135 µs</td><td>Per hop, per signed message</td></tr>
           <tr><th>Safety-gate evaluation</th><td class="n">3.2 ms</td><td class="n">331 ns</td><td>Soft-float on M0+ (no FPU)</td></tr>
         </tbody>
@@ -195,7 +218,7 @@ footer { font-size: 0.8rem; color: var(--muted); border-top: 1px solid var(--lin
           <tr><th>Flash</th><td class="n">119 KB</td><td>Full test firmware, linked ELF</td></tr>
           <tr><th>RAM</th><td class="n">~34 KB / router</td><td>Heap-backed; requires an allocator. 160 KB heap reserved in the test firmware. Not suitable for 32–64 KB RAM parts without a reduced dedup window.</td></tr>
           <tr><th>Sleep current</th><td class="n">not measured</td><td>No low-power mode implemented yet</td></tr>
-          <tr><th>Energy per signed message</th><td class="n">≈ 28 mJ (est.)</td><td>Estimate from datasheet active current × measured sign time. Higher than one LoRa SF7 transmission (≈ 16 mJ, est.). Signing, not the radio, dominates the energy budget on this MCU.</td></tr>
+          <tr><th>Energy per signed message</th><td class="n">≈ 14 mJ (est.)</td><td>Estimate from datasheet active current × measured sign time (174 ms). Same order as one LoRa SF7 transmission (≈ 16 mJ, est.): on this MCU, signing costs about as much energy as sending.</td></tr>
         </tbody>
       </table>
     </div>
