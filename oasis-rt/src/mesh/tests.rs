@@ -886,3 +886,205 @@ fn different_origins_produce_different_msg_ids() {
     let h2 = parse_envelope(&e2).unwrap();
     assert_ne!(h1.msg_id, h2.msg_id, "different origins with same counter must hash to different msg_ids");
 }
+
+// ───────────────────────── v0B security tests (SPORE\x0B) ─────────────────────────
+// One test per attack in docs/MESH_V0B_SPEC.md §6. O = origin fp(1), D = dest/
+// relay fp(2); both on NET_A, D knows O's pubkey.
+
+#[cfg(feature = "mesh_v10")]
+const NET_A: [u8; MESH_V0B_NETWORK_LEN] = [0xA1, 0xA2, 0xA3, 0xA4, 0xA5, 0xA6, 0xA7, 0xA8];
+#[cfg(feature = "mesh_v10")]
+const NET_B: [u8; MESH_V0B_NETWORK_LEN] = [0xB1, 0xB2, 0xB3, 0xB4, 0xB5, 0xB6, 0xB7, 0xB8];
+
+#[cfg(feature = "mesh_v10")]
+fn v0b_dest() -> MeshRouter {
+    MeshRouter::new_v0b(fp(2), NET_A, ed_seed(2), build_registry(&[(fp(1), &ed_seed(1))]))
+}
+#[cfg(feature = "mesh_v10")]
+fn v0b_origin_and_dest() -> (MeshRouter, MeshRouter) {
+    (MeshRouter::new_v0b(fp(1), NET_A, ed_seed(1), build_registry(&[])), v0b_dest())
+}
+
+// Attack 1: flip every bit of every SIGNED byte (all except unsigned ttl/hops).
+#[cfg(feature = "mesh_v10")]
+#[test]
+fn v0b_bitflip_each_signed_byte_rejected() {
+    let (mut o, _) = v0b_origin_and_dest();
+    let env = o.origin_wrap_v0b(b"payload!").unwrap();
+    // Sanity: the pristine envelope is accepted by a fresh dest.
+    assert!(matches!(v0b_dest().process(&env), MeshDecision::Arrived { forward: true, .. }));
+    let unsigned = [30usize, 31, 32]; // ttl, hops — deliberately not signed
+    let mut checked = 0u32;
+    for idx in 0..env.len() {
+        if unsigned.contains(&idx) {
+            continue;
+        }
+        for bit in 0..8u8 {
+            let mut bad = env.clone();
+            bad[idx] ^= 1 << bit;
+            let mut d = v0b_dest();
+            match d.process(&bad) {
+                MeshDecision::Drop(_) => checked += 1,
+                MeshDecision::Arrived { .. } => {
+                    panic!("flip byte {} bit {} was accepted but must be rejected", idx, bit)
+                }
+            }
+            assert_eq!(d.v0b_last_seen(&fp(1)), 0, "a rejected flip advanced the window");
+        }
+    }
+    assert!(checked > 0);
+}
+
+// Attack 2: relay swaps the payload, keeps the signature (suppression attack).
+#[cfg(feature = "mesh_v10")]
+#[test]
+fn v0b_content_swap_rejected_real_still_passes() {
+    let (mut o, mut d) = v0b_origin_and_dest();
+    let real = o.origin_wrap_v0b(b"REAL").unwrap();
+    let mut forged = real.clone();
+    let n = forged.len();
+    forged[n - 4..].copy_from_slice(b"FAKE"); // same length, different bytes
+    assert!(matches!(d.process(&forged), MeshDecision::Drop("bad mesh signature")));
+    assert_eq!(d.v0b_last_seen(&fp(1)), 0, "forged content must not advance the window");
+    // The real message (same counter) still passes — v0A suppression defeated.
+    assert!(matches!(d.process(&real), MeshDecision::Arrived { forward: true, .. }));
+    assert_eq!(d.v0b_last_seen(&fp(1)), 1);
+}
+
+// Attack 3: attacker signs with its own key but claims origin_fp = fp(1).
+#[cfg(feature = "mesh_v10")]
+#[test]
+fn v0b_forged_origin_rejected() {
+    let mut attacker = MeshRouter::new_v0b(fp(1), NET_A, ed_seed(99), build_registry(&[]));
+    let env = attacker.origin_wrap_v0b(b"spoof").unwrap();
+    let mut d = v0b_dest(); // maps fp(1) -> real pubkey ed_seed(1), not the attacker's
+    assert!(matches!(d.process(&env), MeshDecision::Drop("bad mesh signature")));
+}
+
+// Attack 4: immediate replay.
+#[cfg(feature = "mesh_v10")]
+#[test]
+fn v0b_immediate_replay_rejected() {
+    let (mut o, mut d) = v0b_origin_and_dest();
+    let env = o.origin_wrap_v0b(b"once").unwrap();
+    assert!(matches!(d.process(&env), MeshDecision::Arrived { .. }));
+    assert!(matches!(d.process(&env), MeshDecision::Drop("stale counter")));
+}
+
+// Attack 5: replay after a relay reboot (state restored from persistence).
+#[cfg(feature = "mesh_v10")]
+#[test]
+fn v0b_replay_after_reboot_rejected() {
+    let mut o = MeshRouter::new_v0b(fp(1), NET_A, ed_seed(1), build_registry(&[]));
+    let e1 = o.origin_wrap_v0b(b"a").unwrap();
+    let e2 = o.origin_wrap_v0b(b"b").unwrap();
+    let e3 = o.origin_wrap_v0b(b"c").unwrap();
+    let mut d = v0b_dest();
+    for e in [&e1, &e2, &e3] {
+        assert!(matches!(d.process(e), MeshDecision::Arrived { .. }));
+    }
+    let saved = d.counter_tracker_bytes().unwrap();
+
+    // Reboot WITH restore -> the replay of e2 is rejected.
+    let mut d_rebooted = v0b_dest();
+    d_rebooted.restore_counter_tracker(&saved).unwrap();
+    assert!(
+        matches!(d_rebooted.process(&e2), MeshDecision::Drop(_)),
+        "persisted window must reject the post-reboot replay"
+    );
+    // Control: WITHOUT restore the replay slips through — this is exactly the
+    // v0A defect that persistence closes.
+    let mut d_amnesiac = v0b_dest();
+    assert!(matches!(d_amnesiac.process(&e2), MeshDecision::Arrived { .. }));
+}
+
+// Attack 6: replay after a Bloom reset — the counter window is independent of it.
+#[cfg(feature = "mesh_v10")]
+#[test]
+fn v0b_replay_after_bloom_reset_rejected() {
+    let (mut o, mut d) = v0b_origin_and_dest();
+    let e1 = o.origin_wrap_v0b(b"keep").unwrap();
+    assert!(matches!(d.process(&e1), MeshDecision::Arrived { .. }));
+    d.bloom_reset();
+    assert!(matches!(d.process(&e1), MeshDecision::Drop("stale counter")));
+}
+
+// Attack 7: message from another network_id — rejected before the signature.
+#[cfg(feature = "mesh_v10")]
+#[test]
+fn v0b_foreign_network_rejected() {
+    let mut o = MeshRouter::new_v0b(fp(1), NET_A, ed_seed(1), build_registry(&[]));
+    let env = o.origin_wrap_v0b(b"hi").unwrap();
+    // Dest on NET_B; it even knows fp(1), but the network filter rejects first.
+    let mut d = MeshRouter::new_v0b(fp(2), NET_B, ed_seed(2), build_registry(&[(fp(1), &ed_seed(1))]));
+    assert!(matches!(d.process(&env), MeshDecision::Drop("foreign network")));
+    assert_eq!(d.v0b_last_seen(&fp(1)), 0);
+}
+
+// Attack 8: revoked origin — rejected before the signature.
+#[cfg(feature = "mesh_v10")]
+#[test]
+fn v0b_revoked_origin_rejected() {
+    let (mut o, mut d) = v0b_origin_and_dest();
+    let env = o.origin_wrap_v0b(b"cmd").unwrap();
+    d.revoke(fp(1));
+    assert!(matches!(d.process(&env), MeshDecision::Drop("origin revoked")));
+    assert_eq!(d.v0b_last_seen(&fp(1)), 0);
+}
+
+// Attack 9: ttl/hops inflated by a relay — bounded on receipt.
+#[cfg(feature = "mesh_v10")]
+#[test]
+fn v0b_ttl_inflation_bounded() {
+    let (mut o, mut d) = v0b_origin_and_dest();
+    let base = o.origin_wrap_v0b_with_ttl(b"x", 2).unwrap();
+    let mut inflated = base.clone();
+    inflated[30] = 200;
+    assert!(matches!(d.process(&inflated), MeshDecision::Drop("ttl/hops out of range")));
+    let mut hops_bad = base.clone();
+    hops_bad[31..33].copy_from_slice(&200u16.to_le_bytes());
+    assert!(matches!(d.process(&hops_bad), MeshDecision::Drop("ttl/hops out of range")));
+    let mut sum_bad = base.clone();
+    sum_bad[30] = 5;
+    sum_bad[31..33].copy_from_slice(&5u16.to_le_bytes());
+    assert!(matches!(d.process(&sum_bad), MeshDecision::Drop("ttl/hops out of range")));
+    // None of the rejected variants advanced state.
+    assert_eq!(d.v0b_last_seen(&fp(1)), 0);
+    // Honest bound: an IN-range ttl is accepted, but accept-once means the same
+    // (origin,counter) cannot be re-delivered even with a reset ttl.
+    assert!(matches!(d.process(&base), MeshDecision::Arrived { .. }));
+    assert!(matches!(d.process(&base), MeshDecision::Drop("stale counter")));
+}
+
+// Attack 10: an invalid message followed by the real one — state not polluted.
+#[cfg(feature = "mesh_v10")]
+#[test]
+fn v0b_invalid_then_valid_accepted() {
+    let (mut o, mut d) = v0b_origin_and_dest();
+    let real = o.origin_wrap_v0b(b"data").unwrap();
+    let mut bad = real.clone();
+    bad[40] ^= 0x01; // corrupt a signature byte
+    assert!(matches!(d.process(&bad), MeshDecision::Drop("bad mesh signature")));
+    assert_eq!(d.v0b_last_seen(&fp(1)), 0, "invalid message polluted state");
+    assert!(matches!(d.process(&real), MeshDecision::Arrived { .. }));
+    assert_eq!(d.v0b_last_seen(&fp(1)), 1);
+}
+
+// Attack 11: reorder within the 128-position window — each accepted exactly once.
+#[cfg(feature = "mesh_v10")]
+#[test]
+fn v0b_reorder_within_window_accept_once() {
+    let mut o = MeshRouter::new_v0b(fp(1), NET_A, ed_seed(1), build_registry(&[]));
+    let e1 = o.origin_wrap_v0b(b"1").unwrap();
+    let e2 = o.origin_wrap_v0b(b"2").unwrap();
+    let e3 = o.origin_wrap_v0b(b"3").unwrap();
+    let mut d = v0b_dest();
+    // Out of order: 3, 1, 2 — all accepted once.
+    assert!(matches!(d.process(&e3), MeshDecision::Arrived { .. }));
+    assert!(matches!(d.process(&e1), MeshDecision::Arrived { .. }));
+    assert!(matches!(d.process(&e2), MeshDecision::Arrived { .. }));
+    // Any re-delivery is now stale.
+    assert!(matches!(d.process(&e1), MeshDecision::Drop("stale counter")));
+    assert!(matches!(d.process(&e2), MeshDecision::Drop("stale counter")));
+    assert!(matches!(d.process(&e3), MeshDecision::Drop("stale counter")));
+}
