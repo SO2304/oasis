@@ -272,7 +272,7 @@ fn main() -> ! {
 
     // Phase 1.3: boot guard + init breadcrumbs (update.rs), before anything that could hang.
     #[cfg(feature = "bootloaded")]
-    let (guard_failed, guard_prev_stage) = update::boot_guard_enter();
+    let (guard_failed, _) = update::boot_guard_enter();
     #[cfg(feature = "bootloaded")]
     update::crumb(0xA1);
     let mut pac = pac::Peripherals::take().unwrap();
@@ -689,14 +689,13 @@ fn main() -> ! {
                 io.log(
                     "FW_STATUS",
                     format_args!(
-                        "version={},floor={},boot={:?},bootloader_state={},fp={},guard_failed_before={},prev_boot_stage={}",
+                        "version={},floor={},boot={:?},bootloader_state={},fp={},guard_failed_before={}",
                         update::FW_VERSION,
                         update::floor(),
                         fw_boot,
                         update::state_name(&mut fw_up),
                         Hx(&my_fp),
-                        guard_failed,
-                        guard_prev_stage
+                        guard_failed
                     ),
                 );
             }
