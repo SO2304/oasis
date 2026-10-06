@@ -217,6 +217,10 @@ fn main() -> ! {
     let mut rx_total: u32 = 0;
     let mut frame_total: u32 = 0;
     let mut crc_fails: u32 = 0;
+    // T8: remember the last v0B envelope A originated, so it can be replayed
+    // byte-for-byte across a reboot of the relay (same counter => must be rejected).
+    let mut last_v0b = [0u8; MAX_ENV];
+    let mut last_v0b_len = 0usize;
     io.log("BOOT", format_args!("uart-mesh fp={} UART0 tx=GP0 rx=GP1 @115200", BOARD_ID));
     // T8: restore the persisted v0B counter window so a post-reboot replay is
     // rejected. Must happen BEFORE processing any v0B envelope.
@@ -247,6 +251,24 @@ fn main() -> ! {
                 if let Some(env) = router.origin_wrap_v0b(b"OASIS-v0b-hello") {
                     send_framed(&mut uart0, &env);
                     io.log("V0B_ORIGINATED", format_args!("counter={},len={}", router.tx_counter(), env.len()));
+                }
+            }
+            // ── T8: originate a v0B envelope AND store its exact bytes for a
+            //    later byte-for-byte replay (across a reboot of B). Run on A.
+            if rx[..n].contains(&b'Z') {
+                if let Some(env) = router.origin_wrap_v0b(b"OASIS-v0b-T8") {
+                    last_v0b_len = env.len().min(MAX_ENV);
+                    last_v0b[..last_v0b_len].copy_from_slice(&env[..last_v0b_len]);
+                    send_framed(&mut uart0, &env);
+                    io.log("V0B_T8_TX", format_args!("counter={},len={}", router.tx_counter(), env.len()));
+                }
+            }
+            // ── T8: replay the stored envelope byte-for-byte (same counter). After
+            //    B reboots with its persisted window, B must DROP this. Run on A.
+            if rx[..n].contains(&b'z') {
+                if last_v0b_len > 0 {
+                    send_framed(&mut uart0, &last_v0b[..last_v0b_len]);
+                    io.log("V0B_T8_REPLAY", format_args!("len={}", last_v0b_len));
                 }
             }
             // ── v0B pre-CRC bit-flip sweep (50): flip ONE bit before framing so
