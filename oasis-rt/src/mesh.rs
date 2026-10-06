@@ -265,13 +265,7 @@ pub fn mesh_v0b_payload_digest(payload: &[u8]) -> [u8; 32] {
 /// `"OASIS-MESH-v0B" || network_id || origin_fp || counter || payload_len || SHA-256(payload)`.
 /// Content, freshness (counter) and network are all bound here.
 #[cfg(feature = "mesh_v10")]
-pub fn mesh_v0b_signed_preimage(
-    network_id: [u8; MESH_V0B_NETWORK_LEN],
-    origin_fp: [u8; FP_LEN],
-    counter: u64,
-    payload_len: u16,
-    payload_digest: &[u8; 32],
-) -> [u8; MESH_V0B_PREIMAGE_LEN] {
+pub fn mesh_v0b_signed_preimage(network_id: [u8; MESH_V0B_NETWORK_LEN], origin_fp: [u8; FP_LEN], counter: u64, payload_len: u16, payload_digest: &[u8; 32]) -> [u8; MESH_V0B_PREIMAGE_LEN] {
     let mut buf = [0u8; MESH_V0B_PREIMAGE_LEN];
     buf[0..14].copy_from_slice(MESH_V0B_DOMAIN);
     buf[14..22].copy_from_slice(&network_id);
@@ -284,13 +278,7 @@ pub fn mesh_v0b_signed_preimage(
 
 /// Sign a v0B envelope with a pre-derived keypair (hot path).
 #[cfg(feature = "mesh_v10")]
-pub fn mesh_v0b_sign_with_kp(
-    kp: &ed25519_compact::KeyPair,
-    network_id: [u8; MESH_V0B_NETWORK_LEN],
-    origin_fp: [u8; FP_LEN],
-    counter: u64,
-    payload: &[u8],
-) -> [u8; MESH_ED_SIG_LEN] {
+pub fn mesh_v0b_sign_with_kp(kp: &ed25519_compact::KeyPair, network_id: [u8; MESH_V0B_NETWORK_LEN], origin_fp: [u8; FP_LEN], counter: u64, payload: &[u8]) -> [u8; MESH_ED_SIG_LEN] {
     let digest = mesh_v0b_payload_digest(payload);
     let pre = mesh_v0b_signed_preimage(network_id, origin_fp, counter, payload.len() as u16, &digest);
     let sig = kp.sk.sign(&pre, None);
@@ -302,14 +290,7 @@ pub fn mesh_v0b_sign_with_kp(
 /// Verify a v0B signature. Recomputes the payload digest, so any change to the
 /// payload, network_id, origin_fp, counter or payload_len fails verification.
 #[cfg(feature = "mesh_v10")]
-pub fn mesh_v0b_verify(
-    pubkey: &MeshEdPub,
-    network_id: [u8; MESH_V0B_NETWORK_LEN],
-    origin_fp: [u8; FP_LEN],
-    counter: u64,
-    payload: &[u8],
-    got: &[u8; MESH_ED_SIG_LEN],
-) -> bool {
+pub fn mesh_v0b_verify(pubkey: &MeshEdPub, network_id: [u8; MESH_V0B_NETWORK_LEN], origin_fp: [u8; FP_LEN], counter: u64, payload: &[u8], got: &[u8; MESH_ED_SIG_LEN]) -> bool {
     let digest = mesh_v0b_payload_digest(payload);
     let pre = mesh_v0b_signed_preimage(network_id, origin_fp, counter, payload.len() as u16, &digest);
     let pk = match ed25519_compact::PublicKey::from_slice(&pubkey.0) {
@@ -827,12 +808,7 @@ impl MeshRouter {
     /// are dropped (no downgrade). `set_allow_legacy(true)` re-enables them for
     /// a migration; v0B traffic always goes through the stricter `process_v0b`.
     #[cfg(feature = "mesh_v10")]
-    pub fn new_v0b(
-        my_fp: [u8; FP_LEN],
-        network_id: [u8; MESH_V0B_NETWORK_LEN],
-        seed: MeshEdSeed,
-        registry: MeshPubRegistry,
-    ) -> Self {
+    pub fn new_v0b(my_fp: [u8; FP_LEN], network_id: [u8; MESH_V0B_NETWORK_LEN], seed: MeshEdSeed, registry: MeshPubRegistry) -> Self {
         let s = ed25519_compact::Seed::from_slice(&seed.0).expect("bad ed25519 seed in new_v0b — 32 bytes required");
         let kp = ed25519_compact::KeyPair::from_seed(s);
         let mut r = Self::new(my_fp);
@@ -1174,10 +1150,7 @@ impl MeshRouter {
     /// 2× (inner copy + freshly-built forward envelope).
     pub fn process(&mut self, envelope: &[u8]) -> MeshDecision {
         #[cfg(feature = "mesh_v10")]
-        if self.counter_tracker.is_some()
-            && envelope.len() >= 6
-            && &envelope[..6] == SPORE_V0B_MAGIC
-        {
+        if self.counter_tracker.is_some() && envelope.len() >= 6 && &envelope[..6] == SPORE_V0B_MAGIC {
             return self.process_v0b(envelope);
         }
         #[cfg(feature = "mesh_v10")]
@@ -1217,10 +1190,7 @@ impl MeshRouter {
     /// For ProcessLocalOnly case, the envelope is returned unchanged.
     pub fn process_owned(&mut self, mut envelope: Vec<u8>) -> MeshDecision {
         #[cfg(feature = "mesh_v10")]
-        if self.counter_tracker.is_some()
-            && envelope.len() >= 6
-            && &envelope[..6] == SPORE_V0B_MAGIC
-        {
+        if self.counter_tracker.is_some() && envelope.len() >= 6 && &envelope[..6] == SPORE_V0B_MAGIC {
             return self.process_v0b(&envelope);
         }
         #[cfg(feature = "mesh_v10")]
@@ -1289,10 +1259,7 @@ impl MeshRouter {
             None => return MeshDecision::Drop("unknown sender"),
         };
         // 4. ttl/hops/length sanity (unsigned fields bounded here).
-        if hdr.ttl > MESH_V0B_MAX_TTL
-            || hdr.hops > MESH_V0B_MAX_TTL as u16
-            || (hdr.ttl as u16).saturating_add(hdr.hops) > MESH_V0B_MAX_TTL as u16
-        {
+        if hdr.ttl > MESH_V0B_MAX_TTL || hdr.hops > MESH_V0B_MAX_TTL as u16 || (hdr.ttl as u16).saturating_add(hdr.hops) > MESH_V0B_MAX_TTL as u16 {
             return MeshDecision::Drop("ttl/hops out of range");
         }
         let payload = &envelope[MESH_V0B_HEADER_LEN..];
@@ -1310,21 +1277,14 @@ impl MeshRouter {
         // 7. authoritative freshness update — the FIRST and ONLY state mutation.
         match self.counter_tracker.as_mut().unwrap().check_and_update(hdr.origin_fp, hdr.counter) {
             Ok(()) => {}
-            Err("replay detected (bit set in sliding window)") => {
-                return MeshDecision::Drop("replay detected")
-            }
+            Err("replay detected (bit set in sliding window)") => return MeshDecision::Drop("replay detected"),
             Err(_) => return MeshDecision::Drop("stale counter"),
         }
 
         let msg_id = origin_msg_id(hdr.origin_fp, hdr.counter);
         // 8. forward / terminal decision (ttl/hops are the only mutated bytes).
         if hdr.ttl == 0 {
-            return MeshDecision::Arrived {
-                envelope: envelope.to_vec(),
-                msg_id,
-                hops_seen: hdr.hops,
-                forward: false,
-            };
+            return MeshDecision::Arrived { envelope: envelope.to_vec(), msg_id, hops_seen: hdr.hops, forward: false };
         }
         let mut out = envelope.to_vec();
         out[30] = hdr.ttl - 1;

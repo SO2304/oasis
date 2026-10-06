@@ -138,11 +138,7 @@ fn lease_no_counter_reuse_over_10000_random_reboots() {
         for _ in 0..burst {
             // ~2 % of durable writes are torn by a power loss.
             if rng.upto(50) == 0 {
-                st.io.tear_next = Some(if rng.upto(2) == 0 {
-                    Tear::Erased
-                } else {
-                    Tear::Partial(rng.upto(TX_LEASE_RECORD_LEN as u64) as usize)
-                });
+                st.io.tear_next = Some(if rng.upto(2) == 0 { Tear::Erased } else { Tear::Partial(rng.upto(TX_LEASE_RECORD_LEN as u64) as usize) });
             }
             match l.next(&mut st) {
                 Some(c) => {

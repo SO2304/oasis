@@ -188,12 +188,7 @@ pub fn is_superset(a: &[Fp], b: &[Fp]) -> bool {
 /// `Applied`; on every other outcome the caller's state is untouched. The caller
 /// then persists the new state (step 6) BEFORE applying it to the router (step 7)
 /// and forwarding the carrying envelope once (step 8).
-pub fn revocation_transition(
-    state: &RevState,
-    my_network: &[u8; 8],
-    p: &ParsedRevocation,
-    sig_ok: bool,
-) -> (RevDecision, Option<RevState>) {
+pub fn revocation_transition(state: &RevState, my_network: &[u8; 8], p: &ParsedRevocation, sig_ok: bool) -> (RevDecision, Option<RevState>) {
     if p.network_id != *my_network {
         return (RevDecision::Reject(RevReject::WrongNetwork), None);
     }

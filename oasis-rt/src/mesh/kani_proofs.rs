@@ -1089,10 +1089,7 @@ fn proof_v0b_preimage_binds_network() {
 #[cfg(feature = "mesh_v10")]
 #[kani::proof]
 fn proof_v0b_preimage_domain_separated_and_consistent() {
-    assert_eq!(
-        MESH_V0B_HEADER_LEN,
-        6 + MESH_V0B_NETWORK_LEN + FP_LEN + 8 + 1 + 2 + 2 + MESH_ED_SIG_LEN
-    );
+    assert_eq!(MESH_V0B_HEADER_LEN, 6 + MESH_V0B_NETWORK_LEN + FP_LEN + 8 + 1 + 2 + 2 + MESH_ED_SIG_LEN);
     assert_eq!(MESH_V0B_PREIMAGE_LEN, 14 + MESH_V0B_NETWORK_LEN + FP_LEN + 8 + 2 + 32);
     let net: [u8; MESH_V0B_NETWORK_LEN] = kani::any();
     let fpr: [u8; FP_LEN] = kani::any();

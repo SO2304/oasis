@@ -23,7 +23,16 @@ fn ok() -> GateInput {
 }
 
 fn cmd(seq: u32) -> ActCommand {
-    ActCommand { actuator_id: 1, cmd_seq: seq, boot_id: 7, deadline_ms: 3_000, force: 1.0, torque: 0.5, velocity: 0.2, pos: [0.0, 0.0, 1.0] }
+    ActCommand {
+        actuator_id: 1,
+        cmd_seq: seq,
+        boot_id: 7,
+        deadline_ms: 3_000,
+        force: 1.0,
+        torque: 0.5,
+        velocity: 0.2,
+        pos: [0.0, 0.0, 1.0],
+    }
 }
 
 #[test]
@@ -63,10 +72,7 @@ fn act_wrong_boot_id() {
 
 #[test]
 fn act_far_future_deadline() {
-    assert_eq!(
-        actuation_decision(&GateInput { deadline_ms: 1_000 + MAX_VALIDITY_MS + 1, ..ok() }),
-        Decision::Reject(Reason::Expired)
-    );
+    assert_eq!(actuation_decision(&GateInput { deadline_ms: 1_000 + MAX_VALIDITY_MS + 1, ..ok() }), Decision::Reject(Reason::Expired));
 }
 
 #[test]
@@ -116,11 +122,7 @@ fn act_nan_setpoint_rejected() {
     let raw = clamp_command(f64::NAN, 0.0, 0.0, &[f64::NAN, 0.0, 0.0], &k);
     assert!(limits_ok(&raw), "clamp_command raises no flag on NaN (fail-open)");
     // The gate's check closes it.
-    for bad in [
-        ActCommand { force: f32::NAN, ..cmd(1) },
-        ActCommand { velocity: f32::INFINITY, ..cmd(1) },
-        ActCommand { pos: [0.0, f32::NAN, 0.0], ..cmd(1) },
-    ] {
+    for bad in [ActCommand { force: f32::NAN, ..cmd(1) }, ActCommand { velocity: f32::INFINITY, ..cmd(1) }, ActCommand { pos: [0.0, f32::NAN, 0.0], ..cmd(1) }] {
         assert!(!command_within_limits(&bad, &k));
     }
 }

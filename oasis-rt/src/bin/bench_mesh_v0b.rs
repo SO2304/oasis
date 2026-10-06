@@ -11,10 +11,7 @@
 //! K=10 repeats; median ns/op + (min-max) + half-spread %. Single laptop,
 //! release, unloaded — not an A/B rig.
 
-use oasis_rt::mesh::{
-    mesh_v0b_verify, mesh_v10_pubkey_from_seed, mesh_v10_verify, MeshEdSeed, MeshPubRegistry,
-    MeshRouter, MESH_ED_SIG_LEN,
-};
+use oasis_rt::mesh::{mesh_v0b_verify, mesh_v10_pubkey_from_seed, mesh_v10_verify, MeshEdSeed, MeshPubRegistry, MeshRouter, MESH_ED_SIG_LEN};
 use std::time::Instant;
 
 const K_REPEATS: usize = 10;
@@ -29,10 +26,7 @@ fn median_min_max(samples: &mut [f64]) -> (f64, f64, f64) {
 fn report(label: &str, samples: &mut [f64]) {
     let (median, min, max) = median_min_max(samples);
     let half = (max - min) / (2.0 * median) * 100.0;
-    println!(
-        "  {:<44} {:>9.0} ns/op  ({:>9.0}-{:>9.0})  ±{:>4.1}%  {:>10.0} ops/s",
-        label, median, min, max, half, 1e9 / median
-    );
+    println!("  {:<44} {:>9.0} ns/op  ({:>9.0}-{:>9.0})  ±{:>4.1}%  {:>10.0} ops/s", label, median, min, max, half, 1e9 / median);
 }
 
 fn bench<F: FnMut() -> f64>(mut op: F) -> Vec<f64> {

@@ -988,10 +988,7 @@ fn v0b_replay_after_reboot_rejected() {
     // Reboot WITH restore -> the replay of e2 is rejected.
     let mut d_rebooted = v0b_dest();
     d_rebooted.restore_counter_tracker(&saved).unwrap();
-    assert!(
-        matches!(d_rebooted.process(&e2), MeshDecision::Drop(_)),
-        "persisted window must reject the post-reboot replay"
-    );
+    assert!(matches!(d_rebooted.process(&e2), MeshDecision::Drop(_)), "persisted window must reject the post-reboot replay");
     // Control: WITHOUT restore the replay slips through — this is exactly the
     // v0A defect that persistence closes.
     let mut d_amnesiac = v0b_dest();

@@ -19,7 +19,9 @@ fn hex(b: &[u8]) -> String {
 }
 
 fn op_pub() -> [u8; 32] {
-    let kp = ed25519_compact::KeyPair::from_seed(ed25519_compact::Seed::from_slice(&OPERATOR_SEED).unwrap());
+    let kp = ed25519_compact::KeyPair::from_seed(
+        ed25519_compact::Seed::from_slice(&OPERATOR_SEED).unwrap(),
+    );
     let mut p = [0u8; 32];
     p.copy_from_slice(kp.pk.as_ref());
     p
