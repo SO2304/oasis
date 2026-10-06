@@ -177,6 +177,48 @@ pub fn raise_floor() -> bool {
     target == f || floor_store().store(target)
 }
 
+// ── boot guard: never strand a board ─────────────────────────────────────────
+// Watchdog SCRATCH2/3 persist across soft and watchdog resets (the bootrom's USB
+// boot uses SCRATCH0/1 and 4..7). SCRATCH2 counts boots that did not reach the main
+// loop; after two in a row the third goes to BOOTSEL, so a broken image can always
+// be reflashed over USB without touching the board. SCRATCH3 = last init stage.
+const GUARD_MAGIC: u32 = 0x0A5E_0000;
+
+fn wd() -> &'static rp2040_hal::pac::watchdog::RegisterBlock {
+    unsafe { &*rp2040_hal::pac::WATCHDOG::ptr() }
+}
+
+/// First thing in `main`: returns (failed boots before this one, stage the previous
+/// boot reached).
+pub fn boot_guard_enter() -> (u32, u32) {
+    let s2 = wd().scratch2().read().bits();
+    let prev_stage = wd().scratch3().read().bits();
+    let failed = if s2 & 0xFFFF_0000 == GUARD_MAGIC {
+        s2 & 0xFFFF
+    } else {
+        0
+    };
+    if failed >= 2 {
+        wd().scratch2().write(|w| unsafe { w.bits(0) });
+        rp2040_hal::rom_data::reset_to_usb_boot(0, 0);
+    }
+    wd().scratch2()
+        .write(|w| unsafe { w.bits(GUARD_MAGIC | (failed + 1)) });
+    wd().scratch3().write(|w| unsafe { w.bits(1) });
+    (failed, prev_stage)
+}
+
+/// Record the init stage reached (read back by the next boot).
+pub fn stage(n: u32) {
+    wd().scratch3().write(|w| unsafe { w.bits(n) });
+}
+
+/// The main loop is running: this boot counts as good.
+pub fn boot_guard_ok() {
+    wd().scratch2().write(|w| unsafe { w.bits(0) });
+    stage(100);
+}
+
 // ── boot: confirm a freshly swapped image ────────────────────────────────────
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BootOutcome {

@@ -22,7 +22,14 @@ const FLASH_SIZE: usize = 2 * 1024 * 1024;
 
 #[entry]
 fn main() -> ! {
-    let p = embassy_rp::init(Default::default());
+    // Leave the clocks close to their power-on state: ring oscillator only, XOSC and
+    // both PLLs untouched. The application (rp2040-hal) then initialises its clocks
+    // exactly as after a cold boot. With the default crystal + PLL config the first
+    // boot of the application under this bootloader never reached USB (2026-10-06,
+    // evidence/silicon/2026-10-06/fwupdate/).
+    let p = embassy_rp::init(embassy_rp::config::Config::new(
+        embassy_rp::clocks::ClockConfig::rosc(),
+    ));
 
     let flash = WatchdogFlash::<FLASH_SIZE>::start(p.FLASH, p.WATCHDOG, Duration::from_secs(8));
     let flash = Mutex::new(RefCell::new(flash));

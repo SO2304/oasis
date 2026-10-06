@@ -240,6 +240,9 @@ fn main() -> ! {
         unsafe { HEAP.init(core::ptr::addr_of_mut!(HEAP_MEM) as usize, HEAP_SIZE) }
     }
 
+    // Phase 1.3: boot guard + init breadcrumbs (update.rs), before anything that could hang.
+    #[cfg(feature = "bootloaded")]
+    let (guard_failed, guard_prev_stage) = update::boot_guard_enter();
     let mut pac = pac::Peripherals::take().unwrap();
     let mut watchdog = hal::Watchdog::new(pac.WATCHDOG);
     let clocks = hal::clocks::init_clocks_and_plls(
@@ -290,6 +293,8 @@ fn main() -> ! {
         .build();
 
     let mut io = Io { usb_dev, serial };
+    #[cfg(feature = "bootloaded")]
+    update::stage(2); // clocks, UART and USB objects created
     // Phase 1.2: identity generated on this board at first boot, never output.
     enroll::rosc_enable();
     let id_boot = enroll::boot_identity();
@@ -308,6 +313,8 @@ fn main() -> ! {
     let my_fp = oasis_rt::identity::fingerprint(&my_pk);
     // Owner, enrolled-node registry and authority policy, all from flash.
     let mut pqs = pq::Pq::boot();
+    #[cfg(feature = "bootloaded")]
+    update::stage(3); // identity, owner, registry, policy loaded
     // Phase 1.3: confirm a freshly swapped image (self-test, floor, mark_booted)
     // while the bootloader's watchdog still runs, then stop the watchdog.
     #[cfg(feature = "bootloaded")]
@@ -323,7 +330,10 @@ fn main() -> ! {
             cortex_m::peripheral::SCB::sys_reset();
         }
         watchdog.disable();
+        update::stage(4); // confirmed (if swapped), watchdog stopped
     }
+    #[cfg(feature = "bootloaded")]
+    let mut guard_cleared = false;
     // v0B router: handles v0A envelopes as a superset (origin_wrap/process
     // unchanged) AND v0B (origin_wrap_v0b/process_v0b dispatch). The registry starts
     // empty and is filled only from enrollment attestations.
@@ -400,6 +410,11 @@ fn main() -> ! {
 
     loop {
         io.poll();
+        #[cfg(feature = "bootloaded")]
+        if !guard_cleared {
+            update::boot_guard_ok();
+            guard_cleared = true;
+        }
 
         let mut raw = [0u8; 16];
         if let Ok(n_raw) = io.serial.read(&mut raw) {
@@ -634,12 +649,14 @@ fn main() -> ! {
                 io.log(
                     "FW_STATUS",
                     format_args!(
-                        "version={},floor={},boot={:?},bootloader_state={},fp={}",
+                        "version={},floor={},boot={:?},bootloader_state={},fp={},guard_failed_before={},prev_boot_stage={}",
                         update::FW_VERSION,
                         update::floor(),
                         fw_boot,
                         update::state_name(&mut fw_up),
-                        Hx(&my_fp)
+                        Hx(&my_fp),
+                        guard_failed,
+                        guard_prev_stage
                     ),
                 );
             }
