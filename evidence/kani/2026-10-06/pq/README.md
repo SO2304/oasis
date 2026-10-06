@@ -1,0 +1,48 @@
+# Kani — Phase 1.1 harnesses (OAU1 authority + OFR1 fragmentation)
+
+Six harnesses added with `oasis-rt/src/authority.rs` and `oasis-rt/src/fragment.rs`
+(spec `docs/specs/PQ_AUTHORITY_SPEC.md`). Run in WSL (Ubuntu, 3.3 GB RAM,
+`cargo-kani 0.67.0`) on a fresh clone of the committed tree, with
+`run_pq_harnesses.sh <commit>` (`cargo kani --lib --harness … --harness-timeout 300s`).
+
+| Run | Tree | Result | Exit | Log |
+|---|---|---|---|---|
+| 1 | `d5dfebd` | **5 verified, 1 FAILED**: `proof_auth_precheck_no_downgrade` refuted (`Failed Checks: "known kind and suite only"`) | 1 | `kani_pq_run1.log` |
+| 2 | `3e67254` | **6 verified, 0 failures** | 0 | `kani_pq_run2.log` |
+
+**Run 1 found a real defect.** `AuthPolicy::min_suite` returns `u8::MAX` for an
+unknown kind, and `suite_rank(u8::MAX) == 0`, so `precheck` accepted an unknown
+kind with an unknown suite (rank 0 ≥ rank 0). It was not reachable through
+`verify_authority`, because `parse_oau1` rejects unknown kinds and suites first,
+but `precheck` relied on that. Fixed in `3e67254` (`precheck` returns
+`UnknownKind` when the required rank is 0), with unit regression test
+`pq_precheck_refuses_unknown_kind_and_suite`. The harness itself was not changed
+between the two runs.
+
+Proven properties (run 2):
+
+| Harness | Property |
+|---|---|
+| `proof_auth_hybrid_requires_both` | the hybrid suite is satisfied iff both signatures verified; a reserved/unknown suite is never satisfied |
+| `proof_auth_policy_never_lowers` | from any policy reachable by two raises, a third `raise` never lowers any kind's minimum, never installs an unknown suite, and POLICY stays hybrid |
+| `proof_auth_parse_total` | `parse_oau1` never panics on any input ≤ 96 bytes; an accepted message has a known kind, a supported suite, a 64-byte Ed25519 signature and exact length |
+| `proof_auth_precheck_no_downgrade` | `precheck` passes only on the right network, for a known kind, with a suite at least as strong as the policy requires |
+| `proof_frag_parse_in_bounds` | `parse_ofr1` never panics on any input ≤ 40 bytes; an accepted fragment is non-empty, lies inside the message and inside its own stride |
+| `proof_frag_completion_mask` | the completion bitmap has exactly `count` bits for every `count` in 1..=32 and covers every valid index |
+
+Limits, stated plainly:
+
+- Signature verification (Ed25519, ML-DSA-44) is **not** modelled. These proofs
+  cover the decision rules around it. ML-DSA-44 correctness is tested (NIST ACVP
+  sigVer 15/15, byte-for-byte match with `libcrux-ml-dsa` over 8 seeds), not proven.
+- Inputs are bounded: 96 bytes for `parse_oau1` (so the 2 420-byte ML-DSA branch is
+  out of reach of that harness) and 40 bytes for `parse_ofr1`.
+- The `Reassembler` state machine is covered by unit tests, not by Kani.
+- The full 135-harness suite was not run locally (it doesn't fit in 3.3 GB). That
+  is left to the `kani-proofs` CI job.
+
+Runner fix: the 2026-10-06 E/F runner (`../run_new_harnesses.sh`) printed `$?`
+after a `$(date)` substitution in the same `echo`, so it always logged `exit code 0`,
+including for its failed run. `run_pq_harnesses.sh` captures the code first. Run 1
+above was redone with the fixed script (same tree, same result) so that the
+committed log shows the non-zero exit.
