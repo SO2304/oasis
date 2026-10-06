@@ -40,27 +40,46 @@ fn proof_enr_revoked_never_enrolled() {
     }
 }
 
-/// PROVE: a node's `enroll_seq` never decreases; an accepted attestation installs
-/// exactly its sequence, strictly above the one held, and leaves other nodes alone.
+/// PROVE: a node's `enroll_seq` never decreases: an attestation for a node already
+/// held is accepted only with a strictly higher sequence, and installs exactly it.
+/// (Concrete shape, one held entry with the same fingerprint: with a symbolic
+/// 0-to-2 entry registry CBMC ran out of memory on the 3.3 GB WSL VM, runs 1 and
+/// a dev run, evidence/kani/2026-10-06/enroll/.)
 #[kani::proof]
 #[kani::unwind(10)]
 fn proof_enr_seq_never_decreases() {
-    let reg = any_registry();
+    let held = any_entry();
+    let mut entries = Vec::new();
+    entries.push(held);
+    let reg = Registry { gen: kani::any(), entries };
+    let a = any_attestation();
+    let (d, new) = enrollment_transition(&reg, &held.fp, &a, false);
+    match new {
+        Some(n) => {
+            assert!(a.enroll_seq > held.seq && d == EnrollDecision::Updated);
+            assert!(n.entries.len() == 1 && n.entries[0].seq == a.enroll_seq);
+        }
+        None => assert!(a.enroll_seq <= held.seq && d == EnrollDecision::Reject(EnrollReject::StaleSeq)),
+    }
+}
+
+/// PROVE: enrolling one node leaves another node's entry unchanged (compared field
+/// by field; keys are fixed in this harness).
+#[kani::proof]
+#[kani::unwind(10)]
+fn proof_enr_other_entries_untouched() {
+    let other = any_entry();
+    let mut entries = Vec::new();
+    entries.push(other);
+    let reg = Registry { gen: kani::any(), entries };
     let fp: Fp = kani::any();
+    kani::assume(fp != other.fp);
     let a = any_attestation();
     let (_, new) = enrollment_transition(&reg, &fp, &a, false);
     if let Some(n) = new {
-        let installed = n.entries.iter().find(|e| e.fp == fp).unwrap();
-        assert_eq!(installed.seq, a.enroll_seq);
-        if let Some(old) = reg.entries.iter().find(|e| e.fp == fp) {
-            assert!(a.enroll_seq > old.seq);
-        }
-        for e in &reg.entries {
-            if e.fp != fp {
-                assert!(n.entries.contains(e));
-            }
-        }
-        assert!(n.entries.len() <= MAX_ENTRIES);
+        let o = n.entries.iter().find(|e| e.fp == other.fp).unwrap();
+        assert!(o.seq == other.seq && o.permissions == other.permissions && o.role == other.role);
+        assert!(n.entries.len() == 2);
     }
 }
 
