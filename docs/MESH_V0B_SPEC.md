@@ -186,13 +186,25 @@ as the prompt's stop-condition requests.
 | 10 | invalid msg then the real msg | verify-before-remember: state untouched by the invalid one | `v0b_invalid_then_valid_accepted` |
 | 11 | reorder within 127 positions | bitmap gap-fill, accept exactly once | `v0b_reorder_within_window_accept_once` |
 
-### Kani proofs (`src/mesh/kani_proofs.rs`)
-- v0B parser never panics on arbitrary input.
-- a rejected message mutates **neither** the counter window **nor** the dedup cache.
-- the counter window's `highest` is monotone (never decreases).
-- the signed preimage embeds the payload digest: distinct payload digests produce
-  distinct signed preimages (structural proof over the preimage builder; SHA-256
-  itself is not unrolled in Kani).
+### Kani proofs (`src/mesh/kani_proofs.rs`) — 7 added
+
+Pure, tractable properties (no Ed25519/BTreeMap, so Kani can discharge them):
+- `proof_v0b_parse_never_panics_full/_short/_with_payload` — the v0B parser never
+  panics on arbitrary input (full header, sub-header → `None`, header+payload).
+- `proof_v0b_preimage_binds_payload_digest` — distinct payload digests ⇒ distinct
+  signed preimages (content bound; SHA-256 collision-resistance assumed, not unrolled).
+- `proof_v0b_preimage_binds_counter` — distinct counters ⇒ distinct preimages.
+- `proof_v0b_preimage_binds_network` — distinct network ids ⇒ distinct preimages.
+- `proof_v0b_preimage_domain_separated_and_consistent` — layout constants are
+  consistent and the domain tag always prefixes the signed data.
+
+**Honestly test-covered, not Kani-proven** (they transit Ed25519 + a BTreeMap,
+which Kani cannot unroll tractably): verify-before-remember (a rejected message
+mutates no state) and window monotonicity are covered by the deterministic unit
+tests `v0b_invalid_then_valid_accepted`, the `last_seen == 0` assertions in
+`v0b_bitflip_each_signed_byte_rejected`, and `v0b_reorder_within_window_accept_once`.
+Per [[reference_kani_wsl_limit]], the full CBMC pass runs in the kani-proofs CI
+job / a ≥16 GB Linux host, not on local WSL.
 
 ---
 
