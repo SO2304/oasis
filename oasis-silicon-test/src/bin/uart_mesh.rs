@@ -45,6 +45,7 @@ use usbd_serial::SerialPort;
 
 use oasis_rt::actuation::parse_oac1;
 use oasis_rt::mesh::inner_slice;
+use oasis_rt::mesh::prefilter::{LinkBudget, MESH_V0C_HEADER_LEN};
 use oasis_rt::mesh::{
     mesh_v0b_verify, mesh_v10_verify, MeshDecision, MeshEdPub, MeshEdSeed, MeshPubRegistry,
     MeshRouter,
@@ -260,6 +261,20 @@ const MB_MAP: [mbg::RegRule; 3] = [
 /// Device answer window and end-of-frame silence (3.5 characters of 11 bits).
 const MB_RESP_TIMEOUT_US: u64 = 100_000;
 const MB_FRAME_GAP_US: u64 = 2_006;
+
+/// Phase 2.1 pre-filter instrumentation on the relay under test (spec
+/// docs/specs/RELAY_PREFILTER_SPEC.md §2). `busy_us` is the wall-clock time spent
+/// inside process()/process_v0c — the quantity a flood is trying to exhaust.
+#[derive(Default)]
+struct PfStats {
+    accepted: u32,
+    drop_tag: u32,
+    drop_budget: u32,
+    drop_sig: u32,
+    drop_other: u32,
+    busy_us: u64,
+    max_us: u64,
+}
 
 #[derive(Default)]
 struct GwStats {
@@ -559,6 +574,12 @@ fn main() -> ! {
     // Phase 1.4: the Modbus gateway's own gate state (not the LED actuator's).
     let mut gw = mbg::Gateway::new();
     let mut gws = GwStats::default();
+    // Phase 2.1: v0C pre-filter mode (off by default, so the board behaves as before),
+    // the token bucket for the single UART0 ingress link, and the counters.
+    let mut pf_v0c = false;
+    let mut pf_next_hop: Option<[u8; 8]> = None;
+    let mut pf_budget = LinkBudget::default_budget();
+    let mut pf = PfStats::default();
     match efs.restore(&mut router, &pqs.owner) {
         Ok(Some((e, by_current))) => {
             pqs.rev_signer = if by_current {
@@ -670,14 +691,23 @@ fn main() -> ! {
                 let mut pl = [0u8; 300];
                 match ef::hex_decode(&line[1..line_len], &mut pl) {
                     Some(plen) => {
-                        if let Some(env) = router.origin_wrap_v0b(&pl[..plen]) {
+                        let wrapped = if pf_v0c {
+                            pf_next_hop.and_then(|nh| router.origin_wrap_v0c(&pl[..plen], nh))
+                        } else {
+                            router.origin_wrap_v0b(&pl[..plen])
+                        };
+                        if let Some(env) = wrapped {
                             last_v0b_len = env.len().min(MAX_ENV);
                             last_v0b[..last_v0b_len].copy_from_slice(&env[..last_v0b_len]);
                             if line[0] == b'P' {
                                 send_framed(&mut uart0, &env);
                             }
                             io.log(
-                                if line[0] == b'P' { "PAYLOAD_TX" } else { "PAYLOAD_HELD" },
+                                if line[0] == b'P' {
+                                    "PAYLOAD_TX"
+                                } else {
+                                    "PAYLOAD_HELD"
+                                },
                                 format_args!(
                                     "kind={},counter={},len={}",
                                     ef::content_kind(&pl[..plen]),
@@ -760,6 +790,111 @@ fn main() -> ! {
                         gw.act.last_executed_seq
                     ),
                 );
+            }
+            // Phase 2.1 pre-filter harness. `@O0` = v0B (default); `@O1<16 hex>` = v0C with
+            // that next-hop fingerprint; `@O1` alone = v0C on a terminal node. Switching
+            // resets the bucket and the counters. `@B` reports them. `@Y<rate>,<secs>` runs
+            // the C1 attack from this board: forged frames at <rate>/s (each with a FRESH
+            // counter, so the cheap checks pass and only the mode decides the cost) plus one
+            // legitimate message per second.
+            if line_done && line_len >= 2 && line[0] == b'O' {
+                pf_v0c = line[1] == b'1';
+                pf_next_hop = None;
+                if pf_v0c && line_len >= 2 + 16 {
+                    let mut nh = [0u8; 8];
+                    if ef::hex_decode(&line[2..2 + 16], &mut nh) == Some(8) {
+                        pf_next_hop = Some(nh);
+                    }
+                }
+                pf_budget = LinkBudget::default_budget();
+                pf = PfStats::default();
+                match pf_next_hop {
+                    Some(nh) => io.log(
+                        "PF_MODE",
+                        format_args!(
+                            "v0c={},next_hop={},tokens={}",
+                            pf_v0c,
+                            Hx(&nh),
+                            pf_budget.tokens()
+                        ),
+                    ),
+                    None => io.log(
+                        "PF_MODE",
+                        format_args!("v0c={},next_hop=-,tokens={}", pf_v0c, pf_budget.tokens()),
+                    ),
+                }
+            }
+            if line_done && line_len >= 1 && line[0] == b'B' {
+                io.log(
+                    "PF_STATUS",
+                    format_args!(
+                        "v0c={},accepted={},drop_tag={},drop_budget={},drop_sig={},drop_other={},busy_us={},max_us={},tokens={},rx_bytes={},frames={},crc_fails={}",
+                        pf_v0c, pf.accepted, pf.drop_tag, pf.drop_budget, pf.drop_sig, pf.drop_other, pf.busy_us, pf.max_us, pf_budget.tokens(), rx_total, frame_total, crc_fails
+                    ),
+                );
+            }
+            if line_done && line_len >= 4 && line[0] == b'Y' {
+                let spec = core::str::from_utf8(&line[1..line_len]).unwrap_or("");
+                let mut it = spec.split(',');
+                let rate: u64 = it.next().and_then(|v| v.parse().ok()).unwrap_or(0);
+                let secs: u64 = it.next().and_then(|v| v.parse().ok()).unwrap_or(0);
+                if rate == 0 || secs == 0 || rate > 200 || secs > 300 {
+                    io.log("PF_FLOOD_BAD", format_args!("rate={},secs={}", rate, secs));
+                } else if !lease.ensure(
+                    router.tx_counter().saturating_add(rate * secs + secs + 16),
+                    &mut lstore,
+                ) {
+                    // Reserve every counter this run consumes in ONE durable write.
+                    io.log("LEASE_FAIL", format_args!("flood reservation failed"));
+                } else {
+                    io.log(
+                        "PF_FLOOD",
+                        format_args!("start,rate={},secs={},v0c={}", rate, secs, pf_v0c),
+                    );
+                    let t_start_ms = ef::now_ms64();
+                    let period_us = 1_000_000 / rate;
+                    let mut next_us = ef::now_us64();
+                    let mut next_legit_ms = t_start_ms;
+                    let (mut forged, mut legit) = (0u32, 0u32);
+                    while ef::now_ms64().wrapping_sub(t_start_ms) < secs * 1000 {
+                        io.poll();
+                        if ef::now_us64() >= next_us {
+                            next_us = next_us.wrapping_add(period_us);
+                            let built = if pf_v0c {
+                                pf_next_hop.and_then(|nh| router.origin_wrap_v0c(b"FLOOD", nh))
+                            } else {
+                                router.origin_wrap_v0b(b"FLOOD")
+                            };
+                            if let Some(mut env) = built {
+                                // Corrupt exactly the field this mode checks: the v0C link tag
+                                // (refused in microseconds) or a v0B signature byte (forces the
+                                // full ~185 ms Ed25519 verify — the C1 attack).
+                                let at = if pf_v0c { MESH_V0C_HEADER_LEN - 16 } else { 40 };
+                                if at < env.len() {
+                                    env[at] ^= 0x01;
+                                }
+                                send_framed(&mut uart0, &env);
+                                forged = forged.wrapping_add(1);
+                            }
+                        }
+                        if ef::now_ms64() >= next_legit_ms {
+                            next_legit_ms = next_legit_ms.wrapping_add(1000);
+                            let built = if pf_v0c {
+                                pf_next_hop.and_then(|nh| router.origin_wrap_v0c(b"LEGIT", nh))
+                            } else {
+                                router.origin_wrap_v0b(b"LEGIT")
+                            };
+                            if let Some(env) = built {
+                                send_framed(&mut uart0, &env);
+                                legit = legit.wrapping_add(1);
+                            }
+                        }
+                    }
+                    io.log(
+                        "PF_FLOOD_DONE",
+                        format_args!("forged={},legit={},secs={}", forged, legit, secs),
+                    );
+                }
             }
             if line_done && line_len >= 1 && line[0] == b'C' {
                 pqs.stage.clear();
@@ -1433,13 +1568,25 @@ fn main() -> ! {
                         ),
                     );
                 }
-                match router.process(&owned[..elen]) {
+                let pf_t0 = ef::now_us64();
+                let pf_decision = if pf_v0c {
+                    router.process_v0c(&owned[..elen], &mut pf_budget, ef::now_ms64())
+                } else {
+                    router.process(&owned[..elen])
+                };
+                let pf_dt = ef::now_us64().wrapping_sub(pf_t0);
+                pf.busy_us = pf.busy_us.wrapping_add(pf_dt);
+                if pf_dt > pf.max_us {
+                    pf.max_us = pf_dt;
+                }
+                match pf_decision {
                     MeshDecision::Arrived {
                         msg_id,
                         hops_seen,
                         forward,
                         envelope,
                     } => {
+                        pf.accepted = pf.accepted.wrapping_add(1);
                         io.log(
                             "ARRIVED",
                             format_args!(
@@ -1575,7 +1722,19 @@ fn main() -> ! {
                             _ => {}
                         }
                         if relay {
-                            send_framed(&mut uart0, &envelope);
+                            let resealed = if pf_v0c {
+                                pf_next_hop.and_then(|nh| router.reseal_v0c(&envelope, nh))
+                            } else {
+                                None
+                            };
+                            match (pf_v0c, resealed) {
+                                (false, _) => send_framed(&mut uart0, &envelope),
+                                (true, Some(out)) => send_framed(&mut uart0, &out),
+                                (true, None) => io.log(
+                                    "PF_NO_RESEAL",
+                                    format_args!("no next hop set; not forwarded"),
+                                ),
+                            }
                             io.log(
                                 "RELAYED",
                                 format_args!("msg_id={},hops={}", msg_id, hops_seen),
@@ -1583,6 +1742,14 @@ fn main() -> ! {
                         }
                     }
                     MeshDecision::Drop(reason) => {
+                        match reason {
+                            "bad link tag" => pf.drop_tag = pf.drop_tag.wrapping_add(1),
+                            "link budget exceeded" => {
+                                pf.drop_budget = pf.drop_budget.wrapping_add(1)
+                            }
+                            "bad mesh signature" => pf.drop_sig = pf.drop_sig.wrapping_add(1),
+                            _ => pf.drop_other = pf.drop_other.wrapping_add(1),
+                        }
                         io.log("DROP", format_args!("{}", reason));
                         // A command that fails v0B (replay, forgery, revoked origin) is
                         // still logged as a gate decision so its outcome is on record.
