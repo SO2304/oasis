@@ -11,7 +11,8 @@
 //!
 //! Formats (v0B payload content types, little-endian):
 //! - command `"OAC1" | actuator_id u16 | cmd_seq u32 | boot_id u64 | deadline_ms u64
-//!   | force f32 | torque f32 | velocity f32 | pos [f32;3]` (54 bytes)
+//!   | force f32 | torque f32 | velocity f32 | pos [f32;3] | reserved [u8;4] = 0` (54 bytes;
+//!   the reserved bytes must be zero, so a command has exactly one encoding)
 //! - time beacon `"OTM1" | boot_id u64 | now_ms u64` (20 bytes), originated by the
 //!   actuator; commanders stamp `deadline_ms` in the actuator's clock.
 
@@ -64,7 +65,9 @@ fn u64_at(b: &[u8], at: usize) -> u64 {
 }
 
 pub fn parse_oac1(b: &[u8]) -> Option<ActCommand> {
-    if b.len() != OAC1_LEN || b[0..4] != OAC1_MAGIC {
+    // Bytes 50..54 are reserved and must be zero (one encoding per command; the parser
+    // used to ignore them, found by cargo-fuzz 2026-10-07).
+    if b.len() != OAC1_LEN || b[0..4] != OAC1_MAGIC || b[50..OAC1_LEN] != [0u8; 4] {
         return None;
     }
     Some(ActCommand {

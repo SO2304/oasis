@@ -139,6 +139,20 @@ fn act_rejection_counters() {
 }
 
 #[test]
+fn act_oac1_reserved_bytes_must_be_zero() {
+    // OAC1_LEN is 54 but the fields end at byte 50: bytes 50..54 are reserved. Found by
+    // cargo-fuzz (round-trip assertion, 2026-10-07): the parser accepted any value there,
+    // so one command had 2^32 encodings.
+    let b = encode_oac1(&cmd(1));
+    assert_eq!(parse_oac1(&b), Some(cmd(1)));
+    for i in 50..OAC1_LEN {
+        let mut x = b;
+        x[i] = 1;
+        assert_eq!(parse_oac1(&x), None, "reserved byte {i}");
+    }
+}
+
+#[test]
 fn act_formats_roundtrip() {
     let c = cmd(42);
     assert_eq!(parse_oac1(&encode_oac1(&c)), Some(c));
