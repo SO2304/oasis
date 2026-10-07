@@ -56,6 +56,12 @@ jobs:
     name: cargo-audit (RustSec)
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # audit-check publishes its result as a check run; on push to main the
+    # default read-only token was refused ("Resource not accessible by
+    # integration") even though no vulnerability was found.
+    permissions:
+      contents: read
+      checks: write
     steps:
       - uses: actions/checkout@v4
       - uses: rustsec/audit-check@v2
