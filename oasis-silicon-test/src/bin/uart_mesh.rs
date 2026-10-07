@@ -840,6 +840,30 @@ fn main() -> ! {
                     ),
                 }
             }
+            // `@D<rate>,<burst>`: set the ingress budget at run time (and reset the
+            // counters). Needed to demonstrate the cap on silicon: with the defaults
+            // (2/s, burst 24) the UART receive loss already limits the relay to fewer
+            // frames than the budget would allow, so the budget never fires. `@D0,2`
+            // (no refill, burst 2) makes the mechanism visible on its own.
+            if line_done && line_len >= 3 && line[0] == b'D' {
+                let spec = core::str::from_utf8(&line[1..line_len]).unwrap_or("");
+                let mut it = spec.split(',');
+                let r: u64 = it.next().and_then(|v| v.parse().ok()).unwrap_or(u64::MAX);
+                let b: u64 = it.next().and_then(|v| v.parse().ok()).unwrap_or(u64::MAX);
+                if r == u64::MAX || b == u64::MAX || b == 0 || b > 10_000 || r > 10_000 {
+                    io.log("PF_BUDGET_BAD", format_args!("rate={},burst={}", r, b));
+                } else {
+                    pf_budget = LinkBudget::new(r, b);
+                    pf = PfStats::default();
+                    rx_total = 0;
+                    frame_total = 0;
+                    crc_fails = 0;
+                    io.log(
+                        "PF_BUDGET",
+                        format_args!("rate={},burst={},tokens={}", r, b, pf_budget.tokens()),
+                    );
+                }
+            }
             if line_done && line_len >= 2 && line[0] == b'S' {
                 pf_quiet = line[1] == b'1';
                 io.log("PF_QUIET", format_args!("quiet={}", pf_quiet));
