@@ -42,6 +42,7 @@ shard_of() {
     mesh::kani_proofs::*) echo mesh-core-v0b ;;
     spinal::*|synapse::*) echo spinal-synapse ;;
     tx_lease::*|mesh_revocation::*|actuation::*|hal::*|hyper_state::*) echo authority ;;
+    authority::*|fragment::*|enrollment::*|ownership::*|firmware::*|modbus_gateway::*) echo authority-phase1 ;;
     *) echo other-modules ;;
   esac
 }

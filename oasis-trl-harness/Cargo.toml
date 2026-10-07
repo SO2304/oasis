@@ -2,6 +2,7 @@
 name = "oasis-trl-harness"
 version = "0.1.0"
 edition = "2021"
+license = "MIT"  # matches the repository LICENSE file
 
 # Realistic-environment full-system harness pushing OASIS toward TRL 6.
 #
@@ -20,9 +21,9 @@ edition = "2021"
 # over.
 
 [dependencies]
-oasis-rt = { path = "../oasis-rt", features = ["std", "mesh_v10"] }
-oasis-secure-element = { path = "../oasis-secure-element", features = ["std"] }
-oasis-operator-key = { path = "../oasis-operator-key", features = ["std"] }
+oasis-rt = { path = "../oasis-rt", version = "0.3.0", features = ["std", "mesh_v10"] }
+oasis-secure-element = { path = "../oasis-secure-element", version = "0.1.0", features = ["std"] }
+oasis-operator-key = { path = "../oasis-operator-key", version = "0.1.0", features = ["std"] }
 ed25519-compact = { version = "2.2.0", default-features = false, features = ["x25519"] }
 
 [lib]

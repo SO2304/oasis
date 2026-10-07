@@ -38,14 +38,23 @@ pub mod spinal;
 // spore: transport-layer (UdpSocket, fs, thread). Host-only.
 pub mod actions;
 pub mod actuation;
+pub mod authority;
+pub mod enrollment;
+pub mod firmware;
+pub mod fragment;
+pub mod identity;
 pub mod mesh;
 pub mod mesh_revocation;
+pub mod modbus_gateway;
 pub mod nav;
+pub mod ownership;
 pub mod parameters;
 pub mod services;
 #[cfg(feature = "std_env")]
 pub mod spore;
 pub mod spore_crypto;
+#[cfg(test)]
+mod test_support;
 pub mod timers;
 pub mod topics;
 pub mod transforms;

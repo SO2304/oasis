@@ -73,21 +73,25 @@ fn node(id: u8, peers: &[u8]) -> MeshRouter {
 struct MockSlots {
     s: [Vec<u8>; 2],
     tear_next: bool,
+    cap: usize,
 }
 impl MockSlots {
     fn new() -> Self {
-        MockSlots { s: [vec![0xFF; 512], vec![0xFF; 512]], tear_next: false }
+        Self::with_cap(512)
+    }
+    fn with_cap(cap: usize) -> Self {
+        MockSlots { s: [vec![0xFF; cap], vec![0xFF; cap]], tear_next: false, cap }
     }
 }
 impl BlobSlots for MockSlots {
     fn cap(&self) -> usize {
-        512
+        self.cap
     }
     fn read(&self, slot: usize) -> Vec<u8> {
         self.s[slot].clone()
     }
     fn write(&mut self, slot: usize, rec: &[u8]) -> bool {
-        let mut x = vec![0xFF; 512];
+        let mut x = vec![0xFF; self.cap];
         if self.tear_next {
             self.tear_next = false;
             x[..rec.len() / 2].copy_from_slice(&rec[..rec.len() / 2]); // power lost mid-program
@@ -197,6 +201,42 @@ fn rev_torn_blob_write_keeps_previous_list() {
     slots.tear_next = true;
     assert!(!store_blob(&mut slots, &op_list(2, &[fp(0xAA), fp(0xCC)])), "torn write is not durable");
     assert_eq!(load_latest_blob(&slots).as_deref(), Some(&e1[..]), "previous list survives the tear");
+}
+
+/// An OAU1 revocation blob as persisted (signature bytes are irrelevant to the
+/// store: the loader's caller re-verifies).
+fn oau1_rev_blob(epoch: u64, fps: &[Fp], suite: u8) -> Vec<u8> {
+    use crate::authority::{encode_oau1, kind, MLDSA44_SIG_LEN, SUITE_HYBRID};
+    let body = encode_revocation_body(epoch, 0, fps);
+    let ml = if suite == SUITE_HYBRID { vec![0x5A; MLDSA44_SIG_LEN] } else { Vec::new() };
+    encode_oau1(kind::REVOCATION, suite, &NET, &body, &[0x11; 64], &ml)
+}
+
+#[test]
+fn rev_blob_store_orders_orv1_and_oau1_by_epoch() {
+    use crate::authority::{SUITE_ED25519, SUITE_HYBRID};
+    // Device slot size (one 4 KiB sector): a hybrid OAU1 revocation (~2.5 KB) fits.
+    let mut slots = MockSlots::with_cap(4096);
+    let e1 = op_list(1, &[fp(0xCC)]);
+    assert!(store_blob(&mut slots, &e1));
+    let e2 = oau1_rev_blob(2, &[fp(0xBB), fp(0xCC)], SUITE_HYBRID);
+    assert_eq!(blob_epoch(&e2), Some(2));
+    assert!(store_blob(&mut slots, &e2), "hybrid OAU1 revocation persisted");
+    assert_eq!(load_latest_blob(&slots).as_deref(), Some(&e2[..]), "newest epoch wins across formats");
+    // A torn write of epoch 3 keeps the hybrid epoch-2 list loadable.
+    slots.tear_next = true;
+    assert!(!store_blob(&mut slots, &oau1_rev_blob(3, &[fp(0xAA)], SUITE_ED25519)));
+    assert_eq!(load_latest_blob(&slots).as_deref(), Some(&e2[..]));
+    // The epoch-1 ORV1 slot was the one overwritten, never the newest.
+    assert!(store_blob(&mut slots, &oau1_rev_blob(3, &[fp(0xAA), fp(0xBB), fp(0xCC)], SUITE_ED25519)));
+    assert_eq!(load_latest_blob(&slots).map(|b| blob_epoch(&b)), Some(Some(3)));
+    // Non-revocation OAU1 kinds and garbage have no epoch.
+    let mut policy = e2.clone();
+    policy[4] = crate::authority::kind::POLICY;
+    assert_eq!(blob_epoch(&policy), None);
+    assert_eq!(blob_epoch(b"OAU1garbage"), None);
+    // A hybrid blob does not fit the old 512-byte ORV1 slot: the store refuses it.
+    assert!(!store_blob(&mut MockSlots::new(), &e2));
 }
 
 #[test]

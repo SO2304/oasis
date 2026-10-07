@@ -87,6 +87,7 @@ jobs:
           - { shard: mesh-core-v0b, harness_timeout: 600s, minutes: 120 }
           - { shard: spinal-synapse, harness_timeout: 600s, minutes: 120 }
           - { shard: authority, harness_timeout: 600s, minutes: 120 }
+          - { shard: authority-phase1, harness_timeout: 600s, minutes: 120 }
           - { shard: other-modules, harness_timeout: 600s, minutes: 120 }
           - { shard: heavy-proof_ae_snapshot_internal_consistency, harness_timeout: 3600s, minutes: 75 }
           - { shard: heavy-proof_ae_capacity_consumed_monotonic, harness_timeout: 3600s, minutes: 75 }
@@ -108,12 +109,14 @@ jobs:
         run: |
           cargo install --locked kani-verifier
           cargo kani setup
+      # -Z stubbing: proof_frag_reassembler_never_panics replaces SHA-256 with an
+      # arbitrary digest (#[kani::stub]); without the flag that harness fails.
       - name: cargo kani --lib (shard)
         run: |
           H=""
           for h in $(./kani_shards.sh "${{ matrix.shard }}"); do H="$H --harness $h"; done
           [ -n "$H" ] || { echo "::error::shard ${{ matrix.shard }} has no harness"; exit 1; }
-          cargo kani --lib $H --exact -Z unstable-options --harness-timeout ${{ matrix.harness_timeout }} -j 1 --output-format terse
+          cargo kani --lib $H --exact -Z unstable-options -Z stubbing --harness-timeout ${{ matrix.harness_timeout }} -j 1 --output-format terse
 
   kani-shard-coverage:
     name: Kani shard coverage (every harness in exactly one shard)
