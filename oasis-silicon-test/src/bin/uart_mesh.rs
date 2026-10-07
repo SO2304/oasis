@@ -580,6 +580,11 @@ fn main() -> ! {
     let mut pf_next_hop: Option<[u8; 8]> = None;
     let mut pf_budget = LinkBudget::default_budget();
     let mut pf = PfStats::default();
+    // Quiet mode for a measurement run: count, do not log per frame. USB-CDC logging
+    // costs milliseconds per line, which would steal wall-clock from the relay and
+    // distort the availability figure (busy_us times only process*(), so it is already
+    // clean, but the accepted/FIFO counts are not).
+    let mut pf_quiet = false;
     match efs.restore(&mut router, &pqs.owner) {
         Ok(Some((e, by_current))) => {
             pqs.rev_signer = if by_current {
@@ -823,6 +828,10 @@ fn main() -> ! {
                         format_args!("v0c={},next_hop=-,tokens={}", pf_v0c, pf_budget.tokens()),
                     ),
                 }
+            }
+            if line_done && line_len >= 2 && line[0] == b'S' {
+                pf_quiet = line[1] == b'1';
+                io.log("PF_QUIET", format_args!("quiet={}", pf_quiet));
             }
             if line_done && line_len >= 1 && line[0] == b'B' {
                 io.log(
@@ -1557,16 +1566,18 @@ fn main() -> ! {
                             *b = b'?';
                         }
                     }
-                    io.log(
-                        "RXF",
-                        format_args!(
-                            "n={},len={},ctr={},seq={}",
-                            frame_total,
-                            elen,
-                            ctr,
-                            core::str::from_utf8(&seq).unwrap_or("???")
-                        ),
-                    );
+                    if !pf_quiet {
+                        io.log(
+                            "RXF",
+                            format_args!(
+                                "n={},len={},ctr={},seq={}",
+                                frame_total,
+                                elen,
+                                ctr,
+                                core::str::from_utf8(&seq).unwrap_or("???")
+                            ),
+                        );
+                    }
                 }
                 let pf_t0 = ef::now_us64();
                 let pf_decision = if pf_v0c {
@@ -1587,13 +1598,15 @@ fn main() -> ! {
                         envelope,
                     } => {
                         pf.accepted = pf.accepted.wrapping_add(1);
-                        io.log(
-                            "ARRIVED",
-                            format_args!(
-                                "msg_id={},hops={},sig=verified,forward={}",
-                                msg_id, hops_seen, forward
-                            ),
-                        );
+                        if !pf_quiet {
+                            io.log(
+                                "ARRIVED",
+                                format_args!(
+                                    "msg_id={},hops={},sig=verified,forward={}",
+                                    msg_id, hops_seen, forward
+                                ),
+                            );
+                        }
                         let inner = inner_slice(&envelope);
                         let mut origin = [0u8; 8];
                         if envelope.len() >= 22 {
@@ -1735,10 +1748,12 @@ fn main() -> ! {
                                     format_args!("no next hop set; not forwarded"),
                                 ),
                             }
-                            io.log(
-                                "RELAYED",
-                                format_args!("msg_id={},hops={}", msg_id, hops_seen),
-                            );
+                            if !pf_quiet {
+                                io.log(
+                                    "RELAYED",
+                                    format_args!("msg_id={},hops={}", msg_id, hops_seen),
+                                );
+                            }
                         }
                     }
                     MeshDecision::Drop(reason) => {
@@ -1750,7 +1765,9 @@ fn main() -> ! {
                             "bad mesh signature" => pf.drop_sig = pf.drop_sig.wrapping_add(1),
                             _ => pf.drop_other = pf.drop_other.wrapping_add(1),
                         }
-                        io.log("DROP", format_args!("{}", reason));
+                        if !pf_quiet {
+                            io.log("DROP", format_args!("{}", reason));
+                        }
                         // A command that fails v0B (replay, forgery, revoked origin) is
                         // still logged as a gate decision so its outcome is on record.
                         let e = &owned[..elen];
