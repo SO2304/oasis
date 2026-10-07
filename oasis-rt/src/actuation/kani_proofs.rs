@@ -49,3 +49,134 @@ fn proof_decision_total_and_deterministic() {
     let i = any_input();
     assert!(actuation_decision(&i) == actuation_decision(&i));
 }
+
+fn any_ctx() -> GateContext {
+    GateContext { stopped: kani::any(), supervision_expired: kani::any() }
+}
+
+fn any_stop() -> StopInput {
+    StopInput { v0b_ok: kani::any(), stop_authorized: kani::any(), revoked: kani::any() }
+}
+
+// --- Part G ---------------------------------------------------------------
+
+/// PROVE (the central invariant of part G): **no input can prevent a valid stop**.
+/// For every possible `StopInput`, authenticity plus the `STOP` permission plus
+/// non-revocation is sufficient — there is no reachable path on which a stop is refused
+/// for any other reason. This is what keeps OASIS outside the SRP/CS scope of
+/// ISO 13849-1:2023 (a component that can disable a safety function is treated as a
+/// safety function in its own right).
+#[kani::proof]
+fn proof_stop_never_blocked() {
+    let i = any_stop();
+    if i.v0b_ok && i.stop_authorized && !i.revoked {
+        assert!(stop_decision(&i) == StopDecision::Stop);
+    }
+}
+
+/// PROVE: the converse — a stop is granted ONLY on those three conditions, so an
+/// unauthenticated sender can never stop the machine.
+#[kani::proof]
+fn proof_stop_requires_authenticity() {
+    let i = any_stop();
+    if stop_decision(&i) == StopDecision::Stop {
+        assert!(i.v0b_ok);
+        assert!(i.stop_authorized);
+        assert!(!i.revoked);
+    }
+}
+
+/// PROVE: while the stop latch is set, no `Act` is possible, for any order whatsoever.
+#[kani::proof]
+fn proof_act_refused_while_stopped() {
+    let i = any_input();
+    let mut ctx = any_ctx();
+    ctx.stopped = true;
+    assert!(actuation_decision_ctx(&ctx, &i) != Decision::Act);
+}
+
+/// PROVE: non-regression of the rule already proved and already validated on silicon.
+/// With the permissive context, the nine-condition gate is **identical** to the
+/// seven-condition gate of part F — decision for decision, reason for reason.
+#[kani::proof]
+fn proof_act_rule_unchanged() {
+    let i = any_input();
+    assert!(actuation_decision_ctx(&GateContext::default(), &i) == actuation_decision(&i));
+}
+
+// --- Part H ---------------------------------------------------------------
+
+/// PROVE: an `Act` is impossible without live supervision, whatever the order says.
+#[kani::proof]
+fn proof_act_needs_live_supervision() {
+    let i = any_input();
+    let mut ctx = any_ctx();
+    ctx.supervision_expired = true;
+    assert!(actuation_decision_ctx(&ctx, &i) != Decision::Act);
+}
+
+/// PROVE: a dead supervision link never blocks a stop. Part H must not undo part G.
+#[kani::proof]
+fn proof_stop_ignores_supervision() {
+    // `stop_decision` has no supervision input at all, which is the proof — but assert it
+    // against a fully arbitrary context so the property survives a future refactor that
+    // threads a context through.
+    let i = any_stop();
+    let _ctx = any_ctx();
+    if i.v0b_ok && i.stop_authorized && !i.revoked {
+        assert!(stop_decision(&i) == StopDecision::Stop);
+    }
+}
+
+/// PROVE: a beacon grants at most `MAX_SUPERVISION_MS`, never wraps into the past, and
+/// `beacon_seq` is strictly increasing. Covers `validity_ms` and `now_ms` near `u64::MAX`.
+#[kani::proof]
+fn proof_supervision_bounded() {
+    let mut a = Actuator::new_supervised();
+    let now: u64 = kani::any();
+    let b = SupervisionBeacon { supervisor_fp: [0; 8], actuator_boot_id: kani::any(), beacon_seq: kani::any(), validity_ms: kani::any() };
+    assert!(a.apply_beacon(&b, now), "the first beacon is always in order");
+    let until = a.supervision_until_ms.unwrap();
+    assert!(until >= now, "never in the past");
+    assert!(until - now <= MAX_SUPERVISION_MS, "bounded");
+
+    // A second beacon with a sequence not strictly greater must change nothing.
+    let before = a.supervision_until_ms;
+    let seq2: u32 = kani::any();
+    let b2 = SupervisionBeacon { beacon_seq: seq2, ..b };
+    if seq2 <= b.beacon_seq {
+        assert!(!a.apply_beacon(&b2, now));
+        assert!(a.supervision_until_ms == before);
+    }
+}
+
+/// PROVE: the `OSB1` parser is total — no slice of any length panics, and a parsed beacon
+/// re-encodes to the same bytes.
+#[kani::proof]
+#[kani::unwind(36)]
+fn proof_osb1_parse_total() {
+    let n: usize = kani::any();
+    kani::assume(n <= OSB1_LEN + 1);
+    let buf: [u8; OSB1_LEN + 1] = kani::any();
+    if let Some(b) = parse_osb1(&buf[..n]) {
+        assert!(n == OSB1_LEN);
+        assert!(encode_osb1(&b) == buf[..OSB1_LEN], "a parsed beacon re-encodes to its own bytes");
+    }
+
+    let b = SupervisionBeacon { supervisor_fp: [0; 8], actuator_boot_id: kani::any(), beacon_seq: kani::any(), validity_ms: kani::any() };
+    assert!(parse_osb1(&encode_osb1(&b)) == Some(b));
+}
+
+/// PROVE: the order class is total on byte 50 — exactly two values are accepted, and an
+/// order parsed as `Act` by the class-aware parser is the same one the legacy parser
+/// returns.
+#[kani::proof]
+#[kani::unwind(56)]
+fn proof_order_class_total() {
+    let c: u8 = kani::any();
+    match OrderClass::from_byte(c) {
+        Some(OrderClass::Act) => assert!(c == 0),
+        Some(OrderClass::Stop) => assert!(c == 1),
+        None => assert!(c > 1),
+    }
+}

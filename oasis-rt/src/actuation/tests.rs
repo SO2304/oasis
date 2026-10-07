@@ -211,3 +211,178 @@ fn act_end_to_end_over_v0b() {
     assert_eq!(run(&ok_cmd, [0xAA; 8], &mut c, &mut act), Decision::Reject(Reason::NotVerified), "v0B replay");
     assert_eq!(act.executed, 1);
 }
+
+// ---------------------------------------------------------------------------
+// Part G — stop asymmetry (docs/AUTHORITY_HARDENING_SPEC.md)
+// ---------------------------------------------------------------------------
+
+fn stop_ok() -> StopInput {
+    StopInput { v0b_ok: true, stop_authorized: true, revoked: false }
+}
+
+/// The central property, as a test as well as a proof: none of the conditions the stop
+/// rule drops can refuse a stop. Each sub-case uses an input that WOULD refuse an `Act`.
+#[test]
+fn stop_is_not_blocked_by_anything_that_blocks_an_act() {
+    // Stale sequence.
+    let mut a = Actuator::new();
+    assert_eq!(a.decide(GateInput { cmd_seq: 5, ..ok() }), Decision::Act);
+    assert_eq!(a.decide(GateInput { cmd_seq: 5, ..ok() }), Decision::Reject(Reason::StaleOrReplayed), "an Act with a replayed sequence is refused");
+    assert_eq!(a.decide_stop(&stop_ok()), StopDecision::Stop, "the same staleness must not block a stop");
+
+    // Boot id from an earlier boot.
+    let mut a = Actuator::new();
+    assert_eq!(a.decide(GateInput { cmd_boot_id: 6, ..ok() }), Decision::Reject(Reason::Expired), "an Act stamped for a previous boot is refused");
+    assert_eq!(a.decide_stop(&stop_ok()), StopDecision::Stop);
+
+    // Past the deadline.
+    let mut a = Actuator::new();
+    assert_eq!(a.decide(GateInput { now_ms: 4_000, ..ok() }), Decision::Reject(Reason::Expired));
+    assert_eq!(a.decide_stop(&stop_ok()), StopDecision::Stop);
+
+    // Sensor-state lock: the sense is inverted, a lost sensor is a reason to stop.
+    let mut a = Actuator::new();
+    assert_eq!(a.decide(GateInput { r14_safe: false, ..ok() }), Decision::Reject(Reason::R14Unsafe));
+    assert_eq!(a.decide_stop(&stop_ok()), StopDecision::Stop);
+
+    // Out of physical limits.
+    let mut a = Actuator::new();
+    assert_eq!(a.decide(GateInput { within_limits: false, ..ok() }), Decision::Reject(Reason::OutOfLimits));
+    assert_eq!(a.decide_stop(&stop_ok()), StopDecision::Stop);
+}
+
+#[test]
+fn stop_keeps_its_three_conditions() {
+    let mut a = Actuator::new();
+    assert_eq!(a.decide_stop(&StopInput { v0b_ok: false, ..stop_ok() }), StopDecision::Reject(Reason::NotVerified), "an unauthenticated stop would be a free denial of service");
+    assert_eq!(a.decide_stop(&StopInput { stop_authorized: false, ..stop_ok() }), StopDecision::Reject(Reason::NotAuthorized), "STOP is a permission of its own, distinct from ACTUATE");
+    assert_eq!(a.decide_stop(&StopInput { revoked: true, ..stop_ok() }), StopDecision::Reject(Reason::Revoked), "the one documented case where a security condition refuses a stop");
+    assert!(!a.stopped, "no refused stop may latch");
+    assert_eq!(a.stops, 0);
+}
+
+#[test]
+fn stop_latches_and_only_a_local_action_clears_it() {
+    let mut a = Actuator::new();
+    assert_eq!(a.decide_stop(&stop_ok()), StopDecision::Stop);
+    assert!(a.stopped);
+    // ISO 13850:2015 4.1.1.2: "it shall not be possible for any start command to be
+    // effective". No network order clears the latch, however valid.
+    assert_eq!(a.decide(ok()), Decision::Reject(Reason::Stopped));
+    assert_eq!(a.decide(GateInput { cmd_seq: 99, ..ok() }), Decision::Reject(Reason::Stopped));
+    assert_eq!(a.executed, 0);
+    a.clear_stop();
+    assert_eq!(a.decide(ok()), Decision::Act, "after an intentional local reset, acting resumes");
+    assert_eq!(a.executed, 1);
+}
+
+#[test]
+fn stop_is_idempotent() {
+    let mut a = Actuator::new();
+    for _ in 0..3 {
+        assert_eq!(a.decide_stop(&stop_ok()), StopDecision::Stop, "replaying a stop is harmless");
+    }
+    assert_eq!(a.stops, 3);
+    assert!(a.stopped);
+}
+
+/// An order that is not authentic, not authorized or revoked must learn nothing about the
+/// actuator's internal state: those three reasons come before `Stopped`.
+#[test]
+fn stopped_is_not_leaked_to_an_untrusted_sender() {
+    let mut a = Actuator::new();
+    a.decide_stop(&stop_ok());
+    assert_eq!(a.decide(GateInput { v0b_ok: false, ..ok() }), Decision::Reject(Reason::NotVerified));
+    assert_eq!(a.decide(GateInput { authorized: false, ..ok() }), Decision::Reject(Reason::NotAuthorized));
+    assert_eq!(a.decide(GateInput { revoked: true, ..ok() }), Decision::Reject(Reason::Revoked));
+}
+
+#[test]
+fn stop_order_class_is_on_the_wire_and_signed_bytes_differ() {
+    let c = cmd(1);
+    let act = encode_oac1(&c);
+    let stop = encode_oac1_with_class(&c, OrderClass::Stop);
+    assert_eq!(act[OAC1_CLASS_OFF], 0);
+    assert_eq!(stop[OAC1_CLASS_OFF], 1);
+    assert_ne!(act, stop, "the class is part of the signed payload");
+    assert_eq!(parse_oac1_any(&act), Some((c, OrderClass::Act)));
+    assert_eq!(parse_oac1_any(&stop), Some((c, OrderClass::Stop)));
+}
+
+/// Backward compatibility: bytes produced before part G decode as `Act`, and the old
+/// entry point still refuses anything else, so a stop can never be mistaken for an act by
+/// a caller that does not know about classes.
+#[test]
+fn parse_oac1_accepts_act_only() {
+    let c = cmd(1);
+    assert_eq!(parse_oac1(&encode_oac1(&c)), Some(c));
+    assert_eq!(parse_oac1(&encode_oac1_with_class(&c, OrderClass::Stop)), None);
+    let mut bad = encode_oac1(&c);
+    bad[OAC1_CLASS_OFF] = 2;
+    assert_eq!(parse_oac1_any(&bad), None, "an unknown class is refused, not defaulted");
+    for off in OAC1_CLASS_OFF + 1..OAC1_LEN {
+        let mut b = encode_oac1(&c);
+        b[off] = 1;
+        assert_eq!(parse_oac1_any(&b), None, "reserved byte {off} must still be zero");
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Part H — supervision liveness
+// ---------------------------------------------------------------------------
+
+fn beacon(seq: u32, validity_ms: u64) -> SupervisionBeacon {
+    SupervisionBeacon { supervisor_fp: [0x51; 8], actuator_boot_id: 7, beacon_seq: seq, validity_ms }
+}
+
+#[test]
+fn supervision_is_an_explicit_choice_not_a_silent_default() {
+    // A fixed actuator (the phase 1.4 Modbus case) has no supervisor and must keep working.
+    let mut fixed = Actuator::new();
+    assert_eq!(fixed.decide(ok()), Decision::Act);
+    // Mobile machinery under Annex III part 3 may not operate without one.
+    let mut mobile = Actuator::new_supervised();
+    assert_eq!(mobile.decide(ok()), Decision::Reject(Reason::SupervisionLost));
+}
+
+#[test]
+fn act_needs_a_live_beacon_and_stop_does_not() {
+    let mut a = Actuator::new_supervised();
+    assert!(a.apply_beacon(&beacon(1, 2_000), 1_000));
+    assert_eq!(a.decide(ok()), Decision::Act, "live until 3_000");
+    assert_eq!(a.decide(GateInput { cmd_seq: 2, now_ms: 3_001, deadline_ms: 6_000, ..ok() }), Decision::Reject(Reason::SupervisionLost), "one millisecond past the deadline");
+    // The whole point of part G: a dead supervision link never blocks a stop.
+    assert_eq!(a.decide_stop(&stop_ok()), StopDecision::Stop);
+}
+
+#[test]
+fn beacon_replay_and_rollback_are_refused() {
+    let mut a = Actuator::new_supervised();
+    assert!(a.apply_beacon(&beacon(5, 2_000), 1_000));
+    assert!(!a.apply_beacon(&beacon(5, 60_000), 1_000), "same sequence");
+    assert!(!a.apply_beacon(&beacon(4, 60_000), 1_000), "older sequence");
+    assert_eq!(a.supervision_until_ms, Some(3_000), "a refused beacon changes nothing");
+    assert!(a.apply_beacon(&beacon(6, 1_000), 2_000));
+    assert_eq!(a.supervision_until_ms, Some(3_000));
+}
+
+#[test]
+fn beacon_validity_is_bounded_and_cannot_wrap() {
+    let mut a = Actuator::new_supervised();
+    assert!(a.apply_beacon(&beacon(1, u64::MAX), 1_000));
+    assert_eq!(a.supervision_until_ms, Some(1_000 + MAX_SUPERVISION_MS), "clamped, not wrapped");
+    let mut b = Actuator::new_supervised();
+    assert!(b.apply_beacon(&beacon(1, u64::MAX), u64::MAX));
+    assert_eq!(b.supervision_until_ms, Some(u64::MAX), "saturating, never in the past");
+}
+
+#[test]
+fn osb1_roundtrip_and_parser_is_strict() {
+    let b = beacon(3, 10_000);
+    assert_eq!(parse_osb1(&encode_osb1(&b)), Some(b));
+    assert_eq!(parse_osb1(&[]), None);
+    assert_eq!(parse_osb1(&encode_osb1(&b)[..OSB1_LEN - 1]), None);
+    let mut bad = encode_osb1(&b);
+    bad[0] = b'X';
+    assert_eq!(parse_osb1(&bad), None);
+}
