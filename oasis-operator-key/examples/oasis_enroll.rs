@@ -11,6 +11,12 @@
 //!   oasis_enroll offer <old> <new> <seq>             -> ownership offer, signed by <old> (hex)
 //!   oasis_enroll accept <new> <seq> <offer_hex_file> -> acceptance, signed by <new> (hex)
 //!   oasis_enroll fw-manifest <owner> <version> <image.bin> [hw_id] -> firmware manifest (OAU1 kind 3, hybrid)
+//!   oasis_enroll mb-order <gw_id> <cmd_seq> <boot_id> <deadline_ms> <unit_hex> <fc> <start_hex> <v1,v2,..>
+//!                -> OMB1 Modbus write order (hex, unsigned: the origin board signs it in v0B).
+//!                   Encoded by hand, so invalid orders (e.g. fc 5) can be built on purpose.
+//!   oasis_enroll forge-v0b <origin_fp_hex> <counter> <payload_hex>
+//!                -> v0B envelope claiming <origin_fp>, signed with a fresh random key (attack test)
+//!   oasis_enroll mb-raw <unit_hex> <reg_hex> <value> -> bare Modbus RTU FC06 frame with CRC (hex)
 
 use ml_dsa::{Keypair, MlDsa44, SigningKey, B32};
 use oasis_operator_key::sign_with_seed;
@@ -194,6 +200,62 @@ fn main() {
                 "{}",
                 hex(&o.sign(kind::FIRMWARE_MANIFEST, SUITE_HYBRID, &encode_manifest(&m)))
             );
+        }
+        Some("mb-order") => {
+            let num = |i: usize| -> u64 { a[i].parse().expect("decimal") };
+            let hexn = |i: usize| -> u64 { u64::from_str_radix(&a[i], 16).expect("hex") };
+            let values: Vec<u16> = a[8].split(',').map(|v| v.parse().expect("value")).collect();
+            let fc = num(6) as u8;
+            let mut b = Vec::new();
+            b.extend_from_slice(&oasis_rt::modbus_gateway::OMB1_MAGIC);
+            b.extend_from_slice(&(num(1) as u16).to_le_bytes());
+            b.extend_from_slice(&(num(2) as u32).to_le_bytes());
+            b.extend_from_slice(&num(3).to_le_bytes());
+            b.extend_from_slice(&num(4).to_le_bytes());
+            b.push(hexn(5) as u8);
+            b.push(fc);
+            b.extend_from_slice(&(hexn(7) as u16).to_le_bytes());
+            b.push(values.len() as u8);
+            for v in &values {
+                b.extend_from_slice(&v.to_le_bytes());
+            }
+            match oasis_rt::modbus_gateway::parse_omb1(&b) {
+                Some(o) => eprintln!("order: {:?}", o),
+                None => eprintln!("WARNING: not a valid OMB1 (the gateway refuses it at parsing)"),
+            }
+            println!("{}", hex(&b));
+        }
+        Some("forge-v0b") => {
+            let origin: [u8; 8] = unhex(&a[1]);
+            let counter: u64 = a[2].parse().expect("counter");
+            let payload = unhex_vec(&a[3]);
+            let mut seed = [0u8; 32];
+            getrandom::getrandom(&mut seed).expect("OS RNG");
+            let mut r = oasis_rt::mesh::MeshRouter::new_v0b(
+                origin,
+                *b"OASISnet",
+                oasis_rt::mesh::MeshEdSeed(seed),
+                oasis_rt::mesh::MeshPubRegistry::new(),
+            );
+            r.set_tx_counter(counter);
+            let env = r.origin_wrap_v0b(&payload).expect("wrap");
+            eprintln!(
+                "forged v0B: origin={} counter~{} len={} (random key)",
+                hex(&origin),
+                counter,
+                env.len()
+            );
+            println!("{}", hex(&env));
+        }
+        Some("mb-raw") => {
+            let unit = u8::from_str_radix(&a[1], 16).expect("unit hex");
+            let reg = u16::from_str_radix(&a[2], 16).expect("reg hex");
+            let value: u16 = a[3].parse().expect("value");
+            let mut f = vec![unit, 0x06];
+            f.extend_from_slice(&reg.to_be_bytes());
+            f.extend_from_slice(&value.to_be_bytes());
+            f.extend_from_slice(&oasis_rt::modbus_gateway::crc16(&f).to_le_bytes());
+            println!("{}", hex(&f));
         }
         _ => eprintln!("usage: see the header of oasis-operator-key/examples/oasis_enroll.rs"),
     }
