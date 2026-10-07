@@ -163,3 +163,7 @@ path = "src/bin/bench_mesh_v0b.rs"
 [[bin]]
 name = "bench_payload_sweep"
 path = "src/bin/bench_payload_sweep.rs"
+
+[[bin]]
+name = "oasis_journal_verify"
+path = "src/bin/oasis_journal_verify.rs"

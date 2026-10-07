@@ -319,7 +319,7 @@ C = passerelle).
 | **S6** | balise rejouée, balise d'un `boot_id` antérieur | refusées |
 | **S7** | journal : 20 décisions mêlant acceptations et refus, sorties par `@G`, vérifiées par `oasis_journal_verify` | code 0 |
 | **S8** | **coupure de courant réelle** de C pendant l'écriture du journal | au redémarrage : chaîne intacte, ou exactement 1 entrée non confirmée signalée ; `seq` ne recule pas |
-| **S9** | modification d'un octet du journal via `@X`/écriture flash, puis vérification | rupture détectée, entrée identifiée |
+| **S9** | modification d'un octet du journal via `@X`/écriture flash, puis vérification | rupture détectée. ⚠️ **Non localisée** : une chaîne à tête unique ne peut pas désigner l'entrée modifiée (tous les hachages suivants diffèrent) — l'outil rapporte l'indice où la vérification s'arrête. Une **suppression**, elle, est localisée par le trou de `seq` |
 | **S10** | contrôle de non-régression : la campagne v0B A→B→C et la campagne Modbus de la phase 1.4 **rejouées** | résultats identiques |
 
 ⚠️ **Je m'arrêterai pour vous demander avant la coupure de courant du test S8.**

@@ -30,15 +30,20 @@
 //! # Format (little-endian)
 //!
 //! Entry, 32 bytes: `seq u32 | boot_id u64 | origin_fp [u8;8] | cmd_seq u32 | class u8
-//! | decision u8 | flags u8 | reserved u8 = 0`.
+//! | decision u8 | flags u8 | reserved [u8;5] = 0`.
 //!
-//! The reserved byte must be zero, so an entry has exactly one encoding — the lesson of
-//! the phase 2.3 fuzzing finding on `parse_oac1`.
+//! **All five reserved bytes must be zero**, so an entry has exactly one encoding — the
+//! lesson of the phase 2.3 fuzzing finding on `parse_oac1`. The first version of this
+//! module checked only byte 27 and left bytes 28..32 unconstrained: `proof_journal_parse_total`
+//! refuted the round-trip property immediately, which is the same defect class caught a
+//! second time, this time by a proof rather than by a fuzzer.
 
 use crate::actuation::{Decision, OrderClass, Reason, StopDecision, REASON_COUNT};
 use sha2::{Digest, Sha256};
 
 pub const ENTRY_LEN: usize = 32;
+/// First reserved byte of an entry. Bytes `RESERVED_OFF..ENTRY_LEN` must all be zero.
+pub const RESERVED_OFF: usize = 27;
 pub const DOMAIN: &[u8] = b"OASIS-JOURNAL-v1";
 
 /// Flag bits recorded alongside the decision, so a reader can tell *why* the gate saw
@@ -145,7 +150,7 @@ pub fn encode_entry(e: &Entry) -> [u8; ENTRY_LEN] {
 /// Total on every input: any 32 bytes that are not exactly one well-formed entry yield
 /// `None`. Proved by `proof_journal_parse_total`.
 pub fn parse_entry(b: &[u8]) -> Option<Entry> {
-    if b.len() != ENTRY_LEN || b[27] != 0 {
+    if b.len() != ENTRY_LEN || b[RESERVED_OFF..ENTRY_LEN] != [0u8; ENTRY_LEN - RESERVED_OFF] {
         return None;
     }
     let mut boot = [0u8; 8];
@@ -235,7 +240,14 @@ impl Journal {
 pub enum VerifyResult {
     /// The chain recomputes to the head over all entries.
     Intact { entries: u32 },
-    /// Entry `at` does not chain: modified, or the predecessor differs.
+    /// The chain does not reach the head: an entry was modified, or its predecessor
+    /// differs.
+    ///
+    /// ⚠️ **`at` is where verification ended, not where the tampering is.** A single head
+    /// hash detects a modification but **cannot localise it**: every hash after the
+    /// altered entry differs, so the mismatch is only observable at the end. Localising
+    /// would need a per-entry anchor. A deletion *is* localised, by the `seq` hole —
+    /// hence [`VerifyResult::SeqGap`] being a separate verdict.
     Broken { at: u32 },
     /// `seq` jumps: an entry was removed. Reported separately from `Broken` because the
     /// two have different causes and a reader must be able to tell them apart.

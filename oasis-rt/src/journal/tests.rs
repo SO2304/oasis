@@ -130,9 +130,16 @@ fn jrn_entry_roundtrip_and_parser_is_strict() {
     assert_eq!(parse_entry(&[]), None);
     assert_eq!(parse_entry(&b[..ENTRY_LEN - 1]), None);
 
-    let mut r = b;
-    r[27] = 1;
-    assert_eq!(parse_entry(&r), None, "the reserved byte must be zero");
+    // Every reserved byte, not just the first. The first version of this module checked
+    // only byte 27, and `proof_journal_parse_total` refuted the round trip because bytes
+    // 28..32 were a hole: an entry had more than one encoding.
+    for off in RESERVED_OFF..ENTRY_LEN {
+        let mut r = b;
+        r[off] = 1;
+        assert_eq!(parse_entry(&r), None, "reserved byte {off} must be zero");
+    }
+    // And a parsed entry re-encodes to exactly the bytes it came from.
+    assert_eq!(encode_entry(&parse_entry(&b).unwrap()), b);
     let mut c = b;
     c[24] = 9;
     assert_eq!(parse_entry(&c), None, "unknown order class");
