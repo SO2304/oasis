@@ -47,6 +47,15 @@ SWD, et seule une image signée par le propriétaire démarre, avec anti-retour.
    jamais le débogage ni BOOTSEL avant d'avoir prouvé qu'une image signée démarre
    **et** qu'une mise à jour signée fonctionne sur cette carte.
 
+   **Avec 3 cartes RP2350** (le cas de l'utilisateur au 2026-10-07), chacune a un rôle
+   fixe, noté dans le rapport avec son numéro de série :
+   - **E** est la carte d'essai : elle seule reçoit des écritures d'OTP pendant les
+     phases 2 et 3 ;
+   - **F** et **G** restent vierges tant que tout n'est pas prouvé sur E, de bout en
+     bout. Elles servent au relais A→B→C sur RP2350 et de réserve si E est perdue.
+
+   Les étendre ensuite à F et G demande un nouvel accord de l'utilisateur.
+
    **Si l'utilisateur n'a qu'une carte RP2350**, fais les phases 0 et 1 sans aucune
    écriture d'OTP. Avant la phase 2, rappelle-lui deux choses et laisse-le décider :
    - c'est sa seule carte : une erreur d'OTP la rend inutilisable ;
