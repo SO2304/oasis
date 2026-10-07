@@ -39,6 +39,11 @@ libcrux-ml-dsa = { version = "=0.0.10", default-features = false, features = ["m
 # CRC-16/MODBUS for the Modbus RTU gateway (docs/specs/MODBUS_GATEWAY_SPEC.md). mrhooray/crc-rs,
 # no_std, catalogue algorithms, ~300 M downloads. Line-error detection only, not security.
 crc = { version = "=3.4.0", default-features = false }
+# Relay pre-filter (docs/specs/RELAY_PREFILTER_SPEC.md): HMAC-SHA256 network tag (RFC 2104)
+# and HKDF-SHA256 (RFC 5869) for the per-node network-key envelope. RustCrypto, same
+# digest 0.11 generation as sha2 0.11, no_std.
+hmac = { version = "=0.13.0", default-features = false }
+hkdf = { version = "=0.13.0", default-features = false }
 
 [dev-dependencies]
 # RustCrypto ml-dsa: independent ML-DSA-44 oracle (NOT independently audited, per its

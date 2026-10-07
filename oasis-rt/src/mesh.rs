@@ -1488,6 +1488,11 @@ pub fn parse_envelope(envelope: &[u8]) -> Result<MeshHeader<'_>, &'static str> {
 
 // Tests and Kani proofs live in sibling files to keep this module focused on
 // the mesh protocol core (HMAC/Ed25519 signing, Bloom dedup, routing).
+/// Relay pre-filter (spec docs/specs/RELAY_PREFILTER_SPEC.md): per-link MAC key
+/// derivation, v0C link tag, and the per-link verification token bucket.
+#[cfg(feature = "mesh_v10")]
+pub mod prefilter;
+
 #[cfg(kani)]
 mod kani_proofs;
 
