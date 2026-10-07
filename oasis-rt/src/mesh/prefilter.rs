@@ -154,6 +154,39 @@ pub const MESH_V0C_HEADER_LEN: usize = MESH_V0B_HEADER_LEN + FP_LEN + LINK_TAG_L
 const FWD_OFF: usize = MESH_V0B_HEADER_LEN; // 99
 const TAG_OFF: usize = MESH_V0B_HEADER_LEN + FP_LEN; // 107
 
+/// Parsed v0C header. The v0B fields plus the two link fields.
+pub struct V0cHeader {
+    pub network_id: [u8; super::MESH_V0B_NETWORK_LEN],
+    pub origin_fp: [u8; FP_LEN],
+    pub counter: u64,
+    pub ttl: u8,
+    pub hops: u16,
+    pub payload_len: u16,
+    pub sig: [u8; MESH_ED_SIG_LEN],
+    pub forwarder_fp: [u8; FP_LEN],
+    pub tag: [u8; LINK_TAG_LEN],
+}
+
+/// Pure, panic-free v0C header parser (Kani-proven total). `None` for a buffer shorter
+/// than the fixed header or with the wrong magic; every slice bound is then inside
+/// `[0, MESH_V0C_HEADER_LEN)`, so no indexing can panic for any input.
+pub fn v0c_try_parse_header(env: &[u8]) -> Option<V0cHeader> {
+    if env.len() < MESH_V0C_HEADER_LEN || &env[..6] != SPORE_V0C_MAGIC {
+        return None;
+    }
+    Some(V0cHeader {
+        network_id: env[6..14].try_into().ok()?,
+        origin_fp: env[14..22].try_into().ok()?,
+        counter: u64::from_le_bytes(env[22..30].try_into().ok()?),
+        ttl: env[30],
+        hops: u16::from_le_bytes([env[31], env[32]]),
+        payload_len: u16::from_le_bytes([env[33], env[34]]),
+        sig: env[35..MESH_V0B_HEADER_LEN].try_into().ok()?,
+        forwarder_fp: env[FWD_OFF..FWD_OFF + FP_LEN].try_into().ok()?,
+        tag: env[TAG_OFF..TAG_OFF + LINK_TAG_LEN].try_into().ok()?,
+    })
+}
+
 /// Test-only counter of actual Ed25519 verifications reached, so a test can prove that
 /// a bad link tag or an exhausted budget stops an envelope BEFORE the expensive check.
 #[cfg(test)]
@@ -215,33 +248,20 @@ impl MeshRouter {
     /// the actuator clock. Anything that is not a well-formed v0C envelope is dropped at
     /// the magic check (anti-downgrade): route all mesh bytes here on a v0C node.
     pub fn process_v0c(&mut self, envelope: &[u8], budget: &mut LinkBudget, now_ms: u64) -> MeshDecision {
-        if envelope.len() < MESH_V0C_HEADER_LEN || &envelope[..6] != SPORE_V0C_MAGIC {
-            return MeshDecision::Drop("not a v0C envelope (downgrade refused)");
-        }
+        let h = match v0c_try_parse_header(envelope) {
+            Some(h) => h,
+            None => return MeshDecision::Drop("not a v0C envelope (downgrade refused)"),
+        };
         if self.counter_tracker.is_none() {
             return MeshDecision::Drop("v0C received but router not in v0B/v0C mode");
         }
-        let network_id: [u8; super::MESH_V0B_NETWORK_LEN] = match envelope[6..14].try_into() {
-            Ok(n) => n,
-            Err(_) => return MeshDecision::Drop("short"),
-        };
+        let V0cHeader { network_id, origin_fp, counter, ttl, hops, payload_len, sig, forwarder_fp, tag } = h;
         if network_id != self.network_id {
             return MeshDecision::Drop("foreign network");
         }
-        let origin_fp: [u8; FP_LEN] = envelope[14..22].try_into().unwrap();
         if origin_fp == self.my_fp {
             return MeshDecision::Drop("own echo");
         }
-        let counter = u64::from_le_bytes(envelope[22..30].try_into().unwrap());
-        let ttl = envelope[30];
-        let hops = u16::from_le_bytes([envelope[31], envelope[32]]);
-        let payload_len = u16::from_le_bytes([envelope[33], envelope[34]]);
-        let sig: [u8; MESH_ED_SIG_LEN] = match envelope[35..MESH_V0B_HEADER_LEN].try_into() {
-            Ok(s) => s,
-            Err(_) => return MeshDecision::Drop("short"),
-        };
-        let forwarder_fp: [u8; FP_LEN] = envelope[FWD_OFF..FWD_OFF + FP_LEN].try_into().unwrap();
-        let tag: [u8; LINK_TAG_LEN] = envelope[TAG_OFF..TAG_OFF + LINK_TAG_LEN].try_into().unwrap();
         let payload = &envelope[MESH_V0C_HEADER_LEN..];
 
         // ── cheap keyed pre-filter, BEFORE Ed25519 ──

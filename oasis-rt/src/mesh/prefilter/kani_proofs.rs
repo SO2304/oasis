@@ -43,3 +43,19 @@ fn proof_budget_refill_capped() {
         assert!(b.tokens() <= before);
     }
 }
+
+/// PROVE: the v0C header parser never panics, and an accepted header implies the exact
+/// magic and a buffer at least `MESH_V0C_HEADER_LEN` long (so every field offset is in
+/// bounds). Mirrors the v0B parser-totality proof.
+#[kani::proof]
+#[kani::unwind(11)]
+fn proof_v0c_parse_total() {
+    let buf: [u8; MESH_V0C_HEADER_LEN + 1] = kani::any();
+    let len: usize = kani::any();
+    kani::assume(len <= MESH_V0C_HEADER_LEN + 1);
+    if let Some(h) = v0c_try_parse_header(&buf[..len]) {
+        assert!(len >= MESH_V0C_HEADER_LEN);
+        assert!(buf[..6] == *SPORE_V0C_MAGIC);
+        assert!(h.payload_len == u16::from_le_bytes([buf[33], buf[34]]));
+    }
+}
