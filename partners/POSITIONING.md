@@ -49,9 +49,16 @@ irréversibles**.
 | 4 | **Révocation de toute la flotte** sans renouveler les autres clés | Liste signée par l'opérateur (k-sur-n possible), époque croissante, persistée avant application, appliquée par chaque relais | Silicium : origine révoquée rejetée au premier saut, y compris après coupure ; ancienne liste refusée `Rollback`. k-sur-n : PC seulement |
 | 5 | **Sûreté d'action** : même un ordre valide n'est pas exécuté si la machine n'est pas en état d'agir | Porte R14 (incertitude des capteurs), limites physiques, refus des valeurs NaN ou infinies | Silicium : capteur perdu → `R14Unsafe` ; 1000 N → `OutOfLimits` ; NaN → refusé. 3 preuves Kani de la porte |
 
-Et sur le logiciel : Rust `no_std`, 534 tests, 16 nouveaux harnais Kani exécutés
-et vérifiés (133 au total), preuves brutes avec SHA-256 vérifiées dans un clone frais.
-Tourne sur un Cortex-M0+ à 1 $ (RP2040), firmware d'environ 136 Ko de flash.
+Et sur le logiciel : Rust `no_std`, 591 tests, 149 harnais Kani (123 vérifiés en CI,
+20 nouveaux vérifiés un par un, 6 non vérifiés et nommés), preuves brutes avec SHA-256
+vérifiées dans un clone frais (611 fichiers). Tourne sur un Cortex-M0+ à 1 $ (RP2040),
+firmware d'environ 136 Ko de flash, 265–288 Ko avec l'autorité hybride, l'enrôlement et
+la mise à jour.
+
+Depuis le 2026-10-07, aussi prouvé sur silicium (avec limites, voir
+`OASIS_VS_VERIDIFY.md`) : messages d'autorité hybrides Ed25519 + ML-DSA-44 avec
+anti-rétrogradation, enrôlement et transfert de propriété, mise à jour A/B signée avec
+coupures de courant, passerelle Modbus RTU devant un équipement existant.
 
 ## 5. Deux façons de l'utiliser
 
