@@ -45,7 +45,9 @@ use usbd_serial::SerialPort;
 
 use oasis_rt::actuation::parse_oac1;
 use oasis_rt::mesh::inner_slice;
-use oasis_rt::mesh::prefilter::{LinkBudget, LinkKeys};
+use oasis_rt::mesh::prefilter::{
+    link_tag, LinkBudget, LinkKeys, LINK_TAG_LEN, MESH_V0C_HEADER_LEN,
+};
 use oasis_rt::mesh::{
     mesh_v0b_verify, mesh_v10_verify, MeshDecision, MeshEdPub, MeshEdSeed, MeshPubRegistry,
     MeshRouter,
@@ -861,6 +863,13 @@ fn main() -> ! {
                 // legitimate traffic mixed in, one 190 ms verification dominates the total
                 // and a FIFO overrun during it desynchronises the deframer.
                 let legit_rate: u64 = it.next().and_then(|v| v.parse().ok()).unwrap_or(1);
+                // Fourth field: attacker model. 0 = OUTSIDER (default): no link key, the tag
+                // is wrong, refused in ~0.7 ms. 1 = INSIDER: this board legitimately holds
+                // the link key, so it recomputes a VALID tag for each fresh counter and
+                // breaks the Ed25519 signature instead (the tag covers origin/counter/length/
+                // payload, NOT the signature). An insider frame therefore passes the
+                // pre-filter and is only stopped by the per-link budget.
+                let insider: bool = it.next().map(|v| v.trim() == "1").unwrap_or(false);
                 if rate == 0 || secs == 0 || rate > 200 || secs > 300 {
                     io.log("PF_FLOOD_BAD", format_args!("rate={},secs={}", rate, secs));
                 } else if !lease.ensure(router.tx_counter().saturating_add(secs + 32), &mut lstore)
@@ -872,10 +881,22 @@ fn main() -> ! {
                     io.log(
                         "PF_FLOOD",
                         format_args!(
-                            "start,rate={},secs={},v0c={},legit_rate={}",
-                            rate, secs, pf_v0c, legit_rate
+                            "start,rate={},secs={},v0c={},legit_rate={},insider={}",
+                            rate, secs, pf_v0c, legit_rate, insider
                         ),
                     );
+                    // An insider needs the link key for the next hop to re-tag each frame.
+                    let insider_key = if insider && pf_v0c {
+                        pf_next_hop.and_then(|nh| router.link_key_for(nh, &mut pf_keys))
+                    } else {
+                        None
+                    };
+                    if insider && insider_key.is_none() {
+                        io.log(
+                            "PF_FLOOD_BAD",
+                            format_args!("insider needs v0C mode and a known next hop"),
+                        );
+                    }
                     // Pre-sign every legitimate frame BEFORE the timed loop. Signing inside
                     // it blocked the injector for 190 ms at a time, after which the schedule
                     // caught up in a BURST — right when the relay was busy verifying that same
@@ -942,6 +963,17 @@ fn main() -> ! {
                             };
                             let ctr = base_ctr.wrapping_add(forged as u64).wrapping_add(1);
                             tmpl[22..30].copy_from_slice(&ctr.to_le_bytes());
+                            if let Some(k) = insider_key {
+                                // Valid tag for this counter, then break the signature: the
+                                // frame passes the tag and must be capped by the budget.
+                                let origin: [u8; 8] = tmpl[14..22].try_into().unwrap();
+                                let plen = u16::from_le_bytes([tmpl[33], tmpl[34]]);
+                                let tag =
+                                    link_tag(&k, origin, ctr, plen, &tmpl[MESH_V0C_HEADER_LEN..]);
+                                let at = MESH_V0C_HEADER_LEN - LINK_TAG_LEN;
+                                tmpl[at..at + LINK_TAG_LEN].copy_from_slice(&tag);
+                                tmpl[40] ^= 0x01; // a byte inside the 35..99 signature field
+                            }
                             send_framed(&mut uart0, &tmpl);
                             forged = forged.wrapping_add(1);
                         }

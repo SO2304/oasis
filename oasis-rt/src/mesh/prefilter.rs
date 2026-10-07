@@ -284,6 +284,18 @@ impl MeshRouter {
         Some(assemble_v0c(network_id, my_fp, counter, ttl, 0, inner, &sig, my_fp, &tag))
     }
 
+    /// The link key this node shares with `peer_fp` (cached). Exposed so a test
+    /// firmware can model an **insider**: a node that legitimately holds the link key
+    /// can produce a frame with a VALID tag and a broken Ed25519 signature (the tag
+    /// covers origin/counter/length/payload, not the signature), which passes the
+    /// pre-filter and must therefore be capped by the per-link budget. `None` if this
+    /// router has no key or the peer is unknown.
+    pub fn link_key_for(&self, peer_fp: [u8; FP_LEN], keys: &mut LinkKeys) -> Option<[u8; 32]> {
+        let ed_sk = self.v0c_ed_sk()?;
+        let peer_pub = *self.ed_registry.get(&peer_fp)?;
+        keys.get_or_derive(ed_sk, self.my_fp, &peer_pub, peer_fp)
+    }
+
     /// Re-seal a received v0C envelope for the next hop: `forwarder_fp = me`, `ttl-1`,
     /// `hops+1`, and the tag recomputed for the link `me → next_hop_fp`. The origin
     /// signature and payload are untouched. Call before forwarding.

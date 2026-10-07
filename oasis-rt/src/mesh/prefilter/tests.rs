@@ -294,3 +294,35 @@ fn link_keys_derive_once_per_peer() {
     let _ = b.process_v0c(&env, &mut bk, &mut bb, 0);
     assert_eq!(bk.derivations(), 2);
 }
+
+#[test]
+#[serial] // shares the global ED_VERIFY_CALLS counter with the other v0C tests
+fn v0c_insider_valid_tag_bad_signature_is_capped_by_the_budget() {
+    // The insider model: a node that holds the link key (B does, legitimately) can make a
+    // frame with a VALID tag and a broken signature, because the tag covers
+    // origin/counter/length/payload but NOT the signature. It passes the pre-filter, so
+    // only the budget stops it forcing Ed25519 verifications.
+    let mut a = node(0xAA, &[0xBB]);
+    let mut b = node(0xBB, &[0xAA]);
+    let (mut ak, mut bk) = (LinkKeys::new(), LinkKeys::new());
+    let mut bb = LinkBudget::new(BUDGET_RATE_PER_S, 3); // burst 3, so the cap is visible
+    let before = ED_VERIFY_CALLS.load(Ordering::Relaxed);
+
+    let env = a.origin_wrap_v0c(b"insider", fp(0xBB), &mut ak).unwrap();
+    // Break the signature (byte 40 is inside the 35..99 signature field); the tag stays valid.
+    let mut bad = env.clone();
+    bad[40] ^= 0x01;
+    // The tag must still verify, so the frame reaches the budget and then Ed25519.
+    let mut reached = 0;
+    let mut capped = 0;
+    for _ in 0..10 {
+        match b.process_v0c(&bad, &mut bk, &mut bb, 0) {
+            MeshDecision::Drop("bad mesh signature") => reached += 1,
+            MeshDecision::Drop("link budget exceeded") => capped += 1,
+            d => panic!("unexpected: {d:?}"),
+        }
+    }
+    assert_eq!(reached, 3, "exactly the burst reached Ed25519");
+    assert_eq!(capped, 7, "the rest were refused before it");
+    assert_eq!(ED_VERIFY_CALLS.load(Ordering::Relaxed) - before, 3, "the budget bounds the verifications");
+}
