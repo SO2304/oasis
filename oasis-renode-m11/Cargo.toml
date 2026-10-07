@@ -2,6 +2,7 @@
 name = "oasis-renode-m11"
 version = "0.1.0"
 edition = "2021"
+license = "MIT"  # matches the repository LICENSE file
 
 # M11 "Federated Resonance" demo under Renode.
 # Two STM32F4 (Cortex-M4F) nodes wired UART-to-UART. Node A signs a
@@ -14,7 +15,7 @@ edition = "2021"
 [dependencies]
 # OASIS kernel: no_std + mesh_v10 (now compiles on thumbv7em without
 # the signature crate) + tight Bloom filter for MCU.
-oasis-rt = { path = "../oasis-rt", default-features = false, features = ["mesh_bloom_mcu", "mesh_v10"] }
+oasis-rt = { path = "../oasis-rt", version = "0.3.0", default-features = false, features = ["mesh_bloom_mcu", "mesh_v10"] }
 
 # Direct Ed25519 access for pubkey hydration on the receive side.
 ed25519-compact = { version = "2.2.0", default-features = false, features = ["x25519"] }

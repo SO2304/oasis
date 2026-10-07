@@ -2,6 +2,7 @@
 name = "oasis-bootloader"
 version = "0.1.0"
 edition = "2021"
+license = "MIT"  # matches the repository LICENSE file
 description = "A/B bootloader for the RP2040 OASIS test nodes (Phase 1.3): embassy-boot-rp, unmodified logic. NOT part of the host workspace."
 publish = false
 

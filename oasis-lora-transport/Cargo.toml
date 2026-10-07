@@ -2,6 +2,7 @@
 name = "oasis-lora-transport"
 version = "0.1.0"
 edition = "2021"
+license = "MIT"  # matches the repository LICENSE file
 
 # Gap 1 (radio transport) scaffolding for OASIS defense vertical.
 # Provides the LoRaRadio trait matching SX126x-family chip APIs, a
@@ -12,7 +13,7 @@ edition = "2021"
 # GPIO + delay; the board glue supplies a concrete HAL per target.
 
 [dependencies]
-oasis-rt = { path = "../oasis-rt", default-features = false, features = ["mesh_bloom_mcu", "mesh_v10"] }
+oasis-rt = { path = "../oasis-rt", version = "0.3.0", default-features = false, features = ["mesh_bloom_mcu", "mesh_v10"] }
 # FHSS seed-derived hop sequence uses SHA-256 over (seed || ctx || counter).
 # Already compiled by oasis-rt for HMAC — small extra cost, keeps FHSS
 # self-contained in this crate without reaching into oasis-rt internals.
@@ -23,7 +24,7 @@ embedded-hal = "1.0"
 [dev-dependencies]
 # Host tests use std (spawn threads for the two simulated nodes talking
 # via crossbeam channels). MCU builds use `--no-default-features`.
-oasis-rt = { path = "../oasis-rt", features = ["std", "mesh_v10"] }
+oasis-rt = { path = "../oasis-rt", version = "0.3.0", features = ["std", "mesh_v10"] }
 
 [features]
 default = []
