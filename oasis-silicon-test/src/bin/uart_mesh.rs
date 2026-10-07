@@ -664,16 +664,20 @@ fn main() -> ! {
             }
             // `@P<hex>`: originate a v0B envelope carrying the PC-built payload
             // (operator-signed ORV1 list, or an OAC1 command). Stored for `z` replay.
-            if line_done && line_len >= 1 && line[0] == b'P' {
+            // `@H<hex>` (Phase 1.4 test): originate and store it WITHOUT sending, so `@K`
+            // can send a modified copy under a counter the receiver has never seen.
+            if line_done && line_len >= 1 && (line[0] == b'P' || line[0] == b'H') {
                 let mut pl = [0u8; 300];
                 match ef::hex_decode(&line[1..line_len], &mut pl) {
                     Some(plen) => {
                         if let Some(env) = router.origin_wrap_v0b(&pl[..plen]) {
                             last_v0b_len = env.len().min(MAX_ENV);
                             last_v0b[..last_v0b_len].copy_from_slice(&env[..last_v0b_len]);
-                            send_framed(&mut uart0, &env);
+                            if line[0] == b'P' {
+                                send_framed(&mut uart0, &env);
+                            }
                             io.log(
-                                "PAYLOAD_TX",
+                                if line[0] == b'P' { "PAYLOAD_TX" } else { "PAYLOAD_HELD" },
                                 format_args!(
                                     "kind={},counter={},len={}",
                                     ef::content_kind(&pl[..plen]),
