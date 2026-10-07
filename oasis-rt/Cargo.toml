@@ -35,6 +35,9 @@ libm = "0.2"
 # (evidence/silicon/2026-10-06/pq/REPORT.md). Latest stable release, pinned exactly;
 # verification only on devices. Pre-1.0.
 libcrux-ml-dsa = { version = "=0.0.10", default-features = false, features = ["mldsa44"] }
+# CRC-16/MODBUS for the Modbus RTU gateway (docs/specs/MODBUS_GATEWAY_SPEC.md). mrhooray/crc-rs,
+# no_std, catalogue algorithms, ~300 M downloads. Line-error detection only, not security.
+crc = { version = "=3.4.0", default-features = false }
 
 [dev-dependencies]
 # RustCrypto ml-dsa: independent ML-DSA-44 oracle (NOT independently audited, per its
@@ -43,6 +46,9 @@ ml-dsa = { version = "=0.1.1", default-features = false }
 # Serializes tests that mutate process-wide env vars (OASIS_SIGNING_KEY, OASIS_ED25519_SEED).
 # Without this, parallel test execution causes intermittent failures in federation suite.
 serial_test = "3"
+# rmodbus: independent Modbus RTU server used as the device in the gateway tests (it must
+# parse and apply every frame the gateway builds). Also the device firmware on silicon.
+rmodbus = "=0.12.2"
 
 [features]
 default = ["std", "std_env", "os_random", "mesh_v10"]

@@ -45,6 +45,7 @@ pub mod fragment;
 pub mod identity;
 pub mod mesh;
 pub mod mesh_revocation;
+pub mod modbus_gateway;
 pub mod nav;
 pub mod ownership;
 pub mod parameters;

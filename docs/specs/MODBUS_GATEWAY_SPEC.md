@@ -68,7 +68,7 @@ Contenu v0B, petit-boutiste comme `OAC1` :
 
 ```
 "OMB1" | gateway_id u16 | cmd_seq u32 | boot_id u64 | deadline_ms u64
-       | unit u8 | fc u8 | start u16 | count u8 | values[count] u16     (32 à 46 o)
+       | unit u8 | fc u8 | start u16 | count u8 | values[count] u16     (33 à 47 o)
 ```
 
 - **Seuls FC06** (`count = 1`) **et FC16** (`1 ≤ count ≤ 8`) sont analysés. Tout
