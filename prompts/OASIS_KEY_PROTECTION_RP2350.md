@@ -46,6 +46,13 @@ SWD, et seule une image signée par le propriétaire démarre, avec anti-retour.
    Commence sur **une seule carte dédiée aux essais**, jamais sur toutes. Ne verrouille
    jamais le débogage ni BOOTSEL avant d'avoir prouvé qu'une image signée démarre
    **et** qu'une mise à jour signée fonctionne sur cette carte.
+
+   **Si l'utilisateur n'a qu'une carte RP2350**, fais les phases 0 et 1 sans aucune
+   écriture d'OTP. Avant la phase 2, rappelle-lui deux choses et laisse-le décider :
+   - c'est sa seule carte : une erreur d'OTP la rend inutilisable ;
+   - une fois le démarrage sécurisé actif, **perdre la clé de signature empêche tout
+     nouveau firmware**. Exige une copie de sauvegarde de cette clé, hors de la
+     machine, avant l'écriture du hachage.
 2. **Les faits sur le RP2350 viennent de sources primaires** : datasheet RP2350, notes
    d'errata, documentation du bootrom et de `picotool`, publications de Raspberry Pi
    sur la sécurité. Cite la section et la révision. Si une information manque,
@@ -96,6 +103,10 @@ Pour chaque option, donne :
 **Recommande une option, et commence par la plus simple qui ferme BOOTSEL et SWD.**
 
 ## Phase 1 — portage RP2350 sans sécurité activée
+
+0. Relève d'abord la révision de silicium de la carte, avec l'outil officiel
+   (`picotool info` ou équivalent documenté). Note-la dans le rapport, et indique les
+   errata de sécurité qui la concernent (règle 3).
 
 1. Construis `oasis-silicon-test` et `oasis-bootloader` pour RP2350 (Cortex-M33,
    `thumbv8m.main-none-eabihf`). Utilise les versions d'`embassy-rp` /
