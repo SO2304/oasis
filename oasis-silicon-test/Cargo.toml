@@ -40,6 +40,8 @@ sha2 = { version = "0.11.0", default-features = false, optional = true }
 rmodbus = { version = "=0.12.2", default-features = false, features = ["heapless"] }
 heapless = "0.9.1"
 nb = "1"
+# Phase 2.1: interrupt-driven UART0 receive ring shared with the main loop.
+critical-section = "1"
 
 [features]
 default = []

@@ -37,6 +37,7 @@ use hal::clocks::Clock;
 use hal::fugit::RateExtU32;
 use hal::gpio::FunctionUart;
 use hal::pac;
+use hal::pac::interrupt;
 use hal::uart::{DataBits, Parity, StopBits, UartConfig, UartPeripheral};
 use usb_device::class_prelude::UsbBusAllocator;
 use usb_device::device::{StringDescriptors, UsbDevice};
@@ -230,7 +231,100 @@ type UartPins0 = (
     hal::gpio::Pin<hal::gpio::bank0::Gpio0, FunctionUart, hal::gpio::PullDown>,
     hal::gpio::Pin<hal::gpio::bank0::Gpio1, FunctionUart, hal::gpio::PullDown>,
 );
-type Uart0 = UartPeripheral<hal::uart::Enabled, pac::UART0, UartPins0>;
+/// After the split, `uart0` in main is the TRANSMIT half; the receive half lives in
+/// the UART0 interrupt (see `RX_RING`).
+type Uart0 = hal::uart::Writer<pac::UART0, UartPins0>;
+type Uart0Reader = hal::uart::Reader<pac::UART0, UartPins0>;
+
+// Polling cannot capture bytes while the main loop is blocked inside a ~185 ms Ed25519
+// verification: the 32-byte hardware FIFO overruns and the deframer loses sync, which on
+// silicon cost ~90 % of the frames under flood and made availability unmeasurable
+// (evidence/silicon/2026-10-07/prefilter/, runs 44_*/48_*). The ISR drains the FIFO into
+// this ring, so a busy relay QUEUES instead of losing, and the real question — does the
+// queue grow without bound? — becomes measurable.
+const RX_RING_CAP: usize = 4096;
+
+struct RxRing {
+    buf: [u8; RX_RING_CAP],
+    head: usize,
+    tail: usize,
+    dropped: u32,
+    errors: u32,
+}
+
+impl RxRing {
+    const fn new() -> Self {
+        RxRing {
+            buf: [0; RX_RING_CAP],
+            head: 0,
+            tail: 0,
+            dropped: 0,
+            errors: 0,
+        }
+    }
+    fn push(&mut self, data: &[u8]) {
+        for &b in data {
+            let next = (self.head + 1) % RX_RING_CAP;
+            if next == self.tail {
+                self.dropped = self.dropped.wrapping_add(1);
+                return; // genuinely full: the queue overflowed, and we count it
+            }
+            self.buf[self.head] = b;
+            self.head = next;
+        }
+    }
+    fn pop(&mut self, out: &mut [u8]) -> usize {
+        let mut n = 0;
+        while n < out.len() && self.tail != self.head {
+            out[n] = self.buf[self.tail];
+            self.tail = (self.tail + 1) % RX_RING_CAP;
+            n += 1;
+        }
+        n
+    }
+    fn len(&self) -> usize {
+        (self.head + RX_RING_CAP - self.tail) % RX_RING_CAP
+    }
+}
+
+static RX_READER: critical_section::Mutex<core::cell::RefCell<Option<Uart0Reader>>> =
+    critical_section::Mutex::new(core::cell::RefCell::new(None));
+static RX_RING: critical_section::Mutex<core::cell::RefCell<RxRing>> =
+    critical_section::Mutex::new(core::cell::RefCell::new(RxRing::new()));
+
+#[interrupt]
+fn UART0_IRQ() {
+    critical_section::with(|cs| {
+        let mut reader = RX_READER.borrow_ref_mut(cs);
+        let Some(r) = reader.as_mut() else { return };
+        let mut ring = RX_RING.borrow_ref_mut(cs);
+        let mut b = [0u8; 32];
+        loop {
+            match r.read_raw(&mut b) {
+                Ok(0) => break,
+                Ok(n) => ring.push(&b[..n]),
+                Err(nb::Error::WouldBlock) => break,
+                Err(nb::Error::Other(_)) => {
+                    ring.errors = ring.errors.wrapping_add(1);
+                    break;
+                }
+            }
+        }
+    });
+}
+
+/// Take up to `out.len()` bytes the ISR has queued.
+fn rx_ring_pop(out: &mut [u8]) -> usize {
+    critical_section::with(|cs| RX_RING.borrow_ref_mut(cs).pop(out))
+}
+
+/// (queued bytes, bytes dropped because the ring was full, ISR read errors)
+fn rx_ring_stats() -> (usize, u32, u32) {
+    critical_section::with(|cs| {
+        let r = RX_RING.borrow_ref_mut(cs);
+        (r.len(), r.dropped, r.errors)
+    })
+}
 
 // Phase 1.4: the Modbus RTU bus to the brownfield device (C = gateway). UART1:
 // GP4 = TX, GP5 = RX (pulled up: an unwired line reads idle), 19 200 baud 8E1.
@@ -405,7 +499,7 @@ fn main() -> ! {
     );
 
     // UART0 full-duplex: TX = GP0 (pin 1), RX = GP1 (pin 2).
-    let mut uart0: Uart0 = UartPeripheral::new(
+    let uart0_full = UartPeripheral::new(
         pac.UART0,
         (
             pins.gpio0.into_function::<FunctionUart>(),
@@ -438,6 +532,13 @@ fn main() -> ! {
         clocks.peripheral_clock.freq(),
     )
     .unwrap();
+
+    // Receive half to the ISR, transmit half stays here as `uart0`.
+    let (mut uart0_rx, uart0) = uart0_full.split();
+    uart0_rx.enable_rx_interrupt(); // RXIM + RTIM: FIFO threshold and idle timeout
+    critical_section::with(|cs| RX_READER.borrow(cs).replace(Some(uart0_rx)));
+    unsafe { cortex_m::peripheral::NVIC::unmask(pac::Interrupt::UART0_IRQ) };
+    let mut uart0 = uart0;
 
     let usb_bus = UsbBusAllocator::new(hal::usb::UsbBus::new(
         pac.USBCTRL_REGS,
@@ -872,8 +973,8 @@ fn main() -> ! {
                 io.log(
                     "PF_STATUS",
                     format_args!(
-                        "v0c={},accepted={},drop_tag={},drop_budget={},drop_sig={},drop_other={},busy_us={},max_us={},tokens={},rx_bytes={},frames={},crc_fails={},dh_derivations={}",
-                        pf_v0c, pf.accepted, pf.drop_tag, pf.drop_budget, pf.drop_sig, pf.drop_other, pf.busy_us, pf.max_us, pf_budget.tokens(), rx_total, frame_total, crc_fails, pf_keys.derivations()
+                        "v0c={},accepted={},drop_tag={},drop_budget={},drop_sig={},drop_other={},busy_us={},max_us={},tokens={},rx_bytes={},frames={},crc_fails={},dh_derivations={},ring_queued={},ring_dropped={},ring_errors={}",
+                        pf_v0c, pf.accepted, pf.drop_tag, pf.drop_budget, pf.drop_sig, pf.drop_other, pf.busy_us, pf.max_us, pf_budget.tokens(), rx_total, frame_total, crc_fails, pf_keys.derivations(), rx_ring_stats().0, rx_ring_stats().1, rx_ring_stats().2
                     ),
                 );
             }
@@ -1500,7 +1601,7 @@ fn main() -> ! {
                 uart0.write_full_blocking(&[0x55, 0xAA, 0x11, 0x22, 0x33, 0x44]);
                 cortex_m::asm::delay(400_000);
                 let mut buf = [0u8; 16];
-                let got = uart0.read_raw(&mut buf).unwrap_or(0);
+                let got = rx_ring_pop(&mut buf);
                 regs.uartcr().modify(|_, w| w.lbe().clear_bit());
                 io.log("LOOPTEST", format_args!("uart0_internal_lbe_rx={}", got));
             }
@@ -1634,7 +1735,8 @@ fn main() -> ! {
 
         // UART0 RX (GP1) → deframe → process → log → relay on UART0 TX (GP0).
         let mut tmp = [0u8; 64];
-        if let Ok(n) = uart0.read_raw(&mut tmp) {
+        let n = rx_ring_pop(&mut tmp);
+        if n > 0 {
             rx_total = rx_total.wrapping_add(n as u32);
             for i in 0..n {
                 let mut owned = [0u8; MAX_ENV];
