@@ -1,0 +1,75 @@
+# Phase 2.3: cargo-fuzz targets for the oasis-rt parsers (prompts/OASIS_VS_VERIDIFY.md).
+# Run: `cargo +nightly fuzz run <target>` from oasis-rt/. Own workspace: not part of
+# the root workspace build or tests.
+[package]
+name = "oasis-rt-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+license = "MIT"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+oasis-rt = { path = "..", version = "0.3.0" }
+
+[workspace]
+members = ["."]
+
+[[bin]]
+name = "mesh_v0b"
+path = "fuzz_targets/mesh_v0b.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "revocation"
+path = "fuzz_targets/revocation.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "actuation"
+path = "fuzz_targets/actuation.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "enrollment"
+path = "fuzz_targets/enrollment.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "firmware"
+path = "fuzz_targets/firmware.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "modbus"
+path = "fuzz_targets/modbus.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "authority"
+path = "fuzz_targets/authority.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "mavlink"
+path = "fuzz_targets/mavlink.rs"
+test = false
+doc = false
+bench = false
