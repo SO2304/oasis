@@ -856,6 +856,11 @@ fn main() -> ! {
                 let mut it = spec.split(',');
                 let rate: u64 = it.next().and_then(|v| v.parse().ok()).unwrap_or(0);
                 let secs: u64 = it.next().and_then(|v| v.parse().ok()).unwrap_or(0);
+                // Third field: legitimate frames per second (default 1). 0 = forged only,
+                // which is the only way to read a clean per-forged-frame cost: with
+                // legitimate traffic mixed in, one 190 ms verification dominates the total
+                // and a FIFO overrun during it desynchronises the deframer.
+                let legit_rate: u64 = it.next().and_then(|v| v.parse().ok()).unwrap_or(1);
                 if rate == 0 || secs == 0 || rate > 200 || secs > 300 {
                     io.log("PF_FLOOD_BAD", format_args!("rate={},secs={}", rate, secs));
                 } else if !lease.ensure(router.tx_counter().saturating_add(secs + 32), &mut lstore)
@@ -866,7 +871,10 @@ fn main() -> ! {
                 } else {
                     io.log(
                         "PF_FLOOD",
-                        format_args!("start,rate={},secs={},v0c={}", rate, secs, pf_v0c),
+                        format_args!(
+                            "start,rate={},secs={},v0c={},legit_rate={}",
+                            rate, secs, pf_v0c, legit_rate
+                        ),
                     );
                     // Pre-sign every legitimate frame BEFORE the timed loop. Signing inside
                     // it blocked the injector for 190 ms at a time, after which the schedule
@@ -876,7 +884,7 @@ fn main() -> ! {
                     // paced it to 3.7/s; the two sweeps were therefore not comparable.)
                     let mut legit_queue: alloc::vec::Vec<alloc::vec::Vec<u8>> =
                         alloc::vec::Vec::new();
-                    for _ in 0..secs {
+                    for _ in 0..(secs * legit_rate) {
                         let built = if pf_v0c {
                             pf_next_hop
                                 .and_then(|nh| router.origin_wrap_v0c(b"LEGIT", nh, &mut pf_keys))
@@ -937,8 +945,8 @@ fn main() -> ! {
                             send_framed(&mut uart0, &tmpl);
                             forged = forged.wrapping_add(1);
                         }
-                        if ef::now_ms64() >= next_legit_ms {
-                            next_legit_ms = next_legit_ms.wrapping_add(1000);
+                        if legit_rate > 0 && ef::now_ms64() >= next_legit_ms {
+                            next_legit_ms = next_legit_ms.wrapping_add(1000 / legit_rate);
                             if let Some(env) = legit_queue.get(legit as usize) {
                                 send_framed(&mut uart0, env);
                                 legit = legit.wrapping_add(1);
