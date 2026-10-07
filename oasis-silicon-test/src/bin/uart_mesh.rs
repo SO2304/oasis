@@ -868,6 +868,31 @@ fn main() -> ! {
                         "PF_FLOOD",
                         format_args!("start,rate={},secs={},v0c={}", rate, secs, pf_v0c),
                     );
+                    // Pre-sign every legitimate frame BEFORE the timed loop. Signing inside
+                    // it blocked the injector for 190 ms at a time, after which the schedule
+                    // caught up in a BURST — right when the relay was busy verifying that same
+                    // frame, so the burst was lost to the 32-byte UART FIFO. (The first
+                    // injector hid this by signing every forged frame too, which accidentally
+                    // paced it to 3.7/s; the two sweeps were therefore not comparable.)
+                    let mut legit_queue: alloc::vec::Vec<alloc::vec::Vec<u8>> =
+                        alloc::vec::Vec::new();
+                    for _ in 0..secs {
+                        let built = if pf_v0c {
+                            pf_next_hop
+                                .and_then(|nh| router.origin_wrap_v0c(b"LEGIT", nh, &mut pf_keys))
+                        } else {
+                            router.origin_wrap_v0b(b"LEGIT")
+                        };
+                        match built {
+                            Some(e) => legit_queue.push(e),
+                            None => break,
+                        }
+                        io.poll();
+                    }
+                    io.log(
+                        "PF_PRESIGN",
+                        format_args!("legit_ready={}", legit_queue.len()),
+                    );
                     let t_start_ms = ef::now_ms64();
                     let period_us = 1_000_000 / rate;
                     let mut next_us = ef::now_us64();
@@ -900,7 +925,13 @@ fn main() -> ! {
                     {
                         io.poll();
                         if ef::now_us64() >= next_us {
-                            next_us = next_us.wrapping_add(period_us);
+                            // Re-anchor instead of accumulating: never emit a catch-up burst.
+                            let now_us = ef::now_us64();
+                            next_us = if now_us > next_us.wrapping_add(period_us) {
+                                now_us.wrapping_add(period_us)
+                            } else {
+                                next_us.wrapping_add(period_us)
+                            };
                             let ctr = base_ctr.wrapping_add(forged as u64).wrapping_add(1);
                             tmpl[22..30].copy_from_slice(&ctr.to_le_bytes());
                             send_framed(&mut uart0, &tmpl);
@@ -908,15 +939,8 @@ fn main() -> ! {
                         }
                         if ef::now_ms64() >= next_legit_ms {
                             next_legit_ms = next_legit_ms.wrapping_add(1000);
-                            let built = if pf_v0c {
-                                pf_next_hop.and_then(|nh| {
-                                    router.origin_wrap_v0c(b"LEGIT", nh, &mut pf_keys)
-                                })
-                            } else {
-                                router.origin_wrap_v0b(b"LEGIT")
-                            };
-                            if let Some(env) = built {
-                                send_framed(&mut uart0, &env);
+                            if let Some(env) = legit_queue.get(legit as usize) {
+                                send_framed(&mut uart0, env);
                                 legit = legit.wrapping_add(1);
                             }
                         }
