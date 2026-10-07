@@ -364,6 +364,7 @@ const MB_FRAME_GAP_US: u64 = 2_006;
 #[derive(Default)]
 struct PfStats {
     accepted: u32,
+    terminal: u32,
     drop_tag: u32,
     drop_budget: u32,
     drop_sig: u32,
@@ -973,8 +974,8 @@ fn main() -> ! {
                 io.log(
                     "PF_STATUS",
                     format_args!(
-                        "v0c={},accepted={},drop_tag={},drop_budget={},drop_sig={},drop_other={},busy_us={},max_us={},tokens={},rx_bytes={},frames={},crc_fails={},dh_derivations={},ring_queued={},ring_dropped={},ring_errors={}",
-                        pf_v0c, pf.accepted, pf.drop_tag, pf.drop_budget, pf.drop_sig, pf.drop_other, pf.busy_us, pf.max_us, pf_budget.tokens(), rx_total, frame_total, crc_fails, pf_keys.derivations(), rx_ring_stats().0, rx_ring_stats().1, rx_ring_stats().2
+                        "v0c={},accepted={},drop_tag={},drop_budget={},drop_sig={},drop_other={},busy_us={},max_us={},tokens={},rx_bytes={},frames={},crc_fails={},terminal={},dh_derivations={},ring_queued={},ring_dropped={},ring_errors={}",
+                        pf_v0c, pf.accepted, pf.drop_tag, pf.drop_budget, pf.drop_sig, pf.drop_other, pf.busy_us, pf.max_us, pf_budget.tokens(), rx_total, frame_total, crc_fails, pf.terminal, pf_keys.derivations(), rx_ring_stats().0, rx_ring_stats().1, rx_ring_stats().2
                     ),
                 );
             }
@@ -1956,10 +1957,12 @@ fn main() -> ! {
                             match (pf_v0c, resealed) {
                                 (false, _) => send_framed(&mut uart0, &envelope),
                                 (true, Some(out)) => send_framed(&mut uart0, &out),
-                                (true, None) => io.log(
-                                    "PF_NO_RESEAL",
-                                    format_args!("no next hop set; not forwarded"),
-                                ),
+                                // A v0C node with no next hop is terminal by configuration:
+                                // count it, never log per frame. Logging here blocked the
+                                // main loop for seconds (the host does not read this port
+                                // during a run), the ISR ring then overflowed, and the result
+                                // looked like a receive-path failure (runs 61/62).
+                                (true, None) => pf.terminal = pf.terminal.wrapping_add(1),
                             }
                             if !pf_quiet {
                                 io.log(
