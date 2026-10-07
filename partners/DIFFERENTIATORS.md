@@ -1,4 +1,4 @@
-# Ce qu'OASIS a de plus que ses concurrents (2026-10-06)
+# Ce qu'OASIS a de plus que ses concurrents (2026-10-07)
 
 Comparaison de propriétés **démontrées** côté OASIS (logs silicium, tests, Kani)
 avec ce que chaque concurrent **documente publiquement**. « Non documenté » ne veut
@@ -33,15 +33,16 @@ TRL 4 ; ses concurrents commerciaux sont déployés.
 |---|---|---|---|
 | M1 | **Primitives standard uniquement** (Ed25519, X25519, ChaCha20-Poly1305, SHA-256) | Veridify utilise WalnutDSA, un algorithme propriétaire **cassé publiquement en 2018** (falsification universelle en environ deux minutes, puis attaque de la version corrigée) ; il propose aussi ML-DSA | Aucun algorithme maison : c'est ce qu'un auditeur vérifie en premier |
 | M2 | **Révocation signée par l'opérateur, k-sur-n possible, propagée et appliquée par chaque relais, sans renouveler les autres clés** | Bluetooth Mesh et Thread : renouvellement de clé pour tous. Reticulum : listes « blackhole » locales. Veridify, Xage : registre de propriété ou de politique en chaîne de blocs | Révoquer un nœud ne touche pas les autres ; k-sur-n prouvé sur PC seulement |
-| M3 | **Code sûr en mémoire et vérifié** : Rust, 534 tests, harnais Kani exécutés | Les autres : C/C++ ou fermé | Moins de classes de failles mémoire ; preuves publiées |
+| M3 | **Code sûr en mémoire et vérifié** : Rust, 608 tests, 130 des 152 harnais Kani vérifiés (aucun contre-exemple), 1,5 × 10⁹ exécutions de fuzzing, SBOM et 0 vulnérabilité connue | Les autres : C/C++ ou fermé | Moins de classes de failles mémoire ; preuves publiées |
 | M4 | **Preuves brutes publiques** : logs, firmware, SHA-256 vérifiés dans un clone frais, défauts publiés | Produits fermés | Confiance vérifiable par un tiers ; aussi une limite pour la monétisation |
 | M5 | **Tourne sur Cortex-M0+ sans FPU ni accélérateur crypto** | Veridify revendique aussi les petits STM32 sans accélérateur | **Égalité probable** avec Veridify ; avantage sur seL4, Xage, Mobilicom |
+| M6 | **Résistance mesurée au déni de service par vérification forcée** : un pré-filtre à clé de lien ramène le coût d'une trame forgée de 179,4 ms à 0,70 ms sur RP2040, et sous un flot de 8 trames/s le relais livre 60 messages légitimes sur 60 à 19 % de charge (contre 39/60 à 110 % sans lui) | Personne parmi les concurrents cités ne documente ce risque ni sa parade. Bluetooth Mesh et Thread filtrent avec une clé **partagée** ; nos clés de lien sont dérivées des identités et ne sont jamais distribuées | Le chiffre est mesuré, pas estimé (`evidence/silicon/2026-10-07/prefilter/`). ⚠️ Contre un **initié**, le budget borne le calcul mais affame le trafic légitime (4/60) : plafond de calcul, pas équité |
 
 ## 4. Là où OASIS est derrière
 
 | Concurrent | Ce qu'il a de plus |
 |---|---|
-| Veridify | **Post-quantique** (ML-DSA, ML-KEM, Falcon), **enrôlement sans contact**, **mises à jour du firmware**, clients et fabricants partenaires |
+| Veridify | **ML-KEM et Falcon** (OASIS n'a aucun KEM post-quantique : son échange de clés reste X25519) ; **couverture de protocoles** bien plus large (BACnet/IP et MS/TP, DNP3, EtherNet/IP, MQTT, Modbus TCP et RTU en 1:N, contre Modbus RTU FC06/FC16 sur un seul équipement) ; **provisionnement industrialisé** (sans contact à l'échelle, gestion cloud ou sur site, application mobile) ; **certification ISO 26262 ASIL D** (2019) ; clients et fabricants partenaires. ✔️ Rattrapés depuis le 2026-10-07 : signature hybride Ed25519 + ML-DSA-44, enrôlement avec clé générée sur la carte, transfert de propriété à deux signatures, mise à jour A/B signée avec retour automatique (voir `OASIS_VS_VERIDIFY.md`) |
 | Silvus, Doodle Labs | Radios réelles, **certification FIPS 140-3**, contrats défense |
 | Mobilicom | Détection d'anomalies, résistance au brouillage, Blue UAS |
 | Xage | Clients grands comptes, déploiement à l'échelle de l'entreprise |
@@ -57,8 +58,13 @@ TRL 4 ; ses concurrents commerciaux sont déployés.
 
 Chacun des concurrents fait une partie de cette chaîne : le lien (radios), le réseau
 (Xage), l'équipement (Veridify), le noyau (seL4). **Aucun ne la fait de bout en bout
-jusqu'à l'actionneur.** C'est l'avantage à défendre ; tout le reste (post-quantique,
-mises à jour, enrôlement, radio) est à rattraper ou à obtenir par partenariat.
+jusqu'à l'actionneur.** C'est l'avantage à défendre.
+
+Le post-quantique (en hybride), l'enrôlement, le transfert de propriété et la mise à
+jour signée ont été rattrapés et démontrés sur silicium le 2026-10-07. Restent à
+rattraper ou à obtenir par partenariat : **un KEM post-quantique**, la **largeur de
+protocoles**, la **radio**, une **certification** et, avant tout, des **clients** —
+zéro entretien à ce jour (`POSITIONING_GAPS.md` D1).
 
 ## Sources
 

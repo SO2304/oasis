@@ -100,11 +100,12 @@ prouvé ; **absent** = n'existe pas.
 | Révocation d'un nœud | non documenté (propriété en chaîne de blocs documentée) | prouvé (k-sur-n sur PC seulement) | `…/ef/REPORT.md` |
 | Porte d'actionnement : habilitation par actionneur, expiration, état des capteurs, limites physiques | non documenté | prouvé | `…/ef/REPORT.md` ; `evidence/kani/2026-10-06/` |
 | Preuve formelle de la règle d'actionnement | non documenté | prouvé (16 harnais vérifiés ; suite complète : CI seulement) | `evidence/kani/2026-10-06/` |
-| Post-quantique standardisé | documenté (support ML-KEM, ML-DSA, Falcon) | **absent** | — |
-| Enrôlement sans contact | documenté | **absent** (le firmware de test compile des graines fixes) | — |
-| Transfert de propriété | documenté | **absent** | — |
-| Mise à jour du firmware signée | documenté (détails non documentés) | **absent** | — |
-| Équipements existants, Modbus RTU et TCP | documenté (DOME Sentry) | **absent** | — |
+| Post-quantique standardisé | documenté (support ML-KEM, ML-DSA, Falcon) | **partiel** : hybride Ed25519 + ML-DSA-44 sur les messages d'autorité ; **pas de KEM**, pas de Falcon | `evidence/silicon/2026-10-06/pq/REPORT.md` |
+| Enrôlement sans contact | documenté | **prouvé** : clé générée sur la carte, jamais sortie, attestation du propriétaire après preuve de possession | `…/enroll/REPORT.md` |
+| Transfert de propriété | documenté | **prouvé** : deux signatures (ancien et nouveau propriétaire) | `…/enroll/REPORT.md` |
+| Mise à jour du firmware signée | documenté (détails non documentés) | **prouvé** : A/B, plancher anti-retour, retour automatique, 2 coupures de courant réelles | `…/fwupdate/REPORT.md` |
+| Équipements existants, Modbus RTU et TCP | documenté et plus large (DOME Sentry : Modbus TCP et RTU, BACnet, DNP3, EtherNet/IP, MQTT) | **prouvé mais étroit** : Modbus RTU, FC06/FC16, un équipement, TTL | `evidence/silicon/2026-10-07/modbus/REPORT.md` |
+| Déni de service par vérification forcée | non documenté | **prouvé** : 179,4 ms → 0,70 ms par trame forgée ; 60/60 messages légitimes sous flot | `evidence/silicon/2026-10-07/prefilter/REPORT.md` |
 | Certification | ISO 26262 ASIL D (2019) | **absent** | — |
 | Partenaires, clients | documentés (fabricants, distributeurs, AWS, Intel…) | **absents** | — |
 | Primitives standard uniquement | non (WalnutDSA, Ironwood) + ML-DSA/ML-KEM/Falcon | oui (Ed25519, X25519, ChaCha20-Poly1305, SHA-256) | `CLAUDE.md` |
@@ -136,3 +137,11 @@ référence) : échange ML-KEM-512 complet en 35,7 ms, signature ML-DSA très va
 ([arXiv 2603.19340](https://arxiv.org/abs/2603.19340), révisé le 2026-08-11). Les
 chiffres ML-DSA-44 de vérification n'étaient pas dans le résumé : à lire avant la
 spec. Nous mesurerons notre propre implémentation Rust sur nos cartes.
+
+---
+
+**Mise à jour 2026-10-07.** Les cinq lignes « absent » du tableau §7 ont été fermées par
+les phases 1.1 à 1.4 et 2.1 du prompt `OASIS_VS_VERIDIFY.md`. La comparaison destinée à
+un lecteur externe, avec ce que Veridify fait mieux et trois phrases utilisables, est
+dans `partners/OASIS_VS_VERIDIFY.md`. Rien sur Veridify n'a été revérifié à cette date :
+les sources et leurs dates restent celles du 2026-10-06.

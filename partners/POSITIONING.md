@@ -49,9 +49,19 @@ irréversibles**.
 | 4 | **Révocation de toute la flotte** sans renouveler les autres clés | Liste signée par l'opérateur (k-sur-n possible), époque croissante, persistée avant application, appliquée par chaque relais | Silicium : origine révoquée rejetée au premier saut, y compris après coupure ; ancienne liste refusée `Rollback`. k-sur-n : PC seulement |
 | 5 | **Sûreté d'action** : même un ordre valide n'est pas exécuté si la machine n'est pas en état d'agir | Porte R14 (incertitude des capteurs), limites physiques, refus des valeurs NaN ou infinies | Silicium : capteur perdu → `R14Unsafe` ; 1000 N → `OutOfLimits` ; NaN → refusé. 3 preuves Kani de la porte |
 
-Et sur le logiciel : Rust `no_std`, 534 tests, 16 nouveaux harnais Kani exécutés
-et vérifiés (133 au total), preuves brutes avec SHA-256 vérifiées dans un clone frais.
-Tourne sur un Cortex-M0+ à 1 $ (RP2040), firmware d'environ 136 Ko de flash.
+Une sixième garantie, ajoutée le 2026-10-07 : **6 — Disponibilité face à un extérieur**.
+Un pré-filtre à clé de lien (dérivée des identités, jamais distribuée) refuse une trame
+forgée en 0,70 ms au lieu de 179,4 ms ; sous un flot de 8 trames forgées/s, le relais
+livre **60 messages légitimes sur 60** à 19 % de charge, contre 39/60 à 110 % sans lui
+(`evidence/silicon/2026-10-07/prefilter/`). ⚠️ Contre un **initié** (nœud enrôlé, ou clé
+lue dans la flash d'un RP2040), le budget par liaison borne le calcul du relais mais
+**affame le trafic légitime** (4/60) : c'est un plafond de calcul, pas de l'équité.
+
+Et sur le logiciel : Rust `no_std`, **608 tests**, **130 des 152 harnais Kani vérifiés**
+sans aucun contre-exemple (22 restent inconnus faute de mémoire locale), 1,5 × 10⁹
+exécutions de fuzzing pour un seul défaut trouvé et corrigé, SBOM CycloneDX et
+**0 vulnérabilité connue** sur les 6 arbres de dépendances ; preuves brutes avec SHA-256
+vérifiées dans un clone frais. Tourne sur un Cortex-M0+ à 1 $ (RP2040).
 
 ## 5. Deux façons de l'utiliser
 
