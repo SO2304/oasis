@@ -1,1 +1,3 @@
 evidence/** -text
+oasis-silicon-test/src/pq/*.pk binary
+oasis-silicon-test/src/pq/*.oau1 binary

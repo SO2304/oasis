@@ -2,6 +2,7 @@
 name = "oasis-rt"
 version = "0.3.0"
 edition = "2021"
+license = "MIT"  # matches the repository LICENSE file
 
 [lib]
 name = "oasis_rt"
@@ -28,11 +29,27 @@ getrandom = { version = "0.2", optional = true }
 # core has `f64` but not its method impls — those live in std. libm fills
 # the gap. ~10 KB code, well-audited, no further deps.
 libm = "0.2"
+# ML-DSA-44 (FIPS 204 final) for hybrid authority signatures (docs/specs/PQ_AUTHORITY_SPEC.md).
+# libcrux-ml-dsa (Cryspen), pure Rust, no_std without alloc: arithmetic, NTT and
+# serialization formally verified (hax/F*). Chosen by the RP2040 bake-off over RustCrypto
+# ml-dsa: 44.8 KB vs 84.0 KB peak stack, +11 % time, +101 KB flash
+# (evidence/silicon/2026-10-06/pq/REPORT.md). Latest stable release, pinned exactly;
+# verification only on devices. Pre-1.0.
+libcrux-ml-dsa = { version = "=0.0.10", default-features = false, features = ["mldsa44"] }
+# CRC-16/MODBUS for the Modbus RTU gateway (docs/specs/MODBUS_GATEWAY_SPEC.md). mrhooray/crc-rs,
+# no_std, catalogue algorithms, ~300 M downloads. Line-error detection only, not security.
+crc = { version = "=3.4.0", default-features = false }
 
 [dev-dependencies]
+# RustCrypto ml-dsa: independent ML-DSA-44 oracle (NOT independently audited, per its
+# README). Every test signature is checked by both implementations, plus NIST ACVP.
+ml-dsa = { version = "=0.1.1", default-features = false }
 # Serializes tests that mutate process-wide env vars (OASIS_SIGNING_KEY, OASIS_ED25519_SEED).
 # Without this, parallel test execution causes intermittent failures in federation suite.
 serial_test = "3"
+# rmodbus: independent Modbus RTU server used as the device in the gateway tests (it must
+# parse and apply every frame the gateway builds). Also the device firmware on silicon.
+rmodbus = "=0.12.2"
 
 [features]
 default = ["std", "std_env", "os_random", "mesh_v10"]

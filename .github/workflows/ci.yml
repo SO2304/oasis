@@ -56,6 +56,12 @@ jobs:
     name: cargo-audit (RustSec)
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # audit-check publishes its result as a check run; on push to main the
+    # default read-only token was refused ("Resource not accessible by
+    # integration") even though no vulnerability was found.
+    permissions:
+      contents: read
+      checks: write
     steps:
       - uses: actions/checkout@v4
       - uses: rustsec/audit-check@v2
@@ -68,8 +74,9 @@ jobs:
     # Authoritative formal-verification run for all #[kani::proof] harnesses.
     # oasis-rt/kani_shards.sh assigns each harness to exactly one shard (checked
     # by kani-shard-coverage). Harnesses that do not fit the 600 s budget run
-    # alone in a heavy-* shard with 60 min; they count as verified only when
-    # their shard is green. History: -j 2 on the whole suite was killed (exit
+    # alone in a heavy-* shard with 60 min, in kani-heavy.yml (weekly and on
+    # demand, not on every push: about 7 runner-hours each time); they count as
+    # verified only when their shard is green. History: -j 2 on the whole suite was killed (exit
     # 143), -j 1 hit the 90-min job timeout.
     timeout-minutes: ${{ matrix.minutes }}
     strategy:
@@ -81,14 +88,8 @@ jobs:
           - { shard: mesh-core-v0b, harness_timeout: 600s, minutes: 120 }
           - { shard: spinal-synapse, harness_timeout: 600s, minutes: 120 }
           - { shard: authority, harness_timeout: 600s, minutes: 120 }
+          - { shard: authority-phase1, harness_timeout: 600s, minutes: 120 }
           - { shard: other-modules, harness_timeout: 600s, minutes: 120 }
-          - { shard: heavy-proof_ae_snapshot_internal_consistency, harness_timeout: 3600s, minutes: 75 }
-          - { shard: heavy-proof_ae_capacity_consumed_monotonic, harness_timeout: 3600s, minutes: 75 }
-          - { shard: heavy-proof_ag_reset_count_extrapolation, harness_timeout: 3600s, minutes: 75 }
-          - { shard: heavy-proof_ah_arithmetic_tolerance_symmetric, harness_timeout: 3600s, minutes: 75 }
-          - { shard: heavy-proof_m4_fitness_monotone_in_goal, harness_timeout: 3600s, minutes: 75 }
-          - { shard: heavy-proof_m3_pain_monotone_in_magnitude, harness_timeout: 3600s, minutes: 75 }
-          - { shard: heavy-proof_topic_hash_deterministic_1byte, harness_timeout: 3600s, minutes: 75 }
     defaults:
       run:
         working-directory: oasis-rt
@@ -102,12 +103,14 @@ jobs:
         run: |
           cargo install --locked kani-verifier
           cargo kani setup
+      # -Z stubbing: proof_frag_reassembler_never_panics replaces SHA-256 with an
+      # arbitrary digest (#[kani::stub]); without the flag that harness fails.
       - name: cargo kani --lib (shard)
         run: |
           H=""
           for h in $(./kani_shards.sh "${{ matrix.shard }}"); do H="$H --harness $h"; done
           [ -n "$H" ] || { echo "::error::shard ${{ matrix.shard }} has no harness"; exit 1; }
-          cargo kani --lib $H --exact -Z unstable-options --harness-timeout ${{ matrix.harness_timeout }} -j 1 --output-format terse
+          cargo kani --lib $H --exact -Z unstable-options -Z stubbing --harness-timeout ${{ matrix.harness_timeout }} -j 1 --output-format terse
 
   kani-shard-coverage:
     name: Kani shard coverage (every harness in exactly one shard)
@@ -118,11 +121,12 @@ jobs:
         working-directory: oasis-rt
     steps:
       - uses: actions/checkout@v4
-      - name: Every harness maps to one shard, and every shard is in the CI matrix
+      - name: Every harness maps to one shard, and every shard is in a CI matrix
         run: |
           ./kani_shards.sh --check
           for s in $(./kani_shards.sh --all | awk '{print $1}' | sort -u); do
-            grep -q "shard: $s," ../.github/workflows/ci.yml || { echo "::error::shard $s is not in the CI matrix"; exit 1; }
+            case "$s" in heavy-*) f=../.github/workflows/kani-heavy.yml ;; *) f=../.github/workflows/ci.yml ;; esac
+            grep -q "shard: $s," "$f" || { echo "::error::shard $s is not in the matrix of $f"; exit 1; }
           done
 
   docker-build:

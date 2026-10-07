@@ -22,3 +22,11 @@ unfavourable, and is total and deterministic.
 Not done here: the full 129-harness CBMC pass (left to the `kani-proofs` CI job).
 The run was triggered before fast-forwarding `main`, because CI runs every Kani
 harness on each push to `main`.
+
+**Erratum (added later on 2026-10-06, Phase 1.1):** the `cargo kani exit code 0`
+line at the end of both logs is meaningless. `run_new_harnesses.sh` expanded `$?`
+after a `$(date)` substitution in the same `echo`, so it printed date's status:
+run 1 logged `0` despite its 3 failures. The verdicts in the table above come
+from each log's `Complete - … verified, … failures` line, and they stand. The
+logs are kept unchanged. The fixed runner is `pq/run_pq_harnesses.sh`, which logs
+exit `1` for a refuted harness (`pq/kani_pq_run1.log`).

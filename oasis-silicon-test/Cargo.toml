@@ -2,6 +2,7 @@
 name = "oasis-silicon-test"
 version = "0.1.0"
 edition = "2021"
+license = "MIT"  # matches the repository LICENSE file
 description = "On-silicon test firmware for OASIS (RP2040) — emits parsable PASS/FAIL log lines over USB-CDC. NOT part of the host workspace."
 
 # Standalone crate (excluded from the root workspace): builds ONLY for the
@@ -20,11 +21,36 @@ usb-device = "0.3"
 usbd-serial = "0.2"
 embedded-alloc = "0.5"
 # The crate under test, as a no_std MCU build (no std/os_random; mesh_v10 on for v0A).
-oasis-rt = { path = "../oasis-rt", default-features = false, features = ["mesh_bloom_mcu", "mesh_v10"] }
+oasis-rt = { path = "../oasis-rt", version = "0.3.0", default-features = false, features = ["mesh_bloom_mcu", "mesh_v10"] }
 # Same Ed25519 primitive oasis-rt uses — for the T3 deterministic KAT.
 ed25519-compact = { version = "2", default-features = false, features = ["x25519"] }
 # Operator authority (single / k-of-n) for verifying ORV1 revocation lists on-chip (Part C).
-oasis-operator-key = { path = "../oasis-operator-key" }
+oasis-operator-key = { path = "../oasis-operator-key", version = "0.1.0" }
+# Phase 1.1 bake-off only (src/bin/pq_bench.rs): RustCrypto ml-dsa, measured against
+# libcrux-ml-dsa (which oasis-rt uses on the device since the bake-off).
+ml-dsa = { version = "=0.1.1", default-features = false, optional = true }
+# Phase 1.3 (feature `bootloaded`): firmware updater for the embassy-boot A/B
+# bootloader (oasis-bootloader); its own signature check stays off.
+embassy-boot = { version = "=0.7.0", default-features = false, optional = true }
+embedded-storage = { version = "0.3.1", optional = true }
+# Hash of the uploaded image (same crate and version as oasis-rt).
+sha2 = { version = "0.11.0", default-features = false, optional = true }
+# Phase 1.4: the brownfield Modbus RTU device (bin modbus_device) is rmodbus, an existing
+# Modbus library independent of the gateway code (docs/specs/MODBUS_GATEWAY_SPEC.md §2).
+rmodbus = { version = "=0.12.2", default-features = false, features = ["heapless"] }
+heapless = "0.9.1"
+nb = "1"
+
+[features]
+default = []
+# pq_bench: which ML-DSA-44 verifiers to link. Build one at a time to compare flash size.
+bench_rc = ["dep:ml-dsa"]
+bench_lx = []
+# uart_mesh linked at 0x10008000 under oasis-bootloader (memory_bootloaded.x),
+# with the signed-update commands. Version: env OASIS_FW_VERSION (default 1).
+bootloaded = ["dep:embassy-boot", "dep:embedded-storage", "dep:sha2"]
+# Test image for the automatic revert: hangs in its self-test, never confirms.
+fw_selftest_hang = ["bootloaded"]
 
 [profile.release]
 opt-level = "z"

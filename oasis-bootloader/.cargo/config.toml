@@ -1,0 +1,10 @@
+# RP2040 (Cortex-M0+). link-rp.x (from embassy-rp) places boot2 at the start of flash.
+[build]
+target = "thumbv6m-none-eabi"
+
+[target.thumbv6m-none-eabi]
+rustflags = [
+  "-C", "link-arg=--nmagic",
+  "-C", "link-arg=-Tlink.x",
+  "-C", "link-arg=-Tlink-rp.x",
+]

@@ -2,6 +2,7 @@
 name = "oasis-mcu-demo"
 version = "0.1.0"
 edition = "2021"
+license = "MIT"  # matches the repository LICENSE file
 
 # Minimal Wokwi-runnable demo of the OASIS kernel primitives on a real MCU.
 # Target: Raspberry Pi Pico (RP2040, Cortex-M0+, thumbv6m-none-eabi).
@@ -12,7 +13,7 @@ edition = "2021"
 
 [dependencies]
 # OASIS kernel: no_std + MCU Bloom profile.
-oasis-rt = { path = "../oasis-rt", default-features = false, features = ["mesh_bloom_mcu", "mesh_v10"] }
+oasis-rt = { path = "../oasis-rt", version = "0.3.0", default-features = false, features = ["mesh_bloom_mcu", "mesh_v10"] }
 
 # RP2040 runtime + HAL + board support
 cortex-m = "0.7"
