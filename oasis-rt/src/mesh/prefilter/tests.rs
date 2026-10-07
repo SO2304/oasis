@@ -1,11 +1,26 @@
 use super::*;
-use crate::mesh::{mesh_v10_pubkey_from_seed, MeshEdSeed};
+use crate::mesh::{mesh_v10_pubkey_from_seed, MeshDecision, MeshEdSeed, MeshPubRegistry, MeshRouter};
+use core::sync::atomic::Ordering;
+use serial_test::serial;
+
+const NET: [u8; 8] = *b"OASISnet";
 
 fn seed(b: u8) -> MeshEdSeed {
     MeshEdSeed([b; 32])
 }
 fn pubof(b: u8) -> MeshEdPub {
     mesh_v10_pubkey_from_seed(&seed(b)).unwrap()
+}
+fn fp(b: u8) -> [u8; FP_LEN] {
+    [b; FP_LEN]
+}
+/// A v0B/v0C router for node `id`, knowing the pubkeys of `peers`.
+fn node(id: u8, peers: &[u8]) -> MeshRouter {
+    let mut reg = MeshPubRegistry::new();
+    for &p in peers {
+        reg.insert(fp(p), pubof(p));
+    }
+    MeshRouter::new_v0b(fp(id), NET, seed(id), reg)
 }
 
 #[test]
@@ -138,4 +153,115 @@ fn budget_backwards_clock_is_safe() {
     assert_eq!(b.tokens(), 0);
     // Forward again from the new anchor.
     assert!(b.try_take(6_000));
+}
+
+// ── v0C envelope end-to-end (A → B → C), with the Ed25519-call counter ──────────
+
+#[test]
+#[serial]
+fn v0c_relay_chain_a_b_c() {
+    // A originates for B; B verifies and reseals for C; C verifies. Both hops reach
+    // Ed25519 (valid traffic), the payload arrives intact.
+    let mut a = node(0xAA, &[0xBB]);
+    let mut b = node(0xBB, &[0xAA, 0xCC]);
+    let mut c = node(0xCC, &[0xAA, 0xBB]);
+    let (mut bb, mut cb) = (LinkBudget::default_budget(), LinkBudget::default_budget());
+    let before = ED_VERIFY_CALLS.load(Ordering::Relaxed);
+
+    let env = a.origin_wrap_v0c(b"setpoint=215", fp(0xBB)).unwrap();
+    assert_eq!(env.len(), MESH_V0C_HEADER_LEN + 12);
+    assert_eq!(&env[..6], SPORE_V0C_MAGIC);
+
+    let at_b = b.process_v0c(&env, &mut bb, 1000);
+    let fwd = match at_b {
+        MeshDecision::Arrived { forward, hops_seen, .. } => {
+            assert!(forward);
+            assert_eq!(hops_seen, 0);
+            true
+        }
+        MeshDecision::Drop(r) => panic!("B dropped: {r}"),
+    };
+    assert!(fwd);
+    let relayed = b.reseal_v0c(&env, fp(0xCC)).unwrap();
+    assert_eq!(&relayed[FWD_OFF..FWD_OFF + FP_LEN], &fp(0xBB), "forwarder rewritten to B");
+    assert_eq!(relayed[30], env[30] - 1, "ttl decremented");
+
+    match c.process_v0c(&relayed, &mut cb, 1000) {
+        MeshDecision::Arrived { hops_seen, envelope, .. } => {
+            assert_eq!(hops_seen, 1);
+            assert_eq!(&envelope[MESH_V0C_HEADER_LEN..], b"setpoint=215");
+        }
+        MeshDecision::Drop(r) => panic!("C dropped: {r}"),
+    }
+    assert_eq!(ED_VERIFY_CALLS.load(Ordering::Relaxed) - before, 2, "one Ed25519 per hop");
+}
+
+#[test]
+#[serial]
+fn v0c_outsider_bad_tag_never_reaches_ed25519() {
+    // An outsider forges an envelope claiming forwarder = A but signs the link tag with
+    // a key it does not have (it is not A). B must drop it on the tag, before Ed25519.
+    let mut b = node(0xBB, &[0xAA, 0xCC]);
+    let mut outsider = node(0xAA, &[0xBB]); // same fp as A, but a DIFFERENT seed below
+                                            // rebuild the "A" router with the real A seed to make a valid envelope, then corrupt the tag
+    let mut real_a = node(0xAA, &[0xBB]);
+    let mut bb = LinkBudget::default_budget();
+    let before = ED_VERIFY_CALLS.load(Ordering::Relaxed);
+
+    let mut env = real_a.origin_wrap_v0c(b"x", fp(0xBB)).unwrap();
+    // flip the tag: now no key produces it → bad link tag
+    env[TAG_OFF] ^= 0x01;
+    assert!(matches!(b.process_v0c(&env, &mut bb, 0), MeshDecision::Drop("bad link tag")));
+    assert_eq!(ED_VERIFY_CALLS.load(Ordering::Relaxed), before, "no Ed25519 on a bad tag");
+    assert_eq!(bb.tokens(), BUDGET_BURST, "a bad tag spends no budget");
+
+    // An unknown forwarder is dropped even earlier.
+    let _ = &mut outsider;
+    let mut env2 = real_a.origin_wrap_v0c(b"y", fp(0xBB)).unwrap();
+    env2[FWD_OFF] = 0x99; // forwarder 0x99.. not in B's registry
+    assert!(matches!(b.process_v0c(&env2, &mut bb, 0), MeshDecision::Drop("unknown forwarder")));
+    assert_eq!(ED_VERIFY_CALLS.load(Ordering::Relaxed), before);
+}
+
+#[test]
+#[serial]
+fn v0c_budget_caps_before_ed25519() {
+    // A link budget of 1 token: the first valid envelope reaches Ed25519, a second valid
+    // one (fresh counter) is dropped by the budget BEFORE Ed25519.
+    let mut a = node(0xAA, &[0xBB]);
+    let mut b = node(0xBB, &[0xAA]);
+    let mut bb = LinkBudget::new(BUDGET_RATE_PER_S, 1);
+    let before = ED_VERIFY_CALLS.load(Ordering::Relaxed);
+
+    let e1 = a.origin_wrap_v0c(b"a", fp(0xBB)).unwrap();
+    let e2 = a.origin_wrap_v0c(b"b", fp(0xBB)).unwrap();
+    assert!(matches!(b.process_v0c(&e1, &mut bb, 0), MeshDecision::Arrived { .. }));
+    assert!(matches!(b.process_v0c(&e2, &mut bb, 0), MeshDecision::Drop("link budget exceeded")));
+    assert_eq!(ED_VERIFY_CALLS.load(Ordering::Relaxed) - before, 1, "budget stops the 2nd before Ed25519");
+}
+
+#[test]
+#[serial]
+fn v0c_refuses_downgrade_to_v0b() {
+    // A v0B envelope handed to a v0C node is dropped at the magic check, no Ed25519.
+    let mut a = node(0xAA, &[0xBB]);
+    let mut b = node(0xBB, &[0xAA]);
+    let mut bb = LinkBudget::default_budget();
+    let before = ED_VERIFY_CALLS.load(Ordering::Relaxed);
+    let v0b = a.origin_wrap_v0b(b"x").unwrap();
+    assert!(matches!(b.process_v0c(&v0b, &mut bb, 0), MeshDecision::Drop("not a v0C envelope (downgrade refused)")));
+    assert_eq!(ED_VERIFY_CALLS.load(Ordering::Relaxed), before);
+}
+
+#[test]
+#[serial]
+fn v0c_replay_refused() {
+    // The same v0C envelope twice: the second is a counter replay (after Ed25519 here,
+    // since the tag and budget both pass — matches v0B semantics).
+    let mut a = node(0xAA, &[0xBB]);
+    let mut b = node(0xBB, &[0xAA]);
+    let mut bb = LinkBudget::default_budget();
+    let env = a.origin_wrap_v0c(b"once", fp(0xBB)).unwrap();
+    assert!(matches!(b.process_v0c(&env, &mut bb, 0), MeshDecision::Arrived { .. }));
+    assert!(matches!(b.process_v0c(&env, &mut bb, 0), MeshDecision::Drop(_)));
 }
