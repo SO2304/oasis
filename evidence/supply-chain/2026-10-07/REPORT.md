@@ -42,7 +42,7 @@ example `chacha20` 0.9/0.10, `crypto-common`, `getrandom` 0.2/0.4, and in firmwa
    "unlicensed". Added `license = "MIT"` to the nine crates. This records the current
    licence; it does not choose one (`POSITIONING_GAPS.md` D4 is still open).
 2. **Path dependencies had no version** (`oasis-rt = { path = … }`): 7 in the
-   workspace and 5 in firmware crates, refused as wildcards. Each now pins the
+   workspace and 6 in firmware crates, refused as wildcards. Each now pins the
    crate's version (`0.3.0` / `0.1.0`).
 3. **`anyhow` 1.0.102 is unsound** (RUSTSEC-2026-0190, `Error::downcast_mut`,
    patched in 1.0.103):
