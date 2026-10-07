@@ -15,16 +15,27 @@ use super::*;
 
 /// Cheap stand-in for [`chain`] so the two control-flow harnesses terminate.
 ///
-/// `Journal::append` hashes, and symbolic SHA-256 under CBMC was killed by the OOM killer
-/// on this machine (`goto-instrument exited with status signal: 9`) — the same wall hit in
-/// phase 1.2. This stub keeps the *shape* of the function (a value derived from both
-/// inputs) and drops the cryptography.
+/// Both `Journal::new` (via [`genesis`]) and `Journal::append` (via [`chain`]) hash, and a
+/// GOTO program containing sha2 is killed by the OOM killer on this machine at the
+/// instrumentation stage, before CBMC even solves (`goto-instrument exited with status
+/// signal: 9`, "Trying to force one backedge per target") — the same wall hit in phase 1.2.
+///
+/// A first attempt stubbed only `chain` and **still** died: the diagnosis was incomplete,
+/// because `Journal::new` hashes too. Both are stubbed now. The stubs keep the *shape* of
+/// the functions (a value derived from the inputs) and drop the cryptography.
 ///
 /// ⚠️ **What that costs.** `proof_journal_seq_monotone` and `proof_every_decision_is_logged`
 /// therefore prove **sequencing and content preservation, not collision resistance**. The
 /// chain's cryptographic behaviour is covered by tests instead, including
 /// `jrn_every_byte_of_an_entry_is_chained`, which flips every bit of every byte. Any
 /// report of these two harnesses must say they ran under a stub.
+#[cfg(kani)]
+fn genesis_stub(boot_id: u64) -> [u8; 32] {
+    let mut h = [0u8; 32];
+    h[..8].copy_from_slice(&boot_id.to_le_bytes());
+    h
+}
+
 #[cfg(kani)]
 fn chain_stub(prev: &[u8; 32], entry: &[u8; ENTRY_LEN]) -> [u8; 32] {
     let mut h = *prev;
@@ -68,6 +79,7 @@ fn proof_entry_roundtrip_is_lossless() {
 /// PROVE: `seq` advances by exactly one per append and `next_seq` never panics.
 #[kani::proof]
 #[kani::stub(super::chain, chain_stub)]
+#[kani::stub(super::genesis, genesis_stub)]
 fn proof_journal_seq_monotone() {
     let boot: u64 = kani::any();
     let mut j = Journal::new(boot);
@@ -128,6 +140,7 @@ fn proof_decision_byte_is_injective() {
 /// always match what was asked for.
 #[kani::proof]
 #[kani::stub(super::chain, chain_stub)]
+#[kani::stub(super::genesis, genesis_stub)]
 fn proof_every_decision_is_logged() {
     let mut j = Journal::new(kani::any());
     let d = any_decision();
