@@ -37,7 +37,7 @@ use hal::clocks::Clock;
 use hal::fugit::RateExtU32;
 use hal::gpio::FunctionUart;
 use hal::pac;
-use hal::uart::{DataBits, StopBits, UartConfig, UartPeripheral};
+use hal::uart::{DataBits, Parity, StopBits, UartConfig, UartPeripheral};
 use usb_device::class_prelude::UsbBusAllocator;
 use usb_device::device::{StringDescriptors, UsbDevice};
 use usb_device::prelude::{UsbDeviceBuilder, UsbVidPid};
@@ -49,6 +49,7 @@ use oasis_rt::mesh::{
     mesh_v0b_verify, mesh_v10_verify, MeshDecision, MeshEdPub, MeshEdSeed, MeshPubRegistry,
     MeshRouter,
 };
+use oasis_rt::modbus_gateway as mbg;
 use oasis_rt::spore_crypto::CounterTracker;
 
 #[path = "../ef.rs"]
@@ -228,6 +229,90 @@ type UartPins0 = (
 );
 type Uart0 = UartPeripheral<hal::uart::Enabled, pac::UART0, UartPins0>;
 
+// Phase 1.4: the Modbus RTU bus to the brownfield device (C = gateway). UART1:
+// GP4 = TX, GP5 = RX (pulled up: an unwired line reads idle), 19 200 baud 8E1.
+type UartPins1 = (
+    hal::gpio::Pin<hal::gpio::bank0::Gpio4, FunctionUart, hal::gpio::PullDown>,
+    hal::gpio::Pin<hal::gpio::bank0::Gpio5, FunctionUart, hal::gpio::PullUp>,
+);
+type Uart1 = UartPeripheral<hal::uart::Enabled, pac::UART1, UartPins1>;
+/// This gateway's id in `OMB1` orders, the device's unit and its register map
+/// (spec docs/specs/MODBUS_GATEWAY_SPEC.md §3).
+const MB_GATEWAY_ID: u16 = 1;
+const MB_UNIT: u8 = 0x11;
+const MB_MAP: [mbg::RegRule; 3] = [
+    mbg::RegRule {
+        addr: 0x0010,
+        min: 50,
+        max: 300,
+    }, // heating setpoint, 0.1 degC
+    mbg::RegRule {
+        addr: 0x0011,
+        min: 0,
+        max: 1,
+    }, // pump off/on
+    mbg::RegRule {
+        addr: 0x0012,
+        min: 0,
+        max: 100,
+    }, // valve opening, %
+];
+/// Device answer window and end-of-frame silence (3.5 characters of 11 bits).
+const MB_RESP_TIMEOUT_US: u64 = 100_000;
+const MB_FRAME_GAP_US: u64 = 2_006;
+
+#[derive(Default)]
+struct GwStats {
+    sent: u32,
+    ack: u32,
+    exception: u32,
+    timeout: u32,
+    bad: u32,
+    rx_errors: u32,
+}
+
+/// Phase 1.4: THE ONLY WRITE TO UART1 in this firmware. Sends a frame the gateway
+/// decided (`mbg::Gateway::decide` returned it, so `Act`), then collects the
+/// device's answer: up to 100 ms, ended by 2 ms of silence. Returns (len, rtt_us).
+fn mb_exchange(
+    uart1: &mut Uart1,
+    f: &mbg::Frame,
+    resp: &mut [u8; 64],
+    st: &mut GwStats,
+) -> (usize, u64) {
+    let mut junk = [0u8; 32];
+    while let Ok(k) = uart1.read_raw(&mut junk) {
+        if k == 0 {
+            break;
+        }
+    }
+    let t0 = ef::now_us64();
+    uart1.write_full_blocking(f.as_slice());
+    st.sent += 1;
+    let mut n = 0usize;
+    let mut last = t0;
+    loop {
+        let now = ef::now_us64();
+        if n > 0 && now - last >= MB_FRAME_GAP_US {
+            return (n, last - t0);
+        }
+        if now - t0 >= MB_RESP_TIMEOUT_US {
+            return (n, now - t0);
+        }
+        let mut b = [0u8; 32];
+        match uart1.read_raw(&mut b) {
+            Ok(k) if k > 0 => {
+                let take = k.min(resp.len() - n);
+                resp[n..n + take].copy_from_slice(&b[..take]);
+                n += take;
+                last = ef::now_us64();
+            }
+            Err(nb::Error::Other(_)) => st.rx_errors += 1,
+            _ => {}
+        }
+    }
+}
+
 /// Lowercase hex of a byte slice, for logs.
 struct Hx<'a>(&'a [u8]);
 impl core::fmt::Display for Hx<'_> {
@@ -313,6 +398,26 @@ fn main() -> ! {
     )
     .enable(
         UartConfig::new(115_200.Hz(), DataBits::Eight, None, StopBits::One),
+        clocks.peripheral_clock.freq(),
+    )
+    .unwrap();
+    let mut uart1: Uart1 = UartPeripheral::new(
+        pac.UART1,
+        (
+            pins.gpio4.into_function::<FunctionUart>(),
+            pins.gpio5
+                .into_pull_type::<hal::gpio::PullUp>()
+                .into_function::<FunctionUart>(),
+        ),
+        &mut pac.RESETS,
+    )
+    .enable(
+        UartConfig::new(
+            19_200.Hz(),
+            DataBits::Eight,
+            Some(Parity::Even),
+            StopBits::One,
+        ),
         clocks.peripheral_clock.freq(),
     )
     .unwrap();
@@ -451,6 +556,9 @@ fn main() -> ! {
     let _led = pins.gpio25.into_push_pull_output();
     ef::led_set(false);
     let mut efs = ef::Ef::new(boot_id);
+    // Phase 1.4: the Modbus gateway's own gate state (not the LED actuator's).
+    let mut gw = mbg::Gateway::new();
+    let mut gws = GwStats::default();
     match efs.restore(&mut router, &pqs.owner) {
         Ok(Some((e, by_current))) => {
             pqs.rev_signer = if by_current {
@@ -589,6 +697,65 @@ fn main() -> ! {
                     Some(_) => io.log("STAGE_FULL", format_args!("len={}", pqs.stage.len())),
                     None => io.log("STAGE_BAD_HEX", format_args!("chars={}", line_len - 1)),
                 }
+            }
+            // Phase 1.4 test injection (B): `@J<hex>` sends these bytes as one mesh frame
+            // (forged envelopes); `@R<hex>` sends them raw, unframed (a bare Modbus frame on
+            // the wire); `@K<pos>` resends the last originated v0B envelope with byte `pos`
+            // (decimal) flipped. `@G` (C): gateway status.
+            if line_done && line_len >= 1 && (line[0] == b'J' || line[0] == b'R') {
+                let mut raw = [0u8; 300];
+                match ef::hex_decode(&line[1..line_len], &mut raw) {
+                    Some(k) => {
+                        if line[0] == b'J' {
+                            send_framed(&mut uart0, &raw[..k]);
+                        } else {
+                            uart0.write_full_blocking(&raw[..k]);
+                        }
+                        io.log(
+                            "INJECT",
+                            format_args!(
+                                "{},len={},hex={}",
+                                if line[0] == b'J' { "framed" } else { "raw" },
+                                k,
+                                Hx(&raw[..k])
+                            ),
+                        );
+                    }
+                    None => io.log("INJECT_BAD_HEX", format_args!("chars={}", line_len - 1)),
+                }
+            }
+            if line_done && line_len >= 2 && line[0] == b'K' {
+                let pos = core::str::from_utf8(&line[1..line_len])
+                    .ok()
+                    .and_then(|t| t.parse::<usize>().ok());
+                match pos {
+                    Some(p) if p < last_v0b_len => {
+                        let mut env = [0u8; MAX_ENV];
+                        env[..last_v0b_len].copy_from_slice(&last_v0b[..last_v0b_len]);
+                        env[p] ^= 0x01;
+                        send_framed(&mut uart0, &env[..last_v0b_len]);
+                        io.log(
+                            "INJECT",
+                            format_args!("flipped,pos={},len={}", p, last_v0b_len),
+                        );
+                    }
+                    _ => io.log("INJECT_BAD_POS", format_args!("len={}", last_v0b_len)),
+                }
+            }
+            if line_done && line_len >= 1 && line[0] == b'G' {
+                let r = &gw.act.rejects;
+                io.log(
+                    "MB_GW_STATUS",
+                    format_args!(
+                        "boot_id={},now_ms={},executed={},rejects={}/{}/{}/{}/{}/{}/{},sent={},ack={},exception={},timeout={},bad={},rx_errors={},last_seq={:?}",
+                        efs.boot_id,
+                        ef::now_ms64(),
+                        gw.act.executed,
+                        r[0], r[1], r[2], r[3], r[4], r[5], r[6],
+                        gws.sent, gws.ack, gws.exception, gws.timeout, gws.bad, gws.rx_errors,
+                        gw.act.last_executed_seq
+                    ),
+                );
             }
             if line_done && line_len >= 1 && line[0] == b'C' {
                 pqs.stage.clear();
@@ -1384,6 +1551,23 @@ fn main() -> ! {
                                 }
                                 relay = false; // consumed by the actuator
                             }
+                            // Phase 1.4: a Modbus write order for the device behind this gateway.
+                            "OMB1" if BOARD_ID == "C" => {
+                                mb_order(
+                                    &mut io,
+                                    &mut uart1,
+                                    &mut gw,
+                                    &mut gws,
+                                    &mut efs,
+                                    &router,
+                                    &pqs.registry,
+                                    &origin,
+                                    true,
+                                    inner,
+                                    None,
+                                );
+                                relay = false; // consumed by the gateway
+                            }
                             _ => {}
                         }
                         if relay {
@@ -1399,6 +1583,26 @@ fn main() -> ! {
                         // A command that fails v0B (replay, forgery, revoked origin) is
                         // still logged as a gate decision so its outcome is on record.
                         let e = &owned[..elen];
+                        if BOARD_ID == "C"
+                            && elen >= 22
+                            && ef::content_kind(inner_slice(e)) == "OMB1"
+                        {
+                            let mut origin = [0u8; 8];
+                            origin.copy_from_slice(&e[14..22]);
+                            mb_order(
+                                &mut io,
+                                &mut uart1,
+                                &mut gw,
+                                &mut gws,
+                                &mut efs,
+                                &router,
+                                &pqs.registry,
+                                &origin,
+                                false,
+                                inner_slice(e),
+                                Some(reason),
+                            );
+                        }
                         if BOARD_ID == "C" && elen >= 99 + oasis_rt::actuation::OAC1_LEN {
                             if let Some(cmd) =
                                 parse_oac1(&e[99..99 + oasis_rt::actuation::OAC1_LEN])
@@ -1423,6 +1627,92 @@ fn main() -> ! {
                 }
             }
         }
+    }
+}
+
+/// Phase 1.4: one `OMB1` order through the gateway. The frame, if any, comes out of
+/// `mbg::Gateway::decide` (pure rule: only on `Act`) and is the only thing ever
+/// written to UART1 (`mb_exchange`). A malformed order is logged and dropped.
+#[allow(clippy::too_many_arguments)]
+fn mb_order(
+    io: &mut Io,
+    uart1: &mut Uart1,
+    gw: &mut mbg::Gateway,
+    gws: &mut GwStats,
+    efs: &mut ef::Ef,
+    router: &MeshRouter,
+    registry: &oasis_rt::enrollment::Registry,
+    origin: &[u8; 8],
+    v0b_ok: bool,
+    payload: &[u8],
+    v0b_drop: Option<&str>,
+) {
+    let o = match mbg::parse_omb1(payload) {
+        Some(o) => o,
+        None => {
+            io.log(
+                "MB_GW",
+                format_args!(
+                    "decision=Malformed,len={},origin={:02x}",
+                    payload.len(),
+                    origin[0]
+                ),
+            );
+            return;
+        }
+    };
+    let ctx = mbg::OrderContext {
+        v0b_ok,
+        authorized: o.gateway_id == MB_GATEWAY_ID
+            && registry.allows(origin, oasis_rt::enrollment::perm::ACTUATE),
+        revoked: router.is_revoked(origin),
+        actuator_boot_id: efs.boot_id,
+        now_ms: ef::now_ms64(),
+        r14_safe: efs.r14_safe_now(),
+    };
+    let (d, rules, frame) = gw.decide(&ctx, &o, MB_UNIT, &MB_MAP);
+    io.log(
+        "MB_GW",
+        format_args!(
+            "decision={:?},rules={:?},v0b_drop={},seq={},origin={:02x},unit={:#04x},fc={},start={:#06x},count={},v0={},entropy={:.3}",
+            d,
+            rules,
+            v0b_drop.unwrap_or("-"),
+            o.cmd_seq,
+            origin[0],
+            o.unit,
+            o.fc,
+            o.start,
+            o.count,
+            o.values[0],
+            efs.last_entropy
+        ),
+    );
+    if let Some(f) = frame {
+        let mut resp = [0u8; 64];
+        let (n, rtt) = mb_exchange(uart1, &f, &mut resp, gws);
+        let r = if n == 0 {
+            None
+        } else {
+            Some(mbg::check_response(&f, &resp[..n]))
+        };
+        match r {
+            None => gws.timeout += 1,
+            Some(mbg::Response::Ack) => gws.ack += 1,
+            Some(mbg::Response::Exception(_)) => gws.exception += 1,
+            Some(_) => gws.bad += 1,
+        }
+        io.log(
+            "MB_GW_TX",
+            format_args!(
+                "len={},hex={},resp={:?},resp_hex={},rtt_us={}",
+                f.len,
+                Hx(f.as_slice()),
+                r,
+                Hx(&resp[..n]),
+                rtt
+            ),
+        );
     }
 }
 

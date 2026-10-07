@@ -285,6 +285,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "crc"
+version = "3.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5eb8a2a1cd12ab0d987a5d5e825195d372001a4094a0376319d5a0ad71c1ba0d"
+dependencies = [
+ "crc-catalog",
+]
+
+[[package]]
 name = "crc-any"
 version = "2.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -292,6 +301,12 @@ checksum = "46db9f663dfb869b80fcf59e32d7a80fc6c464a4f6328f3f06a00f5e36d05f8c"
 dependencies = [
  "debug-helper",
 ]
+
+[[package]]
+name = "crc-catalog"
+version = "2.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "217698eaf96b4a3f0bc4f3662aaa55bdf913cd54d7204591faa790070c6d0853"
 
 [[package]]
 name = "critical-section"
@@ -726,6 +741,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "ieee754"
+version = "0.2.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9007da9cacbd3e6343da136e98b0d2df013f553d35bdec8b518f07bea768e19c"
+
+[[package]]
 name = "inout"
 version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1009,6 +1030,7 @@ name = "oasis-rt"
 version = "0.3.0"
 dependencies = [
  "chacha20poly1305",
+ "crc",
  "ed25519-compact",
  "libcrux-ml-dsa",
  "libm",
@@ -1027,9 +1049,12 @@ dependencies = [
  "embassy-boot",
  "embedded-alloc",
  "embedded-storage",
+ "heapless 0.9.3",
  "ml-dsa",
+ "nb 1.1.0",
  "oasis-operator-key",
  "oasis-rt",
+ "rmodbus",
  "rp2040-boot2",
  "rp2040-flash",
  "rp2040-hal",
@@ -1209,6 +1234,16 @@ name = "regex-syntax"
 version = "0.8.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
+
+[[package]]
+name = "rmodbus"
+version = "0.12.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ae086fe401655097112f1bd988012c0334d19b0c495128b256f1506873c6ba8f"
+dependencies = [
+ "heapless 0.9.3",
+ "ieee754",
+]
 
 [[package]]
 name = "rp2040-boot2"

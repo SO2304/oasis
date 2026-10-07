@@ -63,6 +63,18 @@ pub fn wipe_rev_sectors() {
     });
 }
 
+/// 64-bit monotonic microseconds since boot (RP2040 1 MHz TIMER).
+pub fn now_us64() -> u64 {
+    let t = unsafe { &*pac::TIMER::ptr() };
+    loop {
+        let hi = t.timerawh().read().bits();
+        let lo = t.timerawl().read().bits();
+        if t.timerawh().read().bits() == hi {
+            return ((hi as u64) << 32) | lo as u64;
+        }
+    }
+}
+
 /// 64-bit monotonic milliseconds since boot (RP2040 1 MHz TIMER).
 pub fn now_ms64() -> u64 {
     let t = unsafe { &*pac::TIMER::ptr() };
@@ -114,6 +126,7 @@ pub fn content_kind(payload: &[u8]) -> &'static str {
         Some(b"OEP1") => "OEP1",
         Some(b"OFR1") => "OFR1",
         Some(b"OAU1") => "OAU1",
+        Some(b"OMB1") => "OMB1",
         _ => "other",
     }
 }
@@ -233,6 +246,13 @@ impl Ef {
     /// Actuation gate (spec F.3). Drives the LED only on `Act`.
     /// "Authorized" = the origin is enrolled with the `ACTUATE` permission (Phase 1.2;
     /// it was board A's compiled fingerprint before).
+    /// R14 now, evaluated exactly as for an `OAC1` command (Phase 1.4 gateway).
+    pub fn r14_safe_now(&mut self) -> bool {
+        inject_sensory(&mut self.agent, if self.sensor_lost { 1.0 } else { 0.0 });
+        self.last_entropy = self.agent.entropy;
+        is_action_safe(&self.agent, R14_THRESHOLD)
+    }
+
     pub fn decide(&mut self, router: &MeshRouter, registry: &Registry, origin: &Fp, v0b_ok: bool, cmd: &ActCommand) -> Decision {
         inject_sensory(&mut self.agent, if self.sensor_lost { 1.0 } else { 0.0 });
         self.last_entropy = self.agent.entropy;

@@ -34,6 +34,11 @@ embassy-boot = { version = "=0.7.0", default-features = false, optional = true }
 embedded-storage = { version = "0.3.1", optional = true }
 # Hash of the uploaded image (same crate and version as oasis-rt).
 sha2 = { version = "0.11.0", default-features = false, optional = true }
+# Phase 1.4: the brownfield Modbus RTU device (bin modbus_device) is rmodbus, an existing
+# Modbus library independent of the gateway code (docs/specs/MODBUS_GATEWAY_SPEC.md §2).
+rmodbus = { version = "=0.12.2", default-features = false, features = ["heapless"] }
+heapless = "0.9.1"
+nb = "1"
 
 [features]
 default = []
