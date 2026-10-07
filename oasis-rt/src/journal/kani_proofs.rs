@@ -88,7 +88,7 @@ fn proof_decision_byte_is_injective() {
         Some(LoggedDecision::Stop) => assert!(b == DEC_STOP),
         Some(LoggedDecision::Reject(_)) => {
             assert!(b >= DEC_REJECT_BASE);
-            assert!((b - DEC_REJECT_BASE) as usize < REASON_COUNT);
+            assert!(((b - DEC_REJECT_BASE) as usize) < REASON_COUNT);
         }
         None => {
             assert!(b > DEC_STOP);
