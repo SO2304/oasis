@@ -45,7 +45,7 @@ use usbd_serial::SerialPort;
 
 use oasis_rt::actuation::parse_oac1;
 use oasis_rt::mesh::inner_slice;
-use oasis_rt::mesh::prefilter::{LinkBudget, MESH_V0C_HEADER_LEN};
+use oasis_rt::mesh::prefilter::{LinkBudget, LinkKeys};
 use oasis_rt::mesh::{
     mesh_v0b_verify, mesh_v10_verify, MeshDecision, MeshEdPub, MeshEdSeed, MeshPubRegistry,
     MeshRouter,
@@ -579,6 +579,9 @@ fn main() -> ! {
     let mut pf_v0c = false;
     let mut pf_next_hop: Option<[u8; 8]> = None;
     let mut pf_budget = LinkBudget::default_budget();
+    // One X25519 per peer, not per frame (measured: per-frame derivation cost 370 ms,
+    // DOUBLE an Ed25519 verify, defeating the whole point of the pre-filter).
+    let mut pf_keys = LinkKeys::new();
     let mut pf = PfStats::default();
     // Quiet mode for a measurement run: count, do not log per frame. USB-CDC logging
     // costs milliseconds per line, which would steal wall-clock from the relay and
@@ -697,7 +700,9 @@ fn main() -> ! {
                 match ef::hex_decode(&line[1..line_len], &mut pl) {
                     Some(plen) => {
                         let wrapped = if pf_v0c {
-                            pf_next_hop.and_then(|nh| router.origin_wrap_v0c(&pl[..plen], nh))
+                            pf_next_hop.and_then(|nh| {
+                                router.origin_wrap_v0c(&pl[..plen], nh, &mut pf_keys)
+                            })
                         } else {
                             router.origin_wrap_v0b(&pl[..plen])
                         };
@@ -812,7 +817,11 @@ fn main() -> ! {
                     }
                 }
                 pf_budget = LinkBudget::default_budget();
+                pf_keys = LinkKeys::new();
                 pf = PfStats::default();
+                rx_total = 0;
+                frame_total = 0;
+                crc_fails = 0;
                 match pf_next_hop {
                     Some(nh) => io.log(
                         "PF_MODE",
@@ -837,8 +846,8 @@ fn main() -> ! {
                 io.log(
                     "PF_STATUS",
                     format_args!(
-                        "v0c={},accepted={},drop_tag={},drop_budget={},drop_sig={},drop_other={},busy_us={},max_us={},tokens={},rx_bytes={},frames={},crc_fails={}",
-                        pf_v0c, pf.accepted, pf.drop_tag, pf.drop_budget, pf.drop_sig, pf.drop_other, pf.busy_us, pf.max_us, pf_budget.tokens(), rx_total, frame_total, crc_fails
+                        "v0c={},accepted={},drop_tag={},drop_budget={},drop_sig={},drop_other={},busy_us={},max_us={},tokens={},rx_bytes={},frames={},crc_fails={},dh_derivations={}",
+                        pf_v0c, pf.accepted, pf.drop_tag, pf.drop_budget, pf.drop_sig, pf.drop_other, pf.busy_us, pf.max_us, pf_budget.tokens(), rx_total, frame_total, crc_fails, pf_keys.derivations()
                     ),
                 );
             }
@@ -849,11 +858,10 @@ fn main() -> ! {
                 let secs: u64 = it.next().and_then(|v| v.parse().ok()).unwrap_or(0);
                 if rate == 0 || secs == 0 || rate > 200 || secs > 300 {
                     io.log("PF_FLOOD_BAD", format_args!("rate={},secs={}", rate, secs));
-                } else if !lease.ensure(
-                    router.tx_counter().saturating_add(rate * secs + secs + 16),
-                    &mut lstore,
-                ) {
-                    // Reserve every counter this run consumes in ONE durable write.
+                } else if !lease.ensure(router.tx_counter().saturating_add(secs + 32), &mut lstore)
+                {
+                    // Only the legitimate frames consume real counters (one per second);
+                    // the forged ones are fabricated, so reserve secs + margin.
                     io.log("LEASE_FAIL", format_args!("flood reservation failed"));
                 } else {
                     io.log(
@@ -865,31 +873,45 @@ fn main() -> ! {
                     let mut next_us = ef::now_us64();
                     let mut next_legit_ms = t_start_ms;
                     let (mut forged, mut legit) = (0u32, 0u32);
-                    while ef::now_ms64().wrapping_sub(t_start_ms) < secs * 1000 {
+                    // An attacker does NOT sign. Build ONE envelope, then bump the counter
+                    // field (offset 22..30) per frame: that invalidates the signature AND the
+                    // link tag while every cheap check still passes — exactly the C1 attack —
+                    // and it lifts the rate ceiling signing imposed (the first run topped out
+                    // at 3.7/s because each frame was signed, 178 ms). A forged frame is never
+                    // accepted, so it never advances the receiver's counter window and never
+                    // starves the legitimate stream.
+                    let base = if pf_v0c {
+                        pf_next_hop
+                            .and_then(|nh| router.origin_wrap_v0c(b"FLOOD", nh, &mut pf_keys))
+                    } else {
+                        router.origin_wrap_v0b(b"FLOOD")
+                    };
+                    let mut tmpl = base.unwrap_or_default();
+                    if tmpl.len() < 30 {
+                        io.log("PF_FLOOD_BAD", format_args!("cannot build a base envelope"));
+                        tmpl.clear();
+                    }
+                    let base_ctr = if tmpl.len() >= 30 {
+                        u64::from_le_bytes(tmpl[22..30].try_into().unwrap()).wrapping_add(1_000_000)
+                    } else {
+                        0
+                    };
+                    while !tmpl.is_empty() && ef::now_ms64().wrapping_sub(t_start_ms) < secs * 1000
+                    {
                         io.poll();
                         if ef::now_us64() >= next_us {
                             next_us = next_us.wrapping_add(period_us);
-                            let built = if pf_v0c {
-                                pf_next_hop.and_then(|nh| router.origin_wrap_v0c(b"FLOOD", nh))
-                            } else {
-                                router.origin_wrap_v0b(b"FLOOD")
-                            };
-                            if let Some(mut env) = built {
-                                // Corrupt exactly the field this mode checks: the v0C link tag
-                                // (refused in microseconds) or a v0B signature byte (forces the
-                                // full ~185 ms Ed25519 verify — the C1 attack).
-                                let at = if pf_v0c { MESH_V0C_HEADER_LEN - 16 } else { 40 };
-                                if at < env.len() {
-                                    env[at] ^= 0x01;
-                                }
-                                send_framed(&mut uart0, &env);
-                                forged = forged.wrapping_add(1);
-                            }
+                            let ctr = base_ctr.wrapping_add(forged as u64).wrapping_add(1);
+                            tmpl[22..30].copy_from_slice(&ctr.to_le_bytes());
+                            send_framed(&mut uart0, &tmpl);
+                            forged = forged.wrapping_add(1);
                         }
                         if ef::now_ms64() >= next_legit_ms {
                             next_legit_ms = next_legit_ms.wrapping_add(1000);
                             let built = if pf_v0c {
-                                pf_next_hop.and_then(|nh| router.origin_wrap_v0c(b"LEGIT", nh))
+                                pf_next_hop.and_then(|nh| {
+                                    router.origin_wrap_v0c(b"LEGIT", nh, &mut pf_keys)
+                                })
                             } else {
                                 router.origin_wrap_v0b(b"LEGIT")
                             };
@@ -1581,7 +1603,7 @@ fn main() -> ! {
                 }
                 let pf_t0 = ef::now_us64();
                 let pf_decision = if pf_v0c {
-                    router.process_v0c(&owned[..elen], &mut pf_budget, ef::now_ms64())
+                    router.process_v0c(&owned[..elen], &mut pf_keys, &mut pf_budget, ef::now_ms64())
                 } else {
                     router.process(&owned[..elen])
                 };
@@ -1736,7 +1758,8 @@ fn main() -> ! {
                         }
                         if relay {
                             let resealed = if pf_v0c {
-                                pf_next_hop.and_then(|nh| router.reseal_v0c(&envelope, nh))
+                                pf_next_hop
+                                    .and_then(|nh| router.reseal_v0c(&envelope, nh, &mut pf_keys))
                             } else {
                                 None
                             };

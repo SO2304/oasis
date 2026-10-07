@@ -77,6 +77,73 @@ fn mac(key: &[u8; 32], origin_fp: [u8; FP_LEN], counter: u64, payload_len: u16, 
     m
 }
 
+/// How many peers' link keys are cached. A node derives a key once per neighbour, not
+/// once per frame: on a Cortex-M0+ the X25519 scalar multiplication costs about as much
+/// as an Ed25519 verification (~185 ms measured), so deriving per frame would DOUBLE the
+/// per-frame cost instead of pre-filtering it (measured 2026-10-07, 370 ms/frame).
+pub const LINK_CACHE_SLOTS: usize = 8;
+
+/// Caller-owned cache of derived link keys, keyed by peer fingerprint. No allocation:
+/// a fixed slot array with round-robin replacement. One DH per peer, then HMAC only.
+pub struct LinkKeys {
+    fps: [[u8; FP_LEN]; LINK_CACHE_SLOTS],
+    keys: [[u8; 32]; LINK_CACHE_SLOTS],
+    valid: [bool; LINK_CACHE_SLOTS],
+    cursor: usize,
+    derivations: u32,
+}
+
+impl Default for LinkKeys {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl LinkKeys {
+    pub fn new() -> Self {
+        LinkKeys {
+            fps: [[0u8; FP_LEN]; LINK_CACHE_SLOTS],
+            keys: [[0u8; 32]; LINK_CACHE_SLOTS],
+            valid: [false; LINK_CACHE_SLOTS],
+            cursor: 0,
+            derivations: 0,
+        }
+    }
+
+    /// The cached key for `peer_fp`, deriving it (one X25519 + HKDF) only on a miss.
+    pub fn get_or_derive(&mut self, ed_sk: &ed25519_compact::SecretKey, our_fp: [u8; FP_LEN], peer_pub: &MeshEdPub, peer_fp: [u8; FP_LEN]) -> Option<[u8; 32]> {
+        for i in 0..LINK_CACHE_SLOTS {
+            if self.valid[i] && self.fps[i] == peer_fp {
+                return Some(self.keys[i]);
+            }
+        }
+        let k = link_key_with_ed_sk(ed_sk, our_fp, peer_pub, peer_fp)?;
+        let i = self.cursor % LINK_CACHE_SLOTS;
+        self.fps[i] = peer_fp;
+        self.keys[i] = k;
+        self.valid[i] = true;
+        self.cursor = self.cursor.wrapping_add(1);
+        self.derivations = self.derivations.wrapping_add(1);
+        Some(k)
+    }
+
+    /// How many X25519 derivations have happened (a test/firmware can show it is once
+    /// per peer, not once per frame).
+    pub fn derivations(&self) -> u32 {
+        self.derivations
+    }
+
+    /// Forget a peer's key (e.g. after revocation or re-enrolment).
+    pub fn forget(&mut self, peer_fp: &[u8; FP_LEN]) {
+        for i in 0..LINK_CACHE_SLOTS {
+            if self.valid[i] && &self.fps[i] == peer_fp {
+                self.valid[i] = false;
+                self.keys[i] = [0u8; 32];
+            }
+        }
+    }
+}
+
 /// Compute the 16-byte link tag.
 pub fn link_tag(key: &[u8; 32], origin_fp: [u8; FP_LEN], counter: u64, payload_len: u16, payload: &[u8]) -> [u8; LINK_TAG_LEN] {
     let out = mac(key, origin_fp, counter, payload_len, payload).finalize().into_bytes();
@@ -201,13 +268,13 @@ impl MeshRouter {
     /// neighbour `next_hop_fp` (point-to-point link). The Ed25519 signature is the v0B
     /// one (payload-bound); the link tag is added on top. `None` if not v0B-capable,
     /// the payload is too large, or `next_hop_fp` is not a known peer.
-    pub fn origin_wrap_v0c(&mut self, inner: &[u8], next_hop_fp: [u8; FP_LEN]) -> Option<Vec<u8>> {
+    pub fn origin_wrap_v0c(&mut self, inner: &[u8], next_hop_fp: [u8; FP_LEN], keys: &mut LinkKeys) -> Option<Vec<u8>> {
         if inner.len() > super::MESH_V0B_MAX_PAYLOAD {
             return None;
         }
         let ed_sk = self.v0c_ed_sk()?;
         let next_pub = *self.ed_registry.get(&next_hop_fp)?;
-        let key_down = link_key_with_ed_sk(ed_sk, self.my_fp, &next_pub, next_hop_fp)?;
+        let key_down = keys.get_or_derive(ed_sk, self.my_fp, &next_pub, next_hop_fp)?;
         self.tx_counter = self.tx_counter.wrapping_add(1);
         let counter = self.tx_counter;
         let (network_id, my_fp, ttl) = (self.network_id, self.my_fp, self.default_ttl);
@@ -220,13 +287,13 @@ impl MeshRouter {
     /// Re-seal a received v0C envelope for the next hop: `forwarder_fp = me`, `ttl-1`,
     /// `hops+1`, and the tag recomputed for the link `me → next_hop_fp`. The origin
     /// signature and payload are untouched. Call before forwarding.
-    pub fn reseal_v0c(&self, envelope: &[u8], next_hop_fp: [u8; FP_LEN]) -> Option<Vec<u8>> {
+    pub fn reseal_v0c(&self, envelope: &[u8], next_hop_fp: [u8; FP_LEN], keys: &mut LinkKeys) -> Option<Vec<u8>> {
         if envelope.len() < MESH_V0C_HEADER_LEN {
             return None;
         }
         let ed_sk = self.v0c_ed_sk()?;
         let next_pub = *self.ed_registry.get(&next_hop_fp)?;
-        let key_down = link_key_with_ed_sk(ed_sk, self.my_fp, &next_pub, next_hop_fp)?;
+        let key_down = keys.get_or_derive(ed_sk, self.my_fp, &next_pub, next_hop_fp)?;
         let mut out = envelope.to_vec();
         let ttl = out[30];
         out[30] = ttl.saturating_sub(1);
@@ -247,7 +314,7 @@ impl MeshRouter {
     /// never reaches it. `budget` is the token bucket for THIS ingress link; `now_ms`
     /// the actuator clock. Anything that is not a well-formed v0C envelope is dropped at
     /// the magic check (anti-downgrade): route all mesh bytes here on a v0C node.
-    pub fn process_v0c(&mut self, envelope: &[u8], budget: &mut LinkBudget, now_ms: u64) -> MeshDecision {
+    pub fn process_v0c(&mut self, envelope: &[u8], keys: &mut LinkKeys, budget: &mut LinkBudget, now_ms: u64) -> MeshDecision {
         let h = match v0c_try_parse_header(envelope) {
             Some(h) => h,
             None => return MeshDecision::Drop("not a v0C envelope (downgrade refused)"),
@@ -274,7 +341,9 @@ impl MeshRouter {
             Some(k) => k,
             None => return MeshDecision::Drop("router has no key"),
         };
-        let link = match link_key_with_ed_sk(ed_sk, self.my_fp, &fwd_pub, forwarder_fp) {
+        // Cached: one X25519 per peer, not per frame (an X25519 costs ~185 ms on M0+,
+        // as much as the Ed25519 verify this filter is meant to avoid).
+        let link = match keys.get_or_derive(ed_sk, self.my_fp, &fwd_pub, forwarder_fp) {
             Some(k) => k,
             None => return MeshDecision::Drop("link key derivation failed"),
         };

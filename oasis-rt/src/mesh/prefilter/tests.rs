@@ -166,13 +166,14 @@ fn v0c_relay_chain_a_b_c() {
     let mut b = node(0xBB, &[0xAA, 0xCC]);
     let mut c = node(0xCC, &[0xAA, 0xBB]);
     let (mut bb, mut cb) = (LinkBudget::default_budget(), LinkBudget::default_budget());
+    let (mut ak, mut bk, mut ck) = (LinkKeys::new(), LinkKeys::new(), LinkKeys::new());
     let before = ED_VERIFY_CALLS.load(Ordering::Relaxed);
 
-    let env = a.origin_wrap_v0c(b"setpoint=215", fp(0xBB)).unwrap();
+    let env = a.origin_wrap_v0c(b"setpoint=215", fp(0xBB), &mut ak).unwrap();
     assert_eq!(env.len(), MESH_V0C_HEADER_LEN + 12);
     assert_eq!(&env[..6], SPORE_V0C_MAGIC);
 
-    let at_b = b.process_v0c(&env, &mut bb, 1000);
+    let at_b = b.process_v0c(&env, &mut bk, &mut bb, 1000);
     let fwd = match at_b {
         MeshDecision::Arrived { forward, hops_seen, .. } => {
             assert!(forward);
@@ -182,11 +183,11 @@ fn v0c_relay_chain_a_b_c() {
         MeshDecision::Drop(r) => panic!("B dropped: {r}"),
     };
     assert!(fwd);
-    let relayed = b.reseal_v0c(&env, fp(0xCC)).unwrap();
+    let relayed = b.reseal_v0c(&env, fp(0xCC), &mut bk).unwrap();
     assert_eq!(&relayed[FWD_OFF..FWD_OFF + FP_LEN], &fp(0xBB), "forwarder rewritten to B");
     assert_eq!(relayed[30], env[30] - 1, "ttl decremented");
 
-    match c.process_v0c(&relayed, &mut cb, 1000) {
+    match c.process_v0c(&relayed, &mut ck, &mut cb, 1000) {
         MeshDecision::Arrived { hops_seen, envelope, .. } => {
             assert_eq!(hops_seen, 1);
             assert_eq!(&envelope[MESH_V0C_HEADER_LEN..], b"setpoint=215");
@@ -206,20 +207,21 @@ fn v0c_outsider_bad_tag_never_reaches_ed25519() {
                                             // rebuild the "A" router with the real A seed to make a valid envelope, then corrupt the tag
     let mut real_a = node(0xAA, &[0xBB]);
     let mut bb = LinkBudget::default_budget();
+    let (mut ak, mut bk) = (LinkKeys::new(), LinkKeys::new());
     let before = ED_VERIFY_CALLS.load(Ordering::Relaxed);
 
-    let mut env = real_a.origin_wrap_v0c(b"x", fp(0xBB)).unwrap();
+    let mut env = real_a.origin_wrap_v0c(b"x", fp(0xBB), &mut ak).unwrap();
     // flip the tag: now no key produces it → bad link tag
     env[TAG_OFF] ^= 0x01;
-    assert!(matches!(b.process_v0c(&env, &mut bb, 0), MeshDecision::Drop("bad link tag")));
+    assert!(matches!(b.process_v0c(&env, &mut bk, &mut bb, 0), MeshDecision::Drop("bad link tag")));
     assert_eq!(ED_VERIFY_CALLS.load(Ordering::Relaxed), before, "no Ed25519 on a bad tag");
     assert_eq!(bb.tokens(), BUDGET_BURST, "a bad tag spends no budget");
 
     // An unknown forwarder is dropped even earlier.
     let _ = &mut outsider;
-    let mut env2 = real_a.origin_wrap_v0c(b"y", fp(0xBB)).unwrap();
+    let mut env2 = real_a.origin_wrap_v0c(b"y", fp(0xBB), &mut ak).unwrap();
     env2[FWD_OFF] = 0x99; // forwarder 0x99.. not in B's registry
-    assert!(matches!(b.process_v0c(&env2, &mut bb, 0), MeshDecision::Drop("unknown forwarder")));
+    assert!(matches!(b.process_v0c(&env2, &mut bk, &mut bb, 0), MeshDecision::Drop("unknown forwarder")));
     assert_eq!(ED_VERIFY_CALLS.load(Ordering::Relaxed), before);
 }
 
@@ -231,12 +233,13 @@ fn v0c_budget_caps_before_ed25519() {
     let mut a = node(0xAA, &[0xBB]);
     let mut b = node(0xBB, &[0xAA]);
     let mut bb = LinkBudget::new(BUDGET_RATE_PER_S, 1);
+    let (mut ak, mut bk) = (LinkKeys::new(), LinkKeys::new());
     let before = ED_VERIFY_CALLS.load(Ordering::Relaxed);
 
-    let e1 = a.origin_wrap_v0c(b"a", fp(0xBB)).unwrap();
-    let e2 = a.origin_wrap_v0c(b"b", fp(0xBB)).unwrap();
-    assert!(matches!(b.process_v0c(&e1, &mut bb, 0), MeshDecision::Arrived { .. }));
-    assert!(matches!(b.process_v0c(&e2, &mut bb, 0), MeshDecision::Drop("link budget exceeded")));
+    let e1 = a.origin_wrap_v0c(b"a", fp(0xBB), &mut ak).unwrap();
+    let e2 = a.origin_wrap_v0c(b"b", fp(0xBB), &mut ak).unwrap();
+    assert!(matches!(b.process_v0c(&e1, &mut bk, &mut bb, 0), MeshDecision::Arrived { .. }));
+    assert!(matches!(b.process_v0c(&e2, &mut bk, &mut bb, 0), MeshDecision::Drop("link budget exceeded")));
     assert_eq!(ED_VERIFY_CALLS.load(Ordering::Relaxed) - before, 1, "budget stops the 2nd before Ed25519");
 }
 
@@ -247,9 +250,10 @@ fn v0c_refuses_downgrade_to_v0b() {
     let mut a = node(0xAA, &[0xBB]);
     let mut b = node(0xBB, &[0xAA]);
     let mut bb = LinkBudget::default_budget();
+    let mut bk = LinkKeys::new();
     let before = ED_VERIFY_CALLS.load(Ordering::Relaxed);
     let v0b = a.origin_wrap_v0b(b"x").unwrap();
-    assert!(matches!(b.process_v0c(&v0b, &mut bb, 0), MeshDecision::Drop("not a v0C envelope (downgrade refused)")));
+    assert!(matches!(b.process_v0c(&v0b, &mut bk, &mut bb, 0), MeshDecision::Drop("not a v0C envelope (downgrade refused)")));
     assert_eq!(ED_VERIFY_CALLS.load(Ordering::Relaxed), before);
 }
 
@@ -261,7 +265,32 @@ fn v0c_replay_refused() {
     let mut a = node(0xAA, &[0xBB]);
     let mut b = node(0xBB, &[0xAA]);
     let mut bb = LinkBudget::default_budget();
-    let env = a.origin_wrap_v0c(b"once", fp(0xBB)).unwrap();
-    assert!(matches!(b.process_v0c(&env, &mut bb, 0), MeshDecision::Arrived { .. }));
-    assert!(matches!(b.process_v0c(&env, &mut bb, 0), MeshDecision::Drop(_)));
+    let (mut ak, mut bk) = (LinkKeys::new(), LinkKeys::new());
+    let env = a.origin_wrap_v0c(b"once", fp(0xBB), &mut ak).unwrap();
+    assert!(matches!(b.process_v0c(&env, &mut bk, &mut bb, 0), MeshDecision::Arrived { .. }));
+    assert!(matches!(b.process_v0c(&env, &mut bk, &mut bb, 0), MeshDecision::Drop(_)));
+}
+
+#[test]
+#[serial] // shares the global ED_VERIFY_CALLS counter with the other v0C tests
+fn link_keys_derive_once_per_peer() {
+    // The whole point of the cache: one X25519 per peer, however many frames arrive.
+    // On a Cortex-M0+ an X25519 costs about as much as the Ed25519 verify the filter is
+    // meant to avoid, so per-frame derivation would double the cost (measured 370 ms/
+    // frame on silicon, 2026-10-07) instead of pre-filtering it.
+    let mut a = node(0xAA, &[0xBB]);
+    let mut b = node(0xBB, &[0xAA]);
+    let (mut ak, mut bk) = (LinkKeys::new(), LinkKeys::new());
+    let mut bb = LinkBudget::default_budget();
+    for _ in 0..5 {
+        let env = a.origin_wrap_v0c(b"z", fp(0xBB), &mut ak).unwrap();
+        let _ = b.process_v0c(&env, &mut bk, &mut bb, 0);
+    }
+    assert_eq!(ak.derivations(), 1, "origin derives once for its next hop");
+    assert_eq!(bk.derivations(), 1, "relay derives once for its forwarder");
+    // Forgetting a peer (revocation, re-enrolment) forces one fresh derivation.
+    bk.forget(&fp(0xAA));
+    let env = a.origin_wrap_v0c(b"z", fp(0xBB), &mut ak).unwrap();
+    let _ = b.process_v0c(&env, &mut bk, &mut bb, 0);
+    assert_eq!(bk.derivations(), 2);
 }
