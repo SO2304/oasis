@@ -7,7 +7,8 @@
 set -euo pipefail
 
 # Harnesses that do not finish within the normal 600 s budget (timeout or OOM
-# on a hosted runner, 2026-10-06). Each runs alone, with a 60 min budget. They
+# on a hosted runner, 2026-10-06). Each runs alone, with a 60 min budget, in
+# .github/workflows/kani-heavy.yml (weekly and on demand, not on every push). They
 # are NOT counted as verified until their shard is green.
 HEAVY=(
   mesh::kani_proofs::proof_ae_snapshot_internal_consistency
