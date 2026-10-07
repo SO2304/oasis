@@ -43,6 +43,7 @@ pub mod enrollment;
 pub mod firmware;
 pub mod fragment;
 pub mod identity;
+pub mod journal;
 pub mod mesh;
 pub mod mesh_revocation;
 pub mod modbus_gateway;
