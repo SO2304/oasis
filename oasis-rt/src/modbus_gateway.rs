@@ -16,7 +16,7 @@
 //! - RTU request (Modbus, big-endian, CRC-16/MODBUS low byte first):
 //!   FC06 `unit 06 addr value crc` (8 B); FC16 `unit 10 start qty 2*qty values crc`.
 
-use crate::actuation::{actuation_decision, Actuator, Decision, GateInput};
+use crate::actuation::{actuation_decision_ctx, Actuator, Decision, GateContext, GateInput};
 use crc::{Crc, CRC_16_MODBUS};
 
 pub const OMB1_MAGIC: [u8; 4] = *b"OMB1";
@@ -221,8 +221,18 @@ pub fn gate_input(ctx: &OrderContext, o: &MbOrder, rules: RuleCheck, last_execut
 
 /// The gateway rule. Pure. The frame is `Some` only when the decision is `Act`.
 pub fn gateway_decision(ctx: &OrderContext, o: &MbOrder, unit: u8, map: &[RegRule], last_executed_seq: Option<u32>) -> (Decision, RuleCheck, Option<Frame>) {
+    gateway_decision_ctx(&GateContext::default(), ctx, o, unit, map, last_executed_seq)
+}
+
+/// The same rule with the actuator state of parts G and H: a latched stop or a dead
+/// supervision link must refuse the order and, above all, **produce no frame**.
+///
+/// This exists because the silicon run of 2026-10-08 caught the gateway writing to the
+/// device while the stop latch was set: setting `gw.act.stopped` was not enough, because
+/// the pure rule never read it.
+pub fn gateway_decision_ctx(gctx: &GateContext, ctx: &OrderContext, o: &MbOrder, unit: u8, map: &[RegRule], last_executed_seq: Option<u32>) -> (Decision, RuleCheck, Option<Frame>) {
     let rules = check_rules(o, unit, map);
-    let d = actuation_decision(&gate_input(ctx, o, rules, last_executed_seq));
+    let d = actuation_decision_ctx(gctx, &gate_input(ctx, o, rules, last_executed_seq));
     let frame = match d {
         Decision::Act => Some(encode_request(o)),
         Decision::Reject(_) => None,
@@ -243,7 +253,8 @@ impl Gateway {
     }
     /// Decide on an order; send the returned frame (if any) exactly once.
     pub fn decide(&mut self, ctx: &OrderContext, o: &MbOrder, unit: u8, map: &[RegRule]) -> (Decision, RuleCheck, Option<Frame>) {
-        let r = gateway_decision(ctx, o, unit, map, self.act.last_executed_seq);
+        let gctx = self.act.context(ctx.now_ms);
+        let r = gateway_decision_ctx(&gctx, ctx, o, unit, map, self.act.last_executed_seq);
         match r.0 {
             Decision::Act => {
                 self.act.last_executed_seq = Some(o.cmd_seq);

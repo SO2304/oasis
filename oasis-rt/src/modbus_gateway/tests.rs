@@ -265,3 +265,37 @@ fn mb_end_to_end_over_v0b() {
     assert_eq!(frames_to_device, 2);
     assert_eq!(gw.act.executed, 2);
 }
+
+/// The silicon run of 2026-10-08 caught the gateway writing to the device while the stop
+/// latch was set: `gateway_decision` read no actuator context, so setting the flag on
+/// `Gateway::act` changed nothing. A latched stop must refuse the order and, above all,
+/// produce **no frame** — the frame is the only thing that ever reaches the device.
+#[test]
+fn mb_latched_stop_refuses_and_emits_no_frame() {
+    let mut gw = Gateway::new();
+    let c = ctx();
+    let (d, _, frame) = gw.decide(&c, &order(1, 0x0010, &[231]), UNIT, &MAP);
+    assert_eq!(d, Decision::Act);
+    assert!(frame.is_some(), "a legitimate order yields a frame");
+
+    gw.act.stopped = true;
+    let (d2, _, frame2) = gw.decide(&c, &order(2, 0x0010, &[232]), UNIT, &MAP);
+    assert_eq!(d2, Decision::Reject(Reason::Stopped));
+    assert!(frame2.is_none(), "no frame may be built while a stop is latched");
+
+    gw.act.clear_stop();
+    let (d3, _, frame3) = gw.decide(&c, &order(3, 0x0010, &[233]), UNIT, &MAP);
+    assert_eq!(d3, Decision::Act);
+    assert!(frame3.is_some(), "after a local clear the gateway works again");
+}
+
+/// Same for part H: a dead supervision link must stop the gateway too, not only the LED.
+#[test]
+fn mb_dead_supervision_refuses_and_emits_no_frame() {
+    let mut gw = Gateway::new();
+    gw.act.supervision_required = true;
+    let c = ctx();
+    let (d, _, frame) = gw.decide(&c, &order(1, 0x0010, &[231]), UNIT, &MAP);
+    assert_eq!(d, Decision::Reject(Reason::SupervisionLost));
+    assert!(frame.is_none());
+}
