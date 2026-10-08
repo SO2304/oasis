@@ -74,6 +74,7 @@ mémoire, tous faux. Ceux-ci viennent d'un `git worktree` sur le point de branch
 | Kani B1 | 4/4 ; 2 *unwinding assertions* au premier passage | `evidence/kani/2026-10-08/b1/` |
 | Silicium G/H/I | **19/20**, dont une **coupure de courant réelle** | `evidence/silicon/2026-10-08/hardening/` |
 | Silicium J et K | 6/6 et 6/6 | `evidence/silicon/2026-10-08/jk/` |
+| Silicium non-régression après C9 et B1 | **5/5** sur le firmware flashé, pas sur HEAD | `evidence/silicon/2026-10-08/regress/` |
 
 ---
 
