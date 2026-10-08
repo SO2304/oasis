@@ -81,6 +81,12 @@ impl DutyCycleThrottler {
     }
 
     /// EU868 default sub-band: 1% duty, ~1 s airtime burst capacity.
+    /// Parts-per-thousand duty (10 = 1 %). Needed by the transport to tell a caller
+    /// how long until a refused frame would fit (C3).
+    pub fn duty_permille(&self) -> u32 {
+        self.duty_permille
+    }
+
     pub fn eu868_1pct(start_ms: u64) -> Self {
         Self::new(10, 1_000_000, start_ms)
     }

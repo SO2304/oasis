@@ -141,7 +141,7 @@ mod tests {
         let mut rx = LoRaTransport::new(radio_b, LoRaParams::default()).unwrap();
 
         let envelope = router_a.origin_wrap(b"hello over lora");
-        tx.send_envelope(&envelope).unwrap();
+        tx.send_envelope(&envelope, 0).unwrap();
 
         let mut buf = [0u8; 255];
         let env_rx = rx.recv_envelope(&mut buf, 500).unwrap();
@@ -193,7 +193,7 @@ mod tests {
         let mut sent = 0;
         for i in 0..50 {
             let env = router_a.origin_wrap(format!("msg {}", i).as_bytes());
-            tx.send_envelope(&env).unwrap();
+            tx.send_envelope(&env, 0).unwrap();
             sent += 1;
             let mut buf = [0u8; 255];
             if let Ok(env_rx) = rx.recv_envelope(&mut buf, 50) {

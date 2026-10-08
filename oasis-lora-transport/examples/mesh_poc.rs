@@ -53,7 +53,7 @@ fn main() {
     let payload = b"telemetry: temp=21C batt=88%";
     let envelope = node_a.origin_wrap(payload);
     let air_ms = tx.airtime_us(envelope.len()) as f64 / 1000.0;
-    tx.send_envelope(&envelope).unwrap();
+    tx.send_envelope(&envelope, 0).unwrap();
     println!(
         "[3] A signe + emet ({} o charge -> {} o enveloppe, airtime {:.1} ms).",
         payload.len(),
@@ -89,7 +89,7 @@ fn main() {
     let (rax, rbx) = SimulatedLoRaRadio::linked_pair(99);
     let mut tx2 = LoRaTransport::new(rax, LoRaParams::default()).unwrap();
     let mut rx2 = LoRaTransport::new(rbx, LoRaParams::default()).unwrap();
-    tx2.send_envelope(&forged).unwrap();
+    tx2.send_envelope(&forged, 0).unwrap();
     let env_f = rx2.recv_envelope(&mut buf, 500).unwrap();
     match node_b.process(env_f) {
         MeshDecision::Drop(why) => {
