@@ -1442,18 +1442,28 @@ fn main() -> ! {
                         let (restored, prev) = efs.open_journal();
                         io.log("JRN_WIPE", format_args!("restored={},prev_boot={:?}", restored, prev));
                     }
-                    // Part K: emit this node's own signed time beacon.
+                    // Part K: emit this node's own signed time beacon. `@Zb` uses the
+                    // real clock; `@Zb<ms>` forces a value, which is the only way to test
+                    // on silicon the one rule `TimeView` adds beyond the mesh layer -
+                    // that a same-boot beacon which does not advance is refused. A
+                    // byte-exact replay toward B is not injectable on this bench, since
+                    // nothing can drive B's RX pin from the PC.
                     b'b' => {
-                        let payload = encode_otm1(efs.boot_id, now_ms64());
+                        let forced = core::str::from_utf8(&line[2..line_len])
+                            .ok()
+                            .and_then(|t| t.trim().parse::<u64>().ok());
+                        let stamp = forced.unwrap_or_else(now_ms64);
+                        let payload = encode_otm1(efs.boot_id, stamp);
                         match router.origin_wrap_v0b(&payload) {
                             Some(env) => {
                                 send_framed(&mut uart0, &env);
                                 io.log(
                                     "TIME_TX",
                                     format_args!(
-                                        "boot_id={},now_ms={},len={}",
+                                        "boot_id={},now_ms={},forced={},len={}",
                                         efs.boot_id,
-                                        now_ms64(),
+                                        stamp,
+                                        forced.is_some(),
                                         env.len()
                                     ),
                                 );
