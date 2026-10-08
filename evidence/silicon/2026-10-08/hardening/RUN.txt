@@ -7,3 +7,4 @@ OASIS|C|UART|FW_STATUS|version=24,floor=24,boot=Normal,bootloader_state=Boot,fp=
 ### campaign part 1 done 2026-10-08T09:18:41Z
 ### part 2 start 2026-10-08T09:18:45Z, C boot_id=47071
 ### part 2 done 2026-10-08T09:22:11Z
+### S8 pre-cut, C boot_id=47071

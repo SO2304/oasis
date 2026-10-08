@@ -48,7 +48,7 @@ decision.
 | **S7** | journal read off flash (`@Zd`) and verified on the PC | **`VERDICT intact entries=10`, exit 0** | — |
 | **S9** | **one bit flipped** in stored entry 3, byte 20 (`@Zt03,14`) | **`VERDICT broken`, exit 1** | — |
 | S10 | non-regression: a valid Modbus order after everything | `Act`, frame sent, device acked | — |
-| S8 | **power cut** | **NOT RUN** — needs a hand on the cable | — |
+| **S8** | **real power cut** of board C | **entries survived, chain closes against the pre-cut head, exit 0** — see §7 | seq 0–3 re-read |
 
 ## 2. The device's own count, which is the only count that matters
 
@@ -175,3 +175,47 @@ with SIGPIPE before the replies arrived — the boards were fine.
 `journal_dump.txt`, `43_s7_verify.txt` — the journal and its verification (exit 0).
 `journal_dump_tampered.txt`, `46_s9_verify_tampered.txt` — after one flipped bit (exit 1).
 `SHA256SUMS` — verified from a fresh clone after the commit.
+
+---
+
+## 7. S8 — real power cut (added 2026-10-08, after the operator pulled the cable)
+
+Board C's USB cable was **physically unplugged and plugged back in**. Four decisions had
+been written first, and the head captured before the cut.
+
+| Step | Observed |
+|---|---|
+| before the cut | 4 entries, head `seq=3`, hash `ac457857…`, **verified intact, exit 0** |
+| after the cut | `boot_id` **47071 → 48350** — a real reboot, not a reset of the counter |
+| | **4 entries still in flash**; the stored head was read back, recognised as another boot's (`restored=false, prev_boot=Some(47071)`) and a **fresh chain** started for 48350 |
+| **the decisive check** | the 4 surviving entries verified against the **pre-cut head**: **`VERDICT intact entries=4`, exit 0** — byte-identical decisions, including the two refusals |
+| one new decision in the new boot | `Act`, journal `seq=0` of the new chain, written **after** the old entries in the ring |
+| both chains afterwards | new boot 48350: 1 entry, **intact**. Old boot 47071: 4 entries, **still intact** |
+
+So the journal survives a power cut, the previous boot's chain stays verifiable **after**
+the new boot has written to the same ring, and the `boot_id` carried in every entry is what
+makes the two separable.
+
+### What S8 does and does not establish
+
+- **Established**: persistence across a real power cut; no entry lost; no entry altered;
+  the chain closes against a head held by the operator; the ring continues without
+  corrupting the previous boot.
+- **Not established**: the "**at most one unconfirmed entry**" case. That needs the cut to
+  land inside the ~200 ms window between programming the entry page and committing the
+  head. The cut here fell outside it, so the `Unconfirmed` verdict remains **designed and
+  unit-tested** (`jrn_power_cut_leaves_one_unconfirmed_entry`), **not demonstrated on
+  silicon**. Hitting that window by hand is not realistic; it would need a switched supply
+  triggered on the write.
+- **A property this made explicit**: the board does **not** re-verify the previous boot's
+  journal itself. The operator does, with the head they already hold. That is the external
+  anchor of §I.5 in miniature — and it is also why the anchor matters: without a head held
+  off the board, a local attacker could rewrite entries and head together.
+
+Files: `50_s8_wipe_C.log` … `62_s8_verify_oldboot_again.txt`, with
+`journal_precut.txt`, `journal_postcut_vs_precut_head.txt`, `journal_newboot.txt`,
+`journal_oldboot_after_newentry.txt`.
+
+**Campaign total: 19 of 20 tests run and passed.** The one left is the revoked-origin
+stop — the single documented exception to `proof_stop_never_blocked` — deliberately not
+run, because revocation is permanent and would end the campaign on these boards.
