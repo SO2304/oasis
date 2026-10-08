@@ -48,6 +48,14 @@ pub mod mesh;
 pub mod mesh_revocation;
 pub mod modbus_gateway;
 pub mod modbus_tcp;
+// mbtcp_net: the sockets the Modbus TCP layer was missing (pilot phase A). std only:
+// std::net and blocking threads.
+#[cfg(feature = "std")]
+pub mod mbtcp_net;
+// mbtcp_conf: the config both pilot binaries read. In the library so it is shared and
+// testable, not duplicated in two bins.
+#[cfg(feature = "std")]
+pub mod mbtcp_conf;
 pub mod nav;
 pub mod ownership;
 pub mod parameters;
