@@ -31,9 +31,7 @@
 //! define what it is. Refusing is honest; inventing a landing behaviour here would be a
 //! safety claim this project does not make.
 
-use crate::actuation::{
-    actuation_decision_ctx, ActCommand, Actuator, Decision, GateContext, GateInput, OrderClass,
-};
+use crate::actuation::{actuation_decision_ctx, ActCommand, Actuator, Decision, GateContext, GateInput, OrderClass};
 use crate::mavlink_min::encode_command_long;
 
 /// `V2_EXTENSION`, from `common.xml`.
@@ -148,10 +146,7 @@ pub fn arm_decision_ctx(
                 ArmAction::Arm => 1.0,
                 ArmAction::Disarm => 0.0,
             };
-            let f = encode_command_long(
-                seq, sysid, compid, target_sys, target_comp,
-                MAV_CMD_COMPONENT_ARM_DISARM, 0, p1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-            );
+            let f = encode_command_long(seq, sysid, compid, target_sys, target_comp, MAV_CMD_COMPONENT_ARM_DISARM, 0, p1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
             (d, Some(action), Some(f))
         }
         Decision::Reject(_) => (d, None, None),
@@ -178,10 +173,7 @@ impl Vehicle {
     /// Decide on one order; send the returned frame (if any) exactly once.
     pub fn decide(&mut self, ctx: &ArmContext, o: &ActCommand, class: OrderClass) -> (Decision, Option<ArmAction>, Option<Vec<u8>>) {
         let gctx = self.act.context(ctx.now_ms);
-        let r = arm_decision_ctx(
-            &gctx, ctx, o, class, &self.rules, self.act.last_executed_seq,
-            self.seq, self.sysid, self.compid, self.target_sys, self.target_comp,
-        );
+        let r = arm_decision_ctx(&gctx, ctx, o, class, &self.rules, self.act.last_executed_seq, self.seq, self.sysid, self.compid, self.target_sys, self.target_comp);
         match r.0 {
             Decision::Act => {
                 self.act.last_executed_seq = Some(o.cmd_seq);
@@ -198,16 +190,7 @@ impl Vehicle {
 
 /// Build a `V2_EXTENSION` frame carrying `envelope` (a v0B/v0C mesh envelope).
 /// `None` if the envelope does not fit in [`ENVELOPE_CAP`].
-pub fn encode_v2_extension(
-    seq: u8,
-    sysid: u8,
-    compid: u8,
-    target_network: u8,
-    target_sys: u8,
-    target_comp: u8,
-    message_type: u16,
-    envelope: &[u8],
-) -> Option<Vec<u8>> {
+pub fn encode_v2_extension(seq: u8, sysid: u8, compid: u8, target_network: u8, target_sys: u8, target_comp: u8, message_type: u16, envelope: &[u8]) -> Option<Vec<u8>> {
     if envelope.len() > ENVELOPE_CAP {
         return None;
     }
@@ -216,8 +199,7 @@ pub fn encode_v2_extension(
     payload[2] = target_network;
     payload[3] = target_sys;
     payload[4] = target_comp;
-    payload[V2EXT_PAYLOAD_OFF..V2EXT_PAYLOAD_OFF + 2]
-        .copy_from_slice(&(envelope.len() as u16).to_le_bytes());
+    payload[V2EXT_PAYLOAD_OFF..V2EXT_PAYLOAD_OFF + 2].copy_from_slice(&(envelope.len() as u16).to_le_bytes());
     payload[V2EXT_PAYLOAD_OFF + 2..V2EXT_PAYLOAD_OFF + 2 + envelope.len()].copy_from_slice(envelope);
     Some(frame_with_payload(seq, sysid, compid, &payload))
 }

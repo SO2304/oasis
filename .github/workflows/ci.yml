@@ -4,6 +4,10 @@ on:
   push:
     branches: [main, master]
   pull_request:
+  # Manual trigger. Two reasons: a branch that is neither main nor a PR gets no run
+  # otherwise, and if this button is absent from the Actions tab then Actions is
+  # disabled for the repository — which is the first thing to check when no run appears.
+  workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.ref }}

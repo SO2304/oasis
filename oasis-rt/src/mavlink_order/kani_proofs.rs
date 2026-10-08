@@ -61,10 +61,7 @@ fn proof_no_arm_frame_without_act() {
     let o = any_act_command();
     let rules = ArmRules { vehicle_id: kani::any() };
     let last: Option<u32> = if kani::any() { Some(kani::any()) } else { None };
-    let (d, action, frame) = arm_decision_ctx(
-        &gctx, &ctx, &o, any_class(), &rules, last,
-        kani::any(), kani::any(), kani::any(), kani::any(), kani::any(),
-    );
+    let (d, action, frame) = arm_decision_ctx(&gctx, &ctx, &o, any_class(), &rules, last, kani::any(), kani::any(), kani::any(), kani::any(), kani::any());
     match d {
         Decision::Act => {
             assert!(frame.is_some(), "an Act must produce the command");
@@ -88,10 +85,7 @@ fn proof_arm_implies_every_condition() {
     let rules = ArmRules { vehicle_id: kani::any() };
     let last: Option<u32> = if kani::any() { Some(kani::any()) } else { None };
     let class = any_class();
-    let (d, _, _) = arm_decision_ctx(
-        &gctx, &ctx, &o, class, &rules, last,
-        kani::any(), kani::any(), kani::any(), kani::any(), kani::any(),
-    );
+    let (d, _, _) = arm_decision_ctx(&gctx, &ctx, &o, class, &rules, last, kani::any(), kani::any(), kani::any(), kani::any(), kani::any());
     if d == Decision::Act {
         assert!(class == OrderClass::Act);
         assert!(ctx.v0b_ok);
@@ -120,10 +114,7 @@ fn proof_stop_class_never_arms() {
     let o = any_act_command();
     let rules = ArmRules { vehicle_id: kani::any() };
     let last: Option<u32> = if kani::any() { Some(kani::any()) } else { None };
-    let (d, action, frame) = arm_decision_ctx(
-        &gctx, &ctx, &o, OrderClass::Stop, &rules, last,
-        kani::any(), kani::any(), kani::any(), kani::any(), kani::any(),
-    );
+    let (d, action, frame) = arm_decision_ctx(&gctx, &ctx, &o, OrderClass::Stop, &rules, last, kani::any(), kani::any(), kani::any(), kani::any(), kani::any());
     assert!(d == Decision::Reject(Reason::OutOfLimits));
     assert!(action.is_none());
     assert!(frame.is_none());

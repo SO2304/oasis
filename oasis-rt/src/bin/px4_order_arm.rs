@@ -30,13 +30,8 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use oasis_rt::actuation::{encode_oac1, parse_oac1_any, ActCommand, Decision};
 use oasis_rt::mavlink_min::{encode_heartbeat, parse_frame, MavMsg};
-use oasis_rt::mavlink_order::{
-    encode_v2_extension, extract_envelope, ArmContext, ArmRules, Vehicle, OASIS_MESSAGE_TYPE,
-};
-use oasis_rt::mesh::{
-    inner_slice, mesh_v10_pubkey_from_seed, MeshDecision, MeshEdSeed, MeshPubRegistry, MeshRouter,
-    FP_LEN, MESH_V0B_NETWORK_LEN,
-};
+use oasis_rt::mavlink_order::{encode_v2_extension, extract_envelope, ArmContext, ArmRules, Vehicle, OASIS_MESSAGE_TYPE};
+use oasis_rt::mesh::{inner_slice, mesh_v10_pubkey_from_seed, MeshDecision, MeshEdSeed, MeshPubRegistry, MeshRouter, FP_LEN, MESH_V0B_NETWORK_LEN};
 
 const NET: [u8; MESH_V0B_NETWORK_LEN] = *b"OASISnet";
 const VEHICLE_ID: u16 = 1;
@@ -96,24 +91,15 @@ fn main() {
 // ─── the vehicle side: carrier → v0B → gate → PX4 ───
 
 fn vehicle(args: &[String], boot_id: u64) {
-    let listen: SocketAddr = arg(args, "--listen")
-        .unwrap_or_else(|| "127.0.0.1:14560".into())
-        .parse()
-        .expect("--listen");
-    let px4: SocketAddr = arg(args, "--px4")
-        .unwrap_or_else(|| "127.0.0.1:18570".into())
-        .parse()
-        .expect("--px4");
+    let listen: SocketAddr = arg(args, "--listen").unwrap_or_else(|| "127.0.0.1:14560".into()).parse().expect("--listen");
+    let px4: SocketAddr = arg(args, "--px4").unwrap_or_else(|| "127.0.0.1:18570".into()).parse().expect("--px4");
     let revoked = flag(args, "--revoked");
     let secs: u64 = arg(args, "--seconds").and_then(|v| v.parse().ok()).unwrap_or(30);
     // PX4 SITL starts mavlink with `-f`, i.e. broadcasting to the remote GCS port rather
     // than replying to whoever contacted it. Binding an ephemeral port therefore receives
     // nothing: the first run reported px4_heartbeats=0 and armed=false while PX4's own log
     // said "Armed by external command". Bind 14550 and the armed bit is observable here.
-    let bind_px4: SocketAddr = arg(args, "--bind")
-        .unwrap_or_else(|| "0.0.0.0:14550".into())
-        .parse()
-        .expect("--bind");
+    let bind_px4: SocketAddr = arg(args, "--bind").unwrap_or_else(|| "0.0.0.0:14550".into()).parse().expect("--bind");
 
     let from_commander = UdpSocket::bind(listen).expect("bind --listen");
     from_commander.set_read_timeout(Some(Duration::from_millis(100))).unwrap();
@@ -152,10 +138,7 @@ fn vehicle(args: &[String], boot_id: u64) {
                         let armed = base_mode & SAFETY_ARMED != 0;
                         if armed && !armed_seen {
                             armed_seen = true;
-                            println!(
-                                "PX4 ARMED  base_mode=0x{base_mode:02x} after {} ms",
-                                start.elapsed().as_millis()
-                            );
+                            println!("PX4 ARMED  base_mode=0x{base_mode:02x} after {} ms", start.elapsed().as_millis());
                         }
                         off += 12 + h.len as usize;
                     }
@@ -188,22 +171,12 @@ fn vehicle(args: &[String], boot_id: u64) {
                     continue;
                 }
             };
-            let ctx = ArmContext {
-                v0b_ok: true,
-                authorized: true,
-                revoked,
-                actuator_boot_id: boot_id,
-                now_ms: now_ms(),
-                r14_safe: true,
-            };
+            let ctx = ArmContext { v0b_ok: true, authorized: true, revoked, actuator_boot_id: boot_id, now_ms: now_ms(), r14_safe: true };
             let (d, action, frame) = veh.decide(&ctx, &cmd, class);
             match (&d, frame) {
                 (Decision::Act, Some(f)) => {
                     let sent = to_px4.send_to(&f, px4).map(|n| n).unwrap_or(0);
-                    println!(
-                        "GATE Act seq={} action={:?} -> COMMAND_LONG(400) sent, {sent} bytes",
-                        cmd.cmd_seq, action
-                    );
+                    println!("GATE Act seq={} action={:?} -> COMMAND_LONG(400) sent, {sent} bytes", cmd.cmd_seq, action);
                 }
                 (Decision::Reject(r), None) => {
                     println!("GATE Reject({r:?}) seq={} -> no ARM frame", cmd.cmd_seq)
@@ -213,19 +186,13 @@ fn vehicle(args: &[String], boot_id: u64) {
         }
     }
 
-    println!(
-        "VEHICLE done: executed={} rejects={:?} px4_heartbeats={} armed={}",
-        veh.act.executed, veh.act.rejects, px4_heartbeats, armed_seen
-    );
+    println!("VEHICLE done: executed={} rejects={:?} px4_heartbeats={} armed={}", veh.act.executed, veh.act.rejects, px4_heartbeats, armed_seen);
 }
 
 // ─── the commander side: build a case, send one frame ───
 
 fn commander(args: &[String], boot_id: u64) {
-    let to: SocketAddr = arg(args, "--to")
-        .unwrap_or_else(|| "127.0.0.1:14560".into())
-        .parse()
-        .expect("--to");
+    let to: SocketAddr = arg(args, "--to").unwrap_or_else(|| "127.0.0.1:14560".into()).parse().expect("--to");
     let case = arg(args, "--case").unwrap_or_else(|| "valid".into());
     let seq: u32 = arg(args, "--seq").and_then(|v| v.parse().ok()).unwrap_or(1);
 
@@ -252,17 +219,13 @@ fn commander(args: &[String], boot_id: u64) {
         env[n - 1] ^= 0x01;
     }
 
-    let frame = encode_v2_extension(0, 1, 191, 0, 1, 1, OASIS_MESSAGE_TYPE, &env)
-        .expect("envelope fits in V2_EXTENSION");
+    let frame = encode_v2_extension(0, 1, 191, 0, 1, 1, OASIS_MESSAGE_TYPE, &env).expect("envelope fits in V2_EXTENSION");
 
     let sock = UdpSocket::bind("0.0.0.0:0").expect("bind");
     let times = if case == "replay" { 2 } else { 1 };
     for i in 0..times {
         let n = sock.send_to(&frame, to).expect("send");
-        println!(
-            "COMMANDER case={case} seq={seq} boot_id={boot_id} send#{} {n} bytes -> {to}",
-            i + 1
-        );
+        println!("COMMANDER case={case} seq={seq} boot_id={boot_id} send#{} {n} bytes -> {to}", i + 1);
         std::thread::sleep(Duration::from_millis(300));
     }
     println!("COMMANDER done (envelope {} B, frame {} B)", env.len(), frame.len());

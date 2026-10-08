@@ -1,10 +1,7 @@
 use super::*;
 use crate::actuation::{encode_oac1, encode_oac1_with_class, parse_oac1_any, Reason, OAC1_CLASS_OFF, OAC1_LEN};
 use crate::mavlink_min::parse_frame;
-use crate::mesh::{
-    inner_slice, mesh_v10_pubkey_from_seed, MeshDecision, MeshEdSeed, MeshPubRegistry, MeshRouter,
-    FP_LEN, MESH_V0B_HEADER_LEN, MESH_V0B_NETWORK_LEN,
-};
+use crate::mesh::{inner_slice, mesh_v10_pubkey_from_seed, MeshDecision, MeshEdSeed, MeshPubRegistry, MeshRouter, FP_LEN, MESH_V0B_HEADER_LEN, MESH_V0B_NETWORK_LEN};
 
 const NET: [u8; MESH_V0B_NETWORK_LEN] = *b"OASISnet";
 const VEHICLE: u16 = 1;
@@ -31,10 +28,7 @@ fn registry(entries: &[([u8; FP_LEN], &MeshEdSeed)]) -> MeshPubRegistry {
 
 /// The commander (fp 1) and the vehicle's router, which trusts fp 1 only.
 fn commander_and_vehicle_router() -> (MeshRouter, MeshRouter) {
-    (
-        MeshRouter::new_v0b(fp(1), NET, ed_seed(1), registry(&[])),
-        MeshRouter::new_v0b(fp(2), NET, ed_seed(2), registry(&[(fp(1), &ed_seed(1))])),
-    )
+    (MeshRouter::new_v0b(fp(1), NET, ed_seed(1), registry(&[])), MeshRouter::new_v0b(fp(2), NET, ed_seed(2), registry(&[(fp(1), &ed_seed(1))])))
 }
 
 fn rules() -> ArmRules {
@@ -65,10 +59,7 @@ fn parse_arm(frame: &[u8]) -> (u16, f32) {
     let (h, _) = parse_frame(frame).expect("a COMMAND_LONG frame");
     assert_eq!(h.msgid, 76, "COMMAND_LONG");
     let p = &frame[10..10 + h.len as usize];
-    (
-        u16::from_le_bytes([p[28], p[29]]),
-        f32::from_le_bytes([p[0], p[1], p[2], p[3]]),
-    )
+    (u16::from_le_bytes([p[28], p[29]]), f32::from_le_bytes([p[0], p[1], p[2], p[3]]))
 }
 
 /// What became of one received MAVLink frame.
@@ -84,14 +75,7 @@ enum Rx {
 
 /// The whole vehicle side: unwrap the MAVLink frame, verify v0B, run the gate. The ARM
 /// frame comes back only if the gate said `Act`.
-fn vehicle_rx(
-    v: &mut Vehicle,
-    router: &mut MeshRouter,
-    frame: &[u8],
-    revoked: bool,
-    r14_safe: bool,
-    now_ms: u64,
-) -> (Rx, Option<Vec<u8>>) {
+fn vehicle_rx(v: &mut Vehicle, router: &mut MeshRouter, frame: &[u8], revoked: bool, r14_safe: bool, now_ms: u64) -> (Rx, Option<Vec<u8>>) {
     let env = match extract_envelope(frame, OASIS_MESSAGE_TYPE) {
         Some(e) => e,
         None => return (Rx::NotOurs, None),
