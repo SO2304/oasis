@@ -1365,9 +1365,16 @@ fn main() -> ! {
                     // human action", so this is the local interface and there is
                     // deliberately NO mesh message that clears the latch.
                     b'c' => {
-                        let was = efs.act.stopped;
+                        let was = (efs.act.stopped, gw.act.stopped);
                         efs.act.clear_stop();
-                        io.log("STOP_CLEAR", format_args!("was_stopped={},now={}", was, efs.act.stopped));
+                        gw.act.clear_stop();
+                        io.log(
+                            "STOP_CLEAR",
+                            format_args!(
+                                "was_stopped_led={},was_stopped_gw={},now_led={},now_gw={}",
+                                was.0, was.1, efs.act.stopped, gw.act.stopped
+                            ),
+                        );
                     }
                     // Part H applies to autonomous mobile machinery. This board is a
                     // fixed actuator, so the requirement is OFF by default and switched
@@ -2042,6 +2049,15 @@ fn main() -> ! {
                                         }
                                         OrderClass::Stop => {
                                             let d = efs.decide_stop(&router, &pqs.registry, &origin, true);
+                                            // This node hosts TWO actuators with their own gate
+                                            // state: the LED (`efs.act`) and the Modbus gateway
+                                            // (`gw.act`). An operator who stops a machine does
+                                            // not mean "stop one of its actuators", so an
+                                            // accepted stop latches BOTH. Found by writing the
+                                            // silicon test for S1, not by the test failing.
+                                            if d == oasis_rt::actuation::StopDecision::Stop {
+                                                gw.act.stopped = true;
+                                            }
                                             let flags = efs.flags_now(true, true, now_ms64());
                                             let jseq =
                                                 efs.log_decision(&origin, cmd.cmd_seq, class, d.into(), flags);
