@@ -46,6 +46,11 @@ hmac = { version = "=0.13.0", default-features = false }
 hkdf = { version = "=0.13.0", default-features = false }
 
 [dev-dependencies]
+# oasis-operator-key, for the C9 quorum tests only. This is a DEV-dependency cycle
+# (operator-key depends on oasis-rt), which Cargo allows: the quorum RULE takes a
+# `quorum_ok: bool` and depends on nothing, exactly as the gate takes `v0b_ok`, so the
+# verifier is needed by the tests and never by the library.
+oasis-operator-key = { path = "../oasis-operator-key", version = "0.1.0" }
 # RustCrypto ml-dsa: independent ML-DSA-44 oracle (NOT independently audited, per its
 # README). Every test signature is checked by both implementations, plus NIST ACVP.
 ml-dsa = { version = "=0.1.1", default-features = false }

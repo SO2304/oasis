@@ -82,8 +82,11 @@ pub enum Reason {
     Stopped = 7,
     /// Part H: no live supervision beacon. Applies to `Act` only, never to a stop.
     SupervisionLost = 8,
+    /// C9: a critical order arrived without k valid signatures from distinct authorised
+    /// operators. See `crate::quorum`.
+    QuorumMissing = 9,
 }
-pub const REASON_COUNT: usize = 9;
+pub const REASON_COUNT: usize = 10;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Decision {

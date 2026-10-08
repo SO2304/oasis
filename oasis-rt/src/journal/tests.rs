@@ -164,6 +164,7 @@ fn jrn_every_decision_encodes_distinctly() {
         LoggedDecision::Reject(Reason::StaleOrReplayed),
         LoggedDecision::Reject(Reason::Stopped),
         LoggedDecision::Reject(Reason::SupervisionLost),
+        LoggedDecision::Reject(Reason::QuorumMissing),
     ];
     for d in all {
         let b = d.to_byte();

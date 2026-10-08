@@ -50,6 +50,7 @@ pub mod modbus_gateway;
 pub mod nav;
 pub mod ownership;
 pub mod parameters;
+pub mod quorum;
 pub mod services;
 #[cfg(feature = "std_env")]
 pub mod spore;

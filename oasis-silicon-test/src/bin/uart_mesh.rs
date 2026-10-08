@@ -918,12 +918,12 @@ fn main() -> ! {
                 io.log(
                     "MB_GW_STATUS",
                     format_args!(
-                        "boot_id={},now_ms={},executed={},rejects={}/{}/{}/{}/{}/{}/{}/{}/{},sent={},ack={},exception={},timeout={},bad={},rx_errors={},last_seq={:?}",
+                        "boot_id={},now_ms={},executed={},rejects={}/{}/{}/{}/{}/{}/{}/{}/{}/{},sent={},ack={},exception={},timeout={},bad={},rx_errors={},last_seq={:?}",
                         efs.boot_id,
                         ef::now_ms64(),
                         gw.act.executed,
-                        // 9 reasons since part G: the last two are Stopped and SupervisionLost.
-                        r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[7], r[8],
+                        // 10 reasons: the last three are Stopped, SupervisionLost and QuorumMissing.
+                        r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[7], r[8], r[9],
                         gws.sent, gws.ack, gws.exception, gws.timeout, gws.bad, gws.rx_errors,
                         gw.act.last_executed_seq
                     ),
@@ -1595,7 +1595,7 @@ fn main() -> ! {
                 io.log(
                     "EF_STATUS",
                     format_args!(
-                        "boot_id={},now_ms={},epoch={},revoked={},sensor_lost={},pin25={},executed={},stopped={},stops={},sup_required={},sup_until={:?},jseq={:?},rejects={}/{}/{}/{}/{}/{}/{}/{}/{}",
+                        "boot_id={},now_ms={},epoch={},revoked={},sensor_lost={},pin25={},executed={},stopped={},stops={},sup_required={},sup_until={:?},jseq={:?},rejects={}/{}/{}/{}/{}/{}/{}/{}/{}/{}",
                         efs.boot_id,
                         ef::now_ms64(),
                         efs.rev.epoch,
@@ -1608,8 +1608,8 @@ fn main() -> ! {
                         efs.act.supervision_required,
                         efs.act.supervision_until_ms,
                         efs.journal.as_ref().and_then(|j| j.head.seq),
-                        // 9 reasons since part G: the last two are Stopped and SupervisionLost.
-                        r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[7], r[8]
+                        // 10 reasons: the last three are Stopped, SupervisionLost and QuorumMissing.
+                        r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[7], r[8], r[9]
                     ),
                 );
             }

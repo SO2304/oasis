@@ -741,6 +741,7 @@ dependencies = [
  "libcrux-ml-dsa",
  "libm",
  "ml-dsa",
+ "oasis-operator-key",
  "rmodbus",
  "serde",
  "serde_json",

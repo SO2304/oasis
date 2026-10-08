@@ -102,6 +102,7 @@ fn reason_from_index(i: u8) -> Option<Reason> {
         6 => Reason::StaleOrReplayed,
         7 => Reason::Stopped,
         8 => Reason::SupervisionLost,
+        9 => Reason::QuorumMissing,
         _ => return None,
     })
 }
