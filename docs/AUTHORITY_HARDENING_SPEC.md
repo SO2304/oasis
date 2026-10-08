@@ -328,8 +328,9 @@ C = passerelle).
 
 - **C14** (stockage sécurisé, clé lisible en flash) : ne se ferme pas en logiciel.
 - **C6** : fermé par [`KEY_LIFECYCLE.md`](KEY_LIFECYCLE.md), qui nomme ses cinq manques.
-- **C3** : mesuré en partie J ; la réduction `OAS1` est spécifiée, **pas encore écrite**, et
-  le respect du duty-cycle n'est **pas** appliqué par le code (§J.6).
+- **C3** : mesuré en partie J, et la réduction `OAS1` est **écrite** (4 tests, 3 preuves
+  vérifiées). ⚠️ Le respect du duty-cycle n'est toujours **pas** appliqué par le code
+  (§J.6), et le plan silicium J1–J6 n'est **pas encore exécuté**.
 - **C4** : fermé côté logiciel en partie K (`TimeView`, 8 tests, 4 preuves) ; le plan
   silicium K1–K6 n'est **pas encore exécuté**.
 - L'arrêt d'urgence **reste hors d'OASIS**, par conception.
