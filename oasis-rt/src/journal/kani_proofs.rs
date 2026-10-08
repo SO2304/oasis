@@ -47,14 +47,21 @@ fn chain_stub(prev: &[u8; 32], entry: &[u8; ENTRY_LEN]) -> [u8; 32] {
 
 fn any_decision() -> LoggedDecision {
     let k: u8 = kani::any();
-    kani::assume(k < 3);
+    kani::assume(k < 4);
     match k {
         0 => LoggedDecision::Act,
         1 => LoggedDecision::Stop,
-        _ => {
+        2 => {
             let r: u8 = kani::any();
             kani::assume((r as usize) < REASON_COUNT);
             LoggedDecision::Reject(reason_from_index(r).unwrap())
+        }
+        // The third region, added for Annex III 1.1.9 para 5. Leaving it out would make
+        // every harness below silent about exactly the records that were added.
+        _ => {
+            let c: u8 = kani::any();
+            kani::assume((c as usize) < CHANGE_KIND_COUNT);
+            LoggedDecision::Change(ChangeKind::from_index(c).unwrap())
         }
     }
 }
@@ -64,16 +71,51 @@ fn any_decision() -> LoggedDecision {
 /// hashes the whole entry rather than part of it.
 #[kani::proof]
 fn proof_entry_roundtrip_is_lossless() {
+    let decision = any_decision();
     let e = Entry {
         seq: kani::any(),
         boot_id: kani::any(),
         origin_fp: kani::any(),
         cmd_seq: kani::any(),
-        class: if kani::any() { OrderClass::Act } else { OrderClass::Stop },
-        decision: any_decision(),
+        // A change has exactly one valid class byte (see `parse_entry`), so only a real
+        // decision may carry a symbolic one.
+        class: if decision.is_change() || kani::any() { OrderClass::Act } else { OrderClass::Stop },
+        decision,
         flags: kani::any(),
     };
     assert!(parse_entry(&encode_entry(&e)) == Some(e));
+}
+
+/// PROVE: a change record keeps everything an auditor reads off it — which change, which
+/// identifying number, who authorised it, and whether it was applied or refused.
+///
+/// Annex III 1.1.9 para 5 asks for evidence of « une intervention legitime **ou
+/// illegitime** » in the software or a modification of it or of its configuration, so a
+/// record that lost the *refused* bit, or the authority, would not be the evidence the
+/// clause asks for even though the chain over it still verified.
+#[kani::proof]
+#[kani::stub(super::chain, chain_stub)]
+#[kani::stub(super::genesis, genesis_stub)]
+fn proof_change_record_preserves_what_an_auditor_reads() {
+    let c: u8 = kani::any();
+    kani::assume((c as usize) < CHANGE_KIND_COUNT);
+    let kind = ChangeKind::from_index(c).unwrap();
+    let ident: u32 = kani::any();
+    let fp: [u8; 8] = kani::any();
+    let applied: bool = kani::any();
+
+    let mut j = Journal::new(kani::any());
+    let bytes = j.append_change(fp, ident, kind, applied);
+    let e = parse_entry(&bytes).expect("a change this module wrote must parse");
+
+    assert!(e.decision == LoggedDecision::Change(kind));
+    assert!(e.decision.is_change());
+    assert!(e.cmd_seq == ident);
+    assert!(e.origin_fp == fp);
+    assert!((e.flags & FLAG_CHANGE_APPLIED != 0) == applied);
+    // And a change is never mistaken for a decision about an order.
+    assert!(e.decision != LoggedDecision::Act);
+    assert!(e.decision != LoggedDecision::Stop);
 }
 
 /// PROVE: `seq` advances by exactly one per append and `next_seq` never panics.
@@ -106,6 +148,10 @@ fn proof_journal_parse_total() {
         assert!(n == ENTRY_LEN);
         assert!(buf[27] == 0, "a parsed entry has a zero reserved byte");
         assert!(buf[24] <= 1, "a parsed entry has a known class");
+        // A change entry has exactly one valid class byte, so its encoding is injective.
+        if e.decision.is_change() {
+            assert!(buf[24] == OrderClass::Act as u8);
+        }
         // And it re-encodes to the same 32 bytes it came from.
         assert!(encode_entry(&e) == buf[..ENTRY_LEN]);
     }
@@ -123,12 +169,22 @@ fn proof_decision_byte_is_injective() {
         Some(LoggedDecision::Reject(_)) => {
             assert!(b >= DEC_REJECT_BASE);
             assert!(((b - DEC_REJECT_BASE) as usize) < REASON_COUNT);
+            assert!(b < DEC_CHANGE_BASE, "a refusal must never read as a change");
+        }
+        Some(LoggedDecision::Change(_)) => {
+            assert!(b >= DEC_CHANGE_BASE);
+            assert!(((b - DEC_CHANGE_BASE) as usize) < CHANGE_KIND_COUNT);
         }
         None => {
             assert!(b > DEC_STOP);
             assert!(b < DEC_REJECT_BASE || (b - DEC_REJECT_BASE) as usize >= REASON_COUNT);
+            assert!(b < DEC_CHANGE_BASE || (b - DEC_CHANGE_BASE) as usize >= CHANGE_KIND_COUNT);
         }
     }
+    // The three regions are disjoint by construction, which is only true while the
+    // refusals cannot grow into the change region. Asserted so adding a `Reason` fails
+    // here rather than silently turning a refusal into a configuration change.
+    assert!(DEC_REJECT_BASE as usize + REASON_COUNT <= DEC_CHANGE_BASE as usize);
     let d = any_decision();
     assert!(LoggedDecision::from_byte(d.to_byte()) == Some(d));
 }
@@ -144,7 +200,10 @@ fn proof_decision_byte_is_injective() {
 fn proof_every_decision_is_logged() {
     let mut j = Journal::new(kani::any());
     let d = any_decision();
-    let class = if kani::any() { OrderClass::Act } else { OrderClass::Stop };
+    // A change entry has no order class and `parse_entry` enforces byte 24 == Act, so a
+    // symbolic class is only sound for a real decision. Without this the harness would
+    // be refuted on a genuine property rather than a bug.
+    let class = if d.is_change() || kani::any() { OrderClass::Act } else { OrderClass::Stop };
     let cmd_seq: u32 = kani::any();
     let fp: [u8; 8] = kani::any();
     let bytes = j.append(fp, cmd_seq, class, d, kani::any());

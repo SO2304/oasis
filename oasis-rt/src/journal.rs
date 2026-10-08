@@ -53,17 +53,73 @@ pub const FLAG_WITHIN_LIMITS: u8 = 1 << 1;
 pub const FLAG_SUPERVISION_LIVE: u8 = 1 << 2;
 pub const FLAG_STOPPED: u8 = 1 << 3;
 
+/// Set on a change entry that was **applied**; clear if the change was refused. A refused
+/// change is recorded too: Annex III 1.1.9 ¶5 asks for evidence of a « légitime **ou
+/// illégitime** » intervention, so an attempt that failed is exactly what it wants kept.
+pub const FLAG_CHANGE_APPLIED: u8 = 1 << 4;
+
 /// Wire encoding of a decision. `Act` and `Stop` are the two acceptances; a refusal
-/// carries its reason, offset so the two spaces never collide.
+/// carries its reason, offset so the two spaces never collide; a **change** sits in a
+/// third region, far enough above the refusals (which end at
+/// `DEC_REJECT_BASE + REASON_COUNT` = 26) that adding a `Reason` cannot collide with it.
 pub const DEC_ACT: u8 = 0;
 pub const DEC_STOP: u8 = 1;
 pub const DEC_REJECT_BASE: u8 = 16;
+pub const DEC_CHANGE_BASE: u8 = 64;
+
+/// What changed, for Annex III 1.1.9 ¶5: "evidence of a legitimate or illegitimate
+/// intervention in the software **or a modification of the software installed** on the
+/// machinery or related product **or its configuration**".
+///
+/// Verified at the source (EUR-Lex, Regulation (EU) 2023/1230, Annex III 1.1.9, 5
+/// paragraphs). The journal already carried decisions, which is the *command* path; these
+/// are the second and third triggers of ¶5, which nothing recorded.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ChangeKind {
+    /// A new image was installed and confirmed. `cmd_seq` carries its version.
+    FirmwareInstalled = 0,
+    /// A node was enrolled or its permissions changed. `cmd_seq` carries `enroll_seq`.
+    Enrollment = 1,
+    /// A revocation list was applied. `cmd_seq` carries its epoch.
+    Revocation = 2,
+    /// The minimum signature suite was raised for some kind. `cmd_seq` carries the kind.
+    AuthPolicy = 3,
+    /// Ownership was transferred. `cmd_seq` carries the transfer counter.
+    Ownership = 4,
+    /// A **hardware** tamper signal was reported by something outside OASIS.
+    ///
+    /// ⚠️ OASIS cannot detect physical intervention — no software can. This kind exists so
+    /// that a manufacturer who adds the detection (a secure element's tamper pin, an
+    /// enclosure switch) has a tamper-evident place to put it. It is the *recording* half
+    /// of 1.1.9 ¶2, 2nd sentence, and on its own it does **not** satisfy that sentence.
+    TamperSignal = 5,
+}
+
+pub const CHANGE_KIND_COUNT: usize = 6;
+
+impl ChangeKind {
+    pub fn from_index(i: u8) -> Option<Self> {
+        Some(match i {
+            0 => ChangeKind::FirmwareInstalled,
+            1 => ChangeKind::Enrollment,
+            2 => ChangeKind::Revocation,
+            3 => ChangeKind::AuthPolicy,
+            4 => ChangeKind::Ownership,
+            5 => ChangeKind::TamperSignal,
+            _ => return None,
+        })
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LoggedDecision {
     Act,
     Stop,
     Reject(Reason),
+    /// Not a decision about an order: a change to the software or its configuration.
+    /// On such an entry `class` is meaningless and **must** encode as `Act`, which
+    /// `parse_entry` enforces so the encoding stays injective.
+    Change(ChangeKind),
 }
 
 impl LoggedDecision {
@@ -72,6 +128,7 @@ impl LoggedDecision {
             LoggedDecision::Act => DEC_ACT,
             LoggedDecision::Stop => DEC_STOP,
             LoggedDecision::Reject(r) => DEC_REJECT_BASE + r as u8,
+            LoggedDecision::Change(k) => DEC_CHANGE_BASE + k as u8,
         }
     }
 
@@ -79,6 +136,14 @@ impl LoggedDecision {
         match b {
             DEC_ACT => Some(LoggedDecision::Act),
             DEC_STOP => Some(LoggedDecision::Stop),
+            _ if b >= DEC_CHANGE_BASE => {
+                let i = b - DEC_CHANGE_BASE;
+                if (i as usize) < CHANGE_KIND_COUNT {
+                    Some(LoggedDecision::Change(ChangeKind::from_index(i)?))
+                } else {
+                    None
+                }
+            }
             _ => {
                 let i = b.checked_sub(DEC_REJECT_BASE)?;
                 if (i as usize) < REASON_COUNT {
@@ -88,6 +153,12 @@ impl LoggedDecision {
                 }
             }
         }
+    }
+
+    /// True for the third region of the byte space. A reader needs this to know that
+    /// `class` carries nothing and `cmd_seq` is a change identifier, not a command.
+    pub fn is_change(self) -> bool {
+        matches!(self, LoggedDecision::Change(_))
     }
 }
 
@@ -158,13 +229,21 @@ pub fn parse_entry(b: &[u8]) -> Option<Entry> {
     boot.copy_from_slice(&b[4..12]);
     let mut fp = [0u8; 8];
     fp.copy_from_slice(&b[12..20]);
+    let decision = LoggedDecision::from_byte(b[25])?;
+    // A change entry has no order class, so there is exactly **one** byte that may stand
+    // there. Enforced rather than documented, because two encodings of the same entry is
+    // how the `OAC1` non-canonical finding happened: the fuzzer found an order that
+    // re-encoded to different bytes than it parsed from.
+    if decision.is_change() && b[24] != OrderClass::Act as u8 {
+        return None;
+    }
     Some(Entry {
         seq: u32::from_le_bytes([b[0], b[1], b[2], b[3]]),
         boot_id: u64::from_le_bytes(boot),
         origin_fp: fp,
         cmd_seq: u32::from_le_bytes([b[20], b[21], b[22], b[23]]),
         class: OrderClass::from_byte(b[24])?,
-        decision: LoggedDecision::from_byte(b[25])?,
+        decision,
         flags: b[26],
     })
 }
@@ -234,6 +313,28 @@ impl Journal {
         self.head.hash = chain(&self.head.hash, &bytes);
         self.head.seq = Some(e.seq);
         bytes
+    }
+
+    /// Record a change to the software or its configuration — Annex III 1.1.9 ¶5.
+    ///
+    /// `authority_fp` is who authorised it (the operator or owner whose signature carried
+    /// the change), which is what makes the record say *legitimate or illegitimate*
+    /// rather than merely *happened*. `ident` is the change's own monotone number: the
+    /// installed version, the revocation epoch, the `enroll_seq`, the policy kind, the
+    /// transfer counter. `applied` is false for a change that was **refused**, which is
+    /// recorded too.
+    ///
+    /// Goes on the same hash chain as every decision, so the same `verify` and the same
+    /// flash ring cover it and nothing new has to be trusted.
+    pub fn append_change(&mut self, authority_fp: [u8; 8], ident: u32, kind: ChangeKind, applied: bool) -> [u8; ENTRY_LEN] {
+        self.append(
+            authority_fp,
+            ident,
+            // Not meaningful on a change entry; `parse_entry` requires exactly this byte.
+            OrderClass::Act,
+            LoggedDecision::Change(kind),
+            if applied { FLAG_CHANGE_APPLIED } else { 0 },
+        )
     }
 }
 

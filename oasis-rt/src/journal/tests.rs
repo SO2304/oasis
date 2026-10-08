@@ -215,3 +215,110 @@ fn jrn_records_refusals_as_well_as_acceptances() {
     let decisions: std::vec::Vec<LoggedDecision> = v.iter().map(|b| parse_entry(b).unwrap().decision).collect();
     assert_eq!(decisions, [LoggedDecision::Act, LoggedDecision::Reject(Reason::R14Unsafe), LoggedDecision::Stop, LoggedDecision::Reject(Reason::Stopped),]);
 }
+
+// --- Annex III 1.1.9 ¶5: evidence of a change to the software or its configuration ---
+
+const ALL_KINDS: [ChangeKind; CHANGE_KIND_COUNT] =
+    [ChangeKind::FirmwareInstalled, ChangeKind::Enrollment, ChangeKind::Revocation, ChangeKind::AuthPolicy, ChangeKind::Ownership, ChangeKind::TamperSignal];
+
+/// The byte space now has three regions. If any two overlapped, one kind of record would
+/// read back as another — a journal that misreports what happened is worse than none.
+#[test]
+fn jrn_the_three_decision_regions_are_disjoint_over_the_whole_byte_space() {
+    let mut seen: std::vec::Vec<(u8, LoggedDecision)> = std::vec::Vec::new();
+    for b in 0..=u8::MAX {
+        if let Some(d) = LoggedDecision::from_byte(b) {
+            assert_eq!(d.to_byte(), b, "byte {b} parsed as {d:?} but re-encodes differently");
+            for (ob, od) in &seen {
+                assert_ne!(*od, d, "bytes {ob} and {b} both mean {d:?}");
+            }
+            seen.push((b, d));
+        }
+    }
+    // 2 acceptances + 10 refusals + 6 changes, and nothing else in 256 bytes.
+    assert_eq!(seen.len(), 2 + REASON_COUNT + CHANGE_KIND_COUNT);
+    assert!(seen.iter().all(|(b, d)| d.is_change() == (*b >= DEC_CHANGE_BASE)));
+}
+
+/// A change rides the same chain as a decision: same `verify`, same ring, nothing new to
+/// trust. Mixed with real decisions, because that is how a journal actually looks.
+#[test]
+fn jrn_changes_and_decisions_share_one_intact_chain() {
+    let mut j = Journal::new(BOOT);
+    let mut v = std::vec::Vec::new();
+    v.push(j.append(FP, 1, OrderClass::Act, LoggedDecision::Act, FLAG_R14_SAFE));
+    for (i, k) in ALL_KINDS.iter().enumerate() {
+        v.push(j.append_change([0xB2; 8], 100 + i as u32, *k, i % 2 == 0));
+    }
+    v.push(j.append(FP, 2, OrderClass::Act, LoggedDecision::Reject(Reason::Stopped), 0));
+
+    assert_eq!(verify(BOOT, &v, &j.head), VerifyResult::Intact { entries: 8 });
+
+    let entries: std::vec::Vec<Entry> = v.iter().map(|b| parse_entry(b).unwrap()).collect();
+    for (i, k) in ALL_KINDS.iter().enumerate() {
+        let e = entries[i + 1];
+        assert_eq!(e.decision, LoggedDecision::Change(*k));
+        assert!(e.decision.is_change());
+        assert_eq!(e.cmd_seq, 100 + i as u32, "the change identifier is carried");
+        assert_eq!(e.origin_fp, [0xB2; 8], "and who authorised it");
+        assert_eq!(e.flags & FLAG_CHANGE_APPLIED != 0, i % 2 == 0, "applied vs refused");
+    }
+    assert!(!entries[0].decision.is_change());
+    assert!(!entries[7].decision.is_change());
+}
+
+/// A refused change must be kept: ¶5 says « légitime **ou illégitime** », so the attempt
+/// that failed is precisely the evidence an investigator wants.
+#[test]
+fn jrn_a_refused_change_is_recorded_and_distinguishable() {
+    let mut j = Journal::new(BOOT);
+    let ok = j.append_change(FP, 7, ChangeKind::FirmwareInstalled, true);
+    let no = j.append_change(FP, 7, ChangeKind::FirmwareInstalled, false);
+    assert_ne!(ok, no, "applied and refused must not encode identically");
+    let (a, b) = (parse_entry(&ok).unwrap(), parse_entry(&no).unwrap());
+    assert_eq!(a.decision, b.decision, "same kind");
+    assert!(a.flags & FLAG_CHANGE_APPLIED != 0);
+    assert_eq!(b.flags & FLAG_CHANGE_APPLIED, 0);
+    assert_eq!(verify(BOOT, &[ok, no], &j.head), VerifyResult::Intact { entries: 2 });
+}
+
+/// One encoding per entry. A change entry carrying `Stop` in the class byte is refused,
+/// not silently read as a change with a class nobody set — the `OAC1` lesson.
+#[test]
+fn jrn_a_change_entry_with_a_class_byte_is_not_canonical_and_is_refused() {
+    let mut j = Journal::new(BOOT);
+    let mut raw = j.append_change(FP, 3, ChangeKind::Revocation, true);
+    assert!(parse_entry(&raw).is_some());
+    assert_eq!(raw[24], OrderClass::Act as u8, "a change encodes class 0");
+    raw[24] = OrderClass::Stop as u8;
+    assert_eq!(parse_entry(&raw), None, "a change entry has no class to carry");
+    // And the tamper is visible in the chain too, not only in the parser.
+    assert!(matches!(verify(BOOT, &[raw], &j.head), VerifyResult::Broken { .. }));
+}
+
+/// The reserved bytes stay reserved. This is where `proof_journal_parse_total` once found
+/// a real 4-byte hole, so the new region must not reopen it.
+#[test]
+fn jrn_a_change_entry_still_enforces_the_reserved_bytes() {
+    let mut j = Journal::new(BOOT);
+    let base = j.append_change(FP, 1, ChangeKind::Ownership, true);
+    for i in RESERVED_OFF..ENTRY_LEN {
+        let mut raw = base;
+        raw[i] = 1;
+        assert_eq!(parse_entry(&raw), None, "byte {i} is reserved and must be zero");
+    }
+}
+
+/// An unknown change kind is refused rather than defaulted — the same rule Part G applies
+/// to an unknown order class. A future kind must not read as an existing one.
+#[test]
+fn jrn_an_unknown_change_kind_is_refused_not_defaulted() {
+    for extra in 0..8u8 {
+        let b = DEC_CHANGE_BASE + CHANGE_KIND_COUNT as u8 + extra;
+        assert_eq!(LoggedDecision::from_byte(b), None, "byte {b} is not a known change");
+    }
+    let mut j = Journal::new(BOOT);
+    let mut raw = j.append_change(FP, 1, ChangeKind::TamperSignal, true);
+    raw[25] = DEC_CHANGE_BASE + CHANGE_KIND_COUNT as u8;
+    assert_eq!(parse_entry(&raw), None);
+}
