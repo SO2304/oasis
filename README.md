@@ -4,9 +4,10 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 
 Bio-inspired agentic middleware: tension fields, Hebbian/STDP synapses, emotional
-modulation, reflex arcs, federated learning. Runtime in Rust (47 modules, 649 lib tests, 689 across the workspace, 189 Kani proof
-harnesses of which 182 are verified on CI). `tools/check_claims.sh` re-derives every
-one of those numbers from the tree. Validated on:
+modulation, reflex arcs, federated learning. Runtime in Rust (48 modules, 644 lib tests,
+686 passing across the workspace, 189 Kani proof harnesses of which 182 are verified on
+CI). `tools/check_claims.sh` re-derives every one of those numbers from the tree.
+Validated on:
 
 - **Real hardware (claimed)** — Samsung S23 FE (Android/Termux), 3h23 continuous
   session with real sensors (LSM6DSVTR IMU, barometer, light, mic), 121 290 ticks.
@@ -103,7 +104,7 @@ docker run --rm oasis-rt
 ```bash
 cd oasis-rt
 cargo build --release
-cargo test --workspace --release # 689 tests
+cargo test --workspace --release # 686 pass, 2 doc-test blocks marked `ignore`
 ./target/release/drone_bridge patrol1 0 < sensor_stream.jsonl
 ```
 

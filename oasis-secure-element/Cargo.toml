@@ -41,3 +41,29 @@ mesh_bloom_mcu = ["oasis-rt/mesh_bloom_mcu"]
 
 [lib]
 path = "src/lib.rs"
+
+# Four of the five examples use `SimSecureElement`, which lives behind this crate's own
+# `std` feature. Nothing turns that feature on when the package is built ALONE, so
+# `cargo test -p oasis-secure-element` used to fail to compile them — while
+# `cargo test --workspace` passed, because `oasis-trl-harness` depends on this crate with
+# `features = ["std"]` and Cargo unifies features across the workspace. A visitor who
+# cloned the repo and built this one crate hit an error the CI never saw.
+#
+# `required-features` is Cargo's answer: the example is skipped when the feature is off
+# instead of being compiled without it. `cargo test -p oasis-secure-element --features std`
+# builds all five.
+[[example]]
+name = "migration_demo"
+required-features = ["std"]
+
+[[example]]
+name = "tamper_wipe"
+required-features = ["std"]
+
+[[example]]
+name = "tamper_cascade_demo"
+required-features = ["std"]
+
+[[example]]
+name = "mesh_throughput_with_se"
+required-features = ["std"]

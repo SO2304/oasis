@@ -31,6 +31,21 @@ doc_num() { # doc_num <regex with one capture>
   grep -oE "$1" CLAUDE.md | head -1 | grep -oE '[0-9]+' | head -1
 }
 
+# Same check, in a named document rather than CLAUDE.md. Added after a count was corrected
+# in CLAUDE.md and left wrong in README.md on a public repository for an hour: the checker
+# only ever read CLAUDE.md, so the one file a visitor sees first was the one file not
+# checked. A document that does not carry the count at all is reported, not passed.
+claim_in() { # claim_in <label> <file> <regex> <actual>
+  local got
+  got=$(grep -oE "$3" "$2" 2>/dev/null | head -1 | grep -oE '[0-9]+' | head -1)
+  if [ -z "$got" ]; then
+    printf '  ABSENT %-33s %s ne porte pas ce compte\n' "$1" "$2"
+    fail=$((fail + 1))
+    return
+  fi
+  claim "$1" "$got" "$4"
+}
+
 echo "== comptes de l'arbre =="
 claim "harnais Kani" \
   "$(grep -oE '\*\*[0-9]+ Kani proof harnesses\*\*' CLAUDE.md | head -1 | grep -oE '[0-9]+')" \
@@ -47,6 +62,15 @@ claim "modules declares dans lib.rs" \
 claim "features Cargo" \
   "$(grep -oE 'Cargo features \([0-9]+\)' CLAUDE.md | grep -oE '[0-9]+')" \
   "$(awk '/^\[features\]/{f=1;next} f&&/^\[/{exit} f&&/^[a-z0-9_]+ *=/&&!/^default *=/{n++} END{print n+0}' oasis-rt/Cargo.toml | tr -d ' ')"
+
+echo
+echo "== les memes comptes dans README.md (le premier fichier qu'un visiteur ouvre) =="
+claim_in "README modules" README.md '[0-9]+ modules' \
+  "$(grep -cE '^pub mod ' oasis-rt/src/lib.rs | tr -d ' ')"
+claim_in "README bins" README.md '[0-9]+ bins' \
+  "$(grep -c '^\[\[bin\]\]' oasis-rt/Cargo.toml | tr -d ' ')"
+claim_in "README harnais Kani" README.md '[0-9]+ Kani proof' \
+  "$(grep -rE 'kani::proof' oasis-rt/src | wc -l | tr -d ' ')"
 
 echo
 echo "== sommes des repartitions (une liste qui ne somme pas est une liste fausse) =="
@@ -90,8 +114,32 @@ if [ "$FULL" = 1 ]; then
   echo
   echo "== suites (--full) =="
   lib=$(cargo test -p oasis-rt --release --lib -- --list 2>/dev/null | grep -c ': test$')
-  claim "tests lib oasis-rt" \
-    "$(grep -oE '[*][*][0-9]+ .oasis-rt. lib tests' CLAUDE.md | head -1 | grep -oE '[0-9]+' | head -1)" "$lib"
+  claim_in "tests lib oasis-rt (CLAUDE)" CLAUDE.md '[*][*][0-9]+ .oasis-rt. lib tests' "$lib"
+  claim_in "tests lib oasis-rt (README)" README.md '[0-9]+ lib tests' "$lib"
+
+  # The workspace figure is what the README tells a visitor to run, so it is measured the
+  # way they would see it: the number of tests that PASS. `-- --list` counts declared
+  # tests, which is 2 higher here because two doc-test blocks are marked `ignore` — and
+  # claiming the declared count as passing is how "689" got published against 686.
+  ws=$(cargo test --workspace --release 2>/dev/null \
+       | awk '/^test result/{p+=$4} END{print p+0}')
+  claim_in "tests workspace (CLAUDE)" CLAUDE.md '[0-9]+ across the workspace' "$ws"
+  claim_in "tests workspace (README)" README.md '[0-9]+ passing across the workspace' "$ws"
+
+  # Every member must also build on its own: `cargo test --workspace` unifies features,
+  # so a crate can be green in the workspace and fail to compile alone. That is exactly
+  # what oasis-secure-element did — four examples needed its own `std` feature, which only
+  # oasis-trl-harness turned on — and a visitor building one crate hit it, not CI.
+  echo
+  echo "== chaque membre compile seul (l'unification des features cache les manques) =="
+  for p in oasis-rt oasis-operator-key oasis-secure-element oasis-trl-harness; do
+    if cargo test -p "$p" --release --no-run >/dev/null 2>&1; then
+      printf '  ok    %-34s compile seul\n' "$p"
+    else
+      printf '  ECHEC %-34s ne compile pas seul\n' "$p"
+      fail=$((fail + 1))
+    fi
+  done
   echo
   echo "== manifestes de preuves (--full) =="
   # The working tree is not the authority: a checkout can carry local divergence that
