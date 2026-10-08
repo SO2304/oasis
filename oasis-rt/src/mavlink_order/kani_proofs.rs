@@ -5,6 +5,12 @@
 //! built in the `Act` branch and nowhere else, and these harnesses say so for every
 //! input, not for the ones a test happened to pick.
 //!
+//! ⚠️ **Unwind bound.** The two harnesses that reach `encode_command_long` must unwind
+//! `crc_over`'s loop over a 43-byte frame. With `unwind(2)` both came back
+//! `VERIFICATION:- FAILED` on an *unwinding assertion* — which is CBMC saying "I could
+//! not look far enough", not a counterexample. `unwind(64)` covers it. The distinction is
+//! recorded here because the log of the first run says FAILED and that log is kept.
+//!
 //! `encode_command_long` allocates, so the harnesses check `frame.is_some()`, never the
 //! bytes: what is proved is *whether* a frame exists, which is the safety-relevant half.
 //! The bytes are covered by `tests.rs`, which reads them back with `parse_frame`.
@@ -48,7 +54,7 @@ fn any_class() -> OrderClass {
 /// exists if and only if the decision is `Act` — and then it is accompanied by exactly
 /// one named action.
 #[kani::proof]
-#[kani::unwind(2)]
+#[kani::unwind(64)]
 fn proof_no_arm_frame_without_act() {
     let gctx = GateContext { stopped: kani::any(), supervision_expired: kani::any() };
     let ctx = any_ctx();
@@ -74,7 +80,7 @@ fn proof_no_arm_frame_without_act() {
 /// An `Act` decision implies every Part F condition held **and** the order named this
 /// vehicle with a binary `force`. The gate is not weakened by the carrier.
 #[kani::proof]
-#[kani::unwind(2)]
+#[kani::unwind(64)]
 fn proof_arm_implies_every_condition() {
     let gctx = GateContext { stopped: kani::any(), supervision_expired: kani::any() };
     let ctx = any_ctx();
