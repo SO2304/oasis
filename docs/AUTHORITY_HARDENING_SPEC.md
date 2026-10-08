@@ -10,8 +10,9 @@ de ce segment, dans l'ordre où ils doivent être construits :
 | **H** | **C12** — vivacité de la supervision | annexe III **partie 3** : « si la fonction de supervision n'est pas active, la machine ne peut pas fonctionner » | à construire |
 | **I** | **C5** — journal infalsifiable des décisions | annexe III **1.1.9 al. 5** et **1.2.1 al. 2 f)** ; CRA annexe **I-I-2 l)** ; IEC 62443-4-2 **CR 2.8, 2.9, 2.10, 2.11, 2.12, 3.9** | à construire |
 
-C3 (budget radio), C4 (émission d'un ordre sur le terrain) et C6 (`KEY_LIFECYCLE.md`) restent
-dans la phase 2 et feront l'objet de sections J, K, L **après** validation silicium de G, H et I.
+**C6 est fermé** par [`KEY_LIFECYCLE.md`](KEY_LIFECYCLE.md). **C3 est traité en partie J**
+ci-dessous (mesure faite, réduction spécifiée). **C4** (émission d'un ordre sur le terrain)
+fera l'objet de la section K.
 
 > **Aucune revendication de sûreté de fonctionnement.** Rien ici n'est une fonction de sûreté
 > certifiée (PL au sens d'ISO 13849-1, SIL au sens d'IEC 62061). Voir
@@ -327,8 +328,197 @@ C = passerelle).
 ## 5. Ce que cette phase ne ferme pas
 
 - **C14** (stockage sécurisé, clé lisible en flash) : ne se ferme pas en logiciel.
-- **C3** (budget radio), **C4** (émission d'un ordre sur le terrain), **C6**
-  (`KEY_LIFECYCLE.md`) : sections J, K, L.
+- **C6** : fermé par [`KEY_LIFECYCLE.md`](KEY_LIFECYCLE.md), qui nomme ses cinq manques.
+- **C3** : mesuré en partie J ; la réduction `OAS1` est spécifiée, **pas encore écrite**, et
+  le respect du duty-cycle n'est **pas** appliqué par le code (§J.6).
+- **C4** (émission d'un ordre sur le terrain) : section K, à venir.
 - L'arrêt d'urgence **reste hors d'OASIS**, par conception.
 - Les trois exigences ouvertes de I.6 (durée 5 ans, désactivation, horodatage).
 - Aucune de ces parties ne fait d'OASIS une fonction de sûreté.
+
+---
+
+# Partie J — budget radio (C3)
+
+**Écrit le 2026-10-08, avant tout code.** Ferme la partie *mesure* de
+`POSITIONING_GAPS.md` **C3** et propose une réduction.
+
+## J.1 Tailles réelles, relevées dans les logs silicium
+
+Aucune estimation : ces longueurs sont celles que les cartes ont imprimées.
+
+| Message | Charge utile | **Sur le fil** | Relevé dans |
+|---|---:|---:|---|
+| en-tête v0B | — | **99** | `mesh.rs:159` |
+| en-tête v0C (pré-filtre) | — | **123** | `prefilter.rs` (99 + 8 + 16) |
+| arrêt compact `OAS1` **proposé** | 11 | **110** | §J.4 |
+| balise de supervision `OSB1` | 32 | **131** | `kind=OSB1,len=131` |
+| ordre Modbus `OMB1` | 33 | **132** | `kind=OMB1,len=132` |
+| ordre d'actionnement `OAC1` | 54 | **153** | `kind=OAC1,len=153` |
+| attestation `OAU1` Ed25519 | 122 | **221** | `kind=OAU1,len=221` |
+| révocation `ORV1`, 1 nœud | 135 | **234** | `evidence/silicon/2026-10-06/ef/` |
+| révocation `ORV1`, 2 nœuds | 143 | **242** | idem (**+8 par nœud**) |
+| révocation `ORV1`, 16 nœuds | 255 | **354** | *extrapolé* à +8/nœud, `MAX_REVOKED = 16` |
+
+## J.2 Temps d'antenne et débit permis
+
+Formule LoRa standard, BW 125 kHz, 8 symboles de préambule, en-tête explicite, CRC actif,
+CR 4/5, optimisation bas débit active à SF11 et SF12 :
+
+```
+T_sym      = 2^SF / BW
+T_preamble = (8 + 4,25) × T_sym
+n_payload  = 8 + max(ceil((8·PL − 4·SF + 28 + 16·CRC − 20·IH) / (4·(SF − 2·DE))) × (CR+4), 0)
+ToA        = T_preamble + n_payload × T_sym
+```
+
+Duty-cycle : ETSI EN 300 220-2 clause 4.4.3.2, `Tobs` = 1 h, **par bande** et non par canal —
+les trois canaux LoRaWAN par défaut sont dans la bande M et **partagent** le budget :
+
+```
+Ton_cum_max = 1 % × 3 600 s = 36 s par heure et par bande
+msgs/h      = floor(36 / ToA)
+```
+
+⚠️ **La formule de temps d'antenne est « non vérifiée à la source »** : la datasheet Semtech
+SX1276 est derrière un portail commercial
+([`compliance/PQC.md`](compliance/PQC.md)). Elle est **recoupée** : elle reproduit au
+dixième de milliseconde la valeur publiée dans ce document (PL = 64 à SF12 → 2 793,5 ms),
+et le script `lora_budget.py` échoue si ce n'est pas le cas.
+
+### LoRa brut (plafond PHY 255 octets) — **[calcul]**
+
+| Message | o | SF7 | SF8 | SF9 | SF10 | SF11 | SF12 |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| arrêt compact `OAS1` | 110 | 0,18 s · 195/h | 0,33 s · 109/h | 0,59 s · 60/h | 1,11 s · 32/h | 2,38 s · 15/h | **4,27 s · 8/h** |
+| balise `OSB1` | 131 | 0,22 s · 167/h | 0,39 s · 92/h | 0,70 s · 51/h | 1,27 s · 28/h | 2,79 s · 12/h | 5,09 s · 7/h |
+| ordre `OMB1` | 132 | 0,22 s · 163/h | 0,39 s · 92/h | 0,70 s · 51/h | 1,27 s · 28/h | 2,79 s · 12/h | 5,09 s · 7/h |
+| ordre `OAC1` | 153 | 0,25 s · 143/h | 0,44 s · 81/h | 0,80 s · 45/h | 1,44 s · 25/h | 3,12 s · 11/h | **5,74 s · 6/h** |
+| attestation `OAU1` | 221 | 0,35 s · 103/h | 0,61 s · 58/h | 1,11 s · 32/h | 2,01 s · 17/h | 4,43 s · 8/h | 8,04 s · 4/h |
+| révocation 1 nœud | 234 | 0,37 s · 97/h | 0,65 s · 55/h | 1,17 s · 30/h | 2,09 s · 17/h | 4,59 s · 7/h | 8,36 s · 4/h |
+| révocation 16 nœuds | 354 | **fragmenter** | fragmenter | fragmenter | fragmenter | fragmenter | fragmenter |
+
+### LoRaWAN (plafond par data rate, RP002-1.0.3) — le résultat qui compte
+
+Plafond de charge utile applicative : **SF7/SF8 = 242 o, SF9 = 115 o, SF10/SF11/SF12 = 51 o**.
+
+> **L'en-tête v0B fait 99 octets à lui seul. À SF10, SF11 et SF12, le plafond LoRaWAN est de
+> 51 octets : aucun message OASIS ne passe, même vide.** Et à SF9 (115 o) seul l'arrêt
+> compact passerait.
+
+C'est la conclusion la plus utile de toute la partie J, et elle n'est pas une limite d'OASIS
+mais un **choix de transport** : le plafond de 51 octets vient des tables régionales
+LoRaWAN, pas du modem. En **LoRa brut**, le PHY accepte 255 octets à tous les facteurs
+d'étalement, et `oasis-lora-transport` annonce déjà `max_payload() = 255`.
+
+**Décision à écrire dans la documentation d'intégration : OASIS ne se déploie pas sur
+LoRaWAN classe A au-delà de SF9. Le transport visé est LoRa brut.** Sinon, chaque message —
+y compris un simple ordre — exige la fragmentation, et la fragmentation d'un ordre de 153
+octets en 3 trames de 51 à SF12 coûte ≈ 7,2 s du budget horaire, soit **5 ordres par heure**.
+
+## J.3 Trois constats
+
+1. **Un ordre, à SF12 et en LoRa brut, coûte 5,74 s : 6 ordres par heure et par bande.**
+   C'est l'enveloppe opérationnelle réelle de la longue portée, et elle n'est pas négociable.
+2. **Une révocation de 16 nœuds (354 o) dépasse 255 octets** et doit être fragmentée. La
+   fragmentation existe et est prouvée sur silicium (`OFR1`, phase 1.1), donc la promesse
+   « flotte entière révoquée » tient — mais elle coûte 2 trames, soit ≈ 9 s à SF12, donc
+   **3 révocations par heure**. `POSITIONING_GAPS.md` C3 disait que la promesse « ne tient
+   pas » : elle tient, mais à ce prix, et c'est une correction à porter.
+3. **La supervision fine est impossible à longue portée.** 12 balises/heure à SF11, 7 à
+   SF12 : le plancher de `MAX_SUPERVISION_MS` (5 min, partie H) est donc le bon ordre de
+   grandeur, et il a été choisi avant ce calcul — ce qui se vérifie ici plutôt que de se
+   supposer.
+
+## J.4 La réduction à implémenter : l'arrêt compact `OAS1`
+
+La partie G a établi qu'un arrêt n'est évalué que par **3 conditions** : trame v0B valide,
+permission `STOP`, origine non révoquée. Aucune des autres n'est lue.
+
+Donc un arrêt n'a pas besoin de transporter ce que personne n'évalue. `OAC1` traîne 54
+octets dont **43 inutiles pour un arrêt** : `boot_id` (8), `deadline_ms` (8), `force`,
+`torque`, `velocity` et `pos[3]` (24), plus 3 octets réservés.
+
+```
+OAS1 = "OAS1" (4) | actuator_id u16 (2) | cmd_seq u32 (4) | reserved u8 = 0 (1)   = 11 o
+```
+
+- `actuator_id` : **0 = tous les actionneurs du nœud**, `n` = celui-là seulement. Un arrêt
+  de flotte et un arrêt ciblé, sans format supplémentaire.
+- `cmd_seq` : **non évalué par la règle**, conservé pour le journal — sans lui, deux arrêts
+  sont indistinguables dans la trace, et la partie I exige une preuve exploitable.
+- l'octet réservé doit être nul : un arrêt a **exactement un encodage** (la leçon du
+  défaut `parse_oac1` trouvé par fuzzing, puis du trou de 4 octets trouvé par Kani).
+
+**Gain : 153 → 110 octets, −28 %.** À SF12 : 5,74 s → 4,27 s, soit **6 → 8 arrêts par
+heure (+33 %)**. Un arrêt est le message qu'on veut pouvoir répéter quand la liaison est
+mauvaise ; c'est donc le bon endroit où gagner.
+
+### Ce que cela ne change pas
+
+`OAC1` **classe `Stop` reste accepté** : `OAS1` est un encodage de plus, pas un
+remplacement. Aucune garantie déjà prouvée sur silicium n'est retirée, et les 19 tests de
+la campagne du 2026-10-08 restent valides tels quels.
+
+### Invariants à prouver (Kani)
+
+1. `proof_oas1_parse_total` — le parseur est total ; un `OAS1` parsé se ré-encode vers les
+   mêmes 11 octets ; l'octet réservé non nul est refusé.
+2. `proof_oas1_and_oac1_stop_decide_identically` — **l'invariant qui justifie la
+   réduction** : pour toute entrée, la décision prise sur un `OAS1` est **identique** à
+   celle prise sur un `OAC1` de classe `Stop` portant le même `actuator_id` et le même
+   `cmd_seq`, quelles que soient les valeurs des 43 octets abandonnés.
+3. `proof_oas1_never_acts` — un `OAS1` ne peut **jamais** produire une décision `Act`, quel
+   que soit son contenu : il n'y a pas de chemin de l'arrêt vers l'action.
+
+### Tests
+
+`oas1_*` : aller-retour ; octet réservé non nul refusé ; `actuator_id = 0` arrête les deux
+actionneurs du nœud (LED **et** passerelle Modbus — la leçon du 2026-10-08) ; `actuator_id`
+ciblé n'arrête que celui-là ; équivalence avec `OAC1` classe `Stop` sur un échantillon de
+valeurs abandonnées ; **les 26 tests des parties G/H/I restent inchangés**.
+
+### Plan silicium
+
+| # | Test | Attendu |
+|---|---|---|
+| J1 | `OAS1` avec `actuator_id = 0` depuis B | `Stop`, **les deux** verrous posés, 110 octets sur le fil (vérifié dans `PAYLOAD_TX`) |
+| J2 | ordre valide puis ordre Modbus après J1 | `Reject(Stopped)` les deux, **0 écriture** sur le bus de A |
+| J3 | `@Zc`, puis le même `OAS1` avec `actuator_id = 1` | `Stop`, LED verrouillée, **passerelle libre** (ordre Modbus accepté) |
+| J4 | `OAS1` d'une origine sans `STOP` | `Reject(NotAuthorized)`, aucun verrou |
+| J5 | journal après J1–J4, vérifié au PC | `intact`, les classes `Stop` visibles avec leur `cmd_seq` |
+| J6 | non-régression : `OAC1` classe `Stop` toujours accepté | `Stop` |
+
+## J.5 Deux réductions analysées et **écartées pour l'instant**
+
+Les écrire ici évite de les redécouvrir.
+
+**Révocation par différence.** Envoyer seulement les empreintes ajoutées depuis l'époque
+précédente ramènerait 234 → ≈ 103 octets pour un nœud ajouté. **Écartée** : la liste est un
+sur-ensemble *par construction*, propriété sur laquelle reposent `revocation_transition` et
+3 preuves Kani. Un delta exige en plus une règle de détection de trou (époque sautée) et un
+chemin de rattrapage obligatoire, sinon un nœud ayant manqué une époque garde une liste
+**incomplète** — c'est-à-dire exactement la défaillance que la révocation existe pour
+empêcher. Changer un protocole prouvé pour 130 octets n'est pas le bon échange.
+
+**Index de signataire au lieu de la clé publique.** `ORV1` transporte les 32 octets de la
+clé publique du signataire, que le nœud **détient déjà** (`owner_ed`). Un index d'un octet
+économiserait 31 octets par signataire, et retirerait au passage un champ qu'un récepteur
+doit de toute façon vérifier comme cohérent. **Reportée, pas rejetée** : c'est la réduction
+suivante la plus propre, mais elle touche le format d'autorité partagé par la révocation,
+l'enrôlement, la propriété et les manifestes de micrologiciel — donc quatre chemins prouvés
+sur silicium, pour 31 octets. À faire avec sa propre campagne, pas en passant.
+
+## J.6 Ce que la partie J ne fait pas
+
+- **Aucune radio.** Tout le temps d'antenne est **calculé**, et la formule est « non vérifiée
+  à la source ». Il n'y a toujours pas de LoRa sur ces cartes : le lien est un UART filaire.
+  Le premier essai radio réel devra confirmer ces chiffres, pas les supposer.
+- **Aucun respect du duty-cycle dans le code.** Le budget est documenté, il n'est pas
+  appliqué : rien n'empêche le firmware d'émettre plus de 36 s par heure. C'est une
+  obligation réglementaire (ETSI EN 300 220-2, décision 2019/1345/UE) et elle reste
+  **ouverte** — à traiter avec le transport radio, pas avant.
+- **Aucune réduction de l'en-tête v0B.** Les 64 octets de signature Ed25519 sont
+  irréductibles sans changer de primitive, et les 35 autres portent le réseau, l'origine, le
+  compteur et le condensé de charge utile — tous liés par la signature. Il n'y a rien à
+  gagner là sans perdre une propriété prouvée.
