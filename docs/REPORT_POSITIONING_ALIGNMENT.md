@@ -1,7 +1,6 @@
 # Rapport final — exécution de `prompts/POSITIONING_ALIGNMENT.md`
 
-**Branche `positioning-alignment`, du 2026-10-07 au 2026-10-08.** Dernier commit au moment
-d'écrire : `aecccd9`. `main` n'a pas été touché : il faut un *fast-forward* ou une *pull
+**Branche `positioning-alignment`, du 2026-10-07 au 2026-10-08.** Dernier commit au moment d'écrire : `5aee840`, **71 commits** devant `origin/main`. `main` n'a pas été touché : il faut un *fast-forward* ou une *pull
 request*.
 
 > **OASIS n'est pas une fonction de sûreté certifiée** (ni PL au sens de l'ISO 13849-1, ni
@@ -58,7 +57,7 @@ Mesuré au **point de branchement** (`git merge-base origin/main positioning-ali
 | Fichiers `src/*.rs` | 43 | **46** | `ls oasis-rt/src/*.rs \| wc -l` |
 
 Soit **+71 tests de bibliothèque, +71 tests d'espace de travail et +33 harnais** sur la
-branche, et **69 commits**. Modules nouveaux : `journal`, `quorum`, `mavlink_order`,
+branche, sur **71 commits**. Modules nouveaux : `journal`, `quorum`, `mavlink_order`,
 `actuation/{wire,supervision,timeview}`.
 
 ⚠️ Ma première version de ce tableau donnait « 534 / 573 / 152 / 36 » : des chiffres de
@@ -81,6 +80,9 @@ mémoire, tous faux. Ceux-ci viennent d'un `git worktree` sur le point de branch
 ## 4. Ce que ma propre vérification a trouvé — et qui serait passé sans elle
 
 C'est la partie du rapport qui vaut le plus, parce qu'elle dit ce que les preuves coûtent.
+**Quatre des treize sont des fautes d'arithmétique à moi** (points 6, 8, 9 et 10bis) : c'est
+un taux, pas un accident, et la règle qui en sort est écrite dans chaque correctif —
+**compter depuis l'arbre, jamais additionner des écarts mémorisés**.
 
 **Dans le code :**
 
@@ -121,6 +123,14 @@ C'est la partie du rapport qui vaut le plus, parce qu'elle dit ce que les preuve
    Le tableau est désormais **calculé par script** depuis le document.
 10. **Un message de commit faux** : `b2d8e0b` annonce « 6 harnais Kani » pour C9 ; il y en
     a **5**. Corrigé dans le README de la campagne, pas dans l'historique.
+10bis. **Quatre erreurs de comptabilité dans `CLAUDE.md` lui-même**, trouvées en vérifiant
+    son arithmétique contre l'arbre : la liste de harnais par module sommait à **115** (elle
+    omettait les 67 harnais des anciens modules), la liste incrémentale à **179**, et les
+    deux chaînes de comptes de tests à **621** et **624** contre **623** mesurés. Les chaînes
+    d'addition sont **supprimées**, pas rapiécées : une chaîne que personne ne peut vérifier
+    vaut moins que pas de chaîne. Et une ligne **sous-estimait** le dépôt — « 3 harnais Kani
+    écrits mais NON EXÉCUTÉS » pour le pré-filtre, alors que le passage existe, 3/3 vérifiés
+    avec contrôle négatif, horodaté et condensé depuis le 2026-10-07.
 11. **Deux « FAILED » Kani lus d'abord comme des réfutations** alors que la vérification en
     échec était une *unwinding assertion* — CBMC disant qu'il n'a pas pu dérouler assez
     loin. Et **le script d'exécution étiquette à tort** tout `FAILED` comme
