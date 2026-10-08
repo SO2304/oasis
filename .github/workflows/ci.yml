@@ -133,6 +133,32 @@ jobs:
             grep -q "shard: $s," "$f" || { echo "::error::shard $s is not in the matrix of $f"; exit 1; }
           done
 
+  pilot-campaign:
+    name: Pilot end-to-end against the test device (shipped binaries, 3 processes)
+    runs-on: ubuntu-latest
+    needs: rust-tests
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      # The campaign runs the BINARIES, not the library, so it catches what a `cargo test`
+      # cannot: config and seed files read from disk, a restart of each process, the
+      # persisted sequence and send counter, and the journal on disk. It found three
+      # defects the day it was written, each invisible from an in-process test, which is
+      # why it belongs in CI rather than in a one-off log.
+      - name: Build the binaries and the device
+        run: cargo build --release -p oasis-rt -p oasis-test-plc
+      - name: Run the campaign (23 cases; the device's own write counter is the ground truth)
+        run: bash tools/pilot_campaign.sh "$RUNNER_TEMP/campaign"
+      - name: Keep the logs whatever happened
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pilot-campaign
+          path: |
+            ${{ runner.temp }}/campaign/*.log
+            ${{ runner.temp }}/campaign/jrn*.txt
+          if-no-files-found: warn
+
   docker-build:
     name: Docker image build + healthcheck
     runs-on: ubuntu-latest

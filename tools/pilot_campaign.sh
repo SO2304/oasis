@@ -30,7 +30,11 @@ OUT="$(cd "$OUT" && pwd)"
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 BIN="$ROOT/target/release"
-PY=python
+# `python` exists in Git Bash on this machine; an Ubuntu runner has only `python3`. Pick
+# whichever is there rather than assuming, and say so if neither is.
+if command -v python3 >/dev/null 2>&1; then PY=python3
+elif command -v python >/dev/null 2>&1; then PY=python
+else echo "refus: ni python3 ni python"; exit 3; fi
 LOG="$OUT/campaign.log"
 : > "$LOG"
 
