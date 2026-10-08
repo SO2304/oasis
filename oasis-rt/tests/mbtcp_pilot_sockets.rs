@@ -15,7 +15,7 @@
 //! itself.
 
 use std::io::{Read, Write};
-use std::net::{TcpListener, TcpStream};
+use std::net::TcpListener;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -23,10 +23,9 @@ use std::time::{Duration, Instant};
 
 use oasis_rt::mbtcp_conf::Config;
 use oasis_rt::mbtcp_net::{connect_timeout, modbus_read_request, read_frame, write_frame};
-use oasis_rt::mbtcp_pilot::{agent_forward, handle_gateway_conn, GatewayState, Served};
+use oasis_rt::mbtcp_pilot::{handle_gateway_conn, serve_hmi, AgentState, GatewayState, SeqStore, Served};
 use oasis_rt::mesh::{mesh_v10_pubkey_from_seed, MeshEdSeed, MeshPubRegistry, MeshRouter, FP_LEN, MESH_V0B_NETWORK_LEN};
 use oasis_rt::modbus_gateway::RegRule;
-use oasis_rt::modbus_tcp::{parse_tcp_write, Outcome};
 
 const NET: [u8; MESH_V0B_NETWORK_LEN] = *b"OASISnet";
 const UNIT: u8 = 0x11;
@@ -129,30 +128,27 @@ fn spawn_gateway(conf: Config, log: Arc<Mutex<Vec<Served>>>) -> String {
 }
 
 /// The agent, serving the HMI in plain Modbus TCP.
+///
+/// The whole connection is `mbtcp_pilot::serve_hmi` — the same call `oasis_mbtcp_agent`
+/// makes — so this harness is a listener and nothing else. It used to reimplement the HMI
+/// loop, which meant the binary's "never answer with silence" branch was never tested and
+/// the binary's own copy of the exchange was free to drift; it had.
 fn spawn_agent(conf: Config) -> String {
     let srv = TcpListener::bind(&conf.listen).unwrap();
     let addr = srv.local_addr().unwrap().to_string();
-    let origin = Arc::new(Mutex::new((MeshRouter::new_v0b(fp(0xAA), NET, seed(0xAA), MeshPubRegistry::new()), 1u32)));
+    // A real `SeqStore`, on a real file in the scratch dir, so the persisted-sequence path
+    // is the one under test too. A fresh name per agent keeps parallel tests apart.
+    let seq_path = std::env::temp_dir().join(format!("oasis_mbtcp_test_{}_{}.seq", std::process::id(), addr.replace(':', "_")));
+    let _ = std::fs::remove_file(&seq_path);
+    let seq = SeqStore::load(seq_path.to_str().unwrap()).unwrap();
+    let agent = Arc::new(Mutex::new(AgentState { origin: MeshRouter::new_v0b(fp(0xAA), NET, seed(0xAA), MeshPubRegistry::new()), seq }));
     thread::spawn(move || {
         for s in srv.incoming() {
             let Ok(mut s) = s else { continue };
-            let origin = Arc::clone(&origin);
+            let agent = Arc::clone(&agent);
             let conf = conf.clone();
             thread::spawn(move || {
-                s.set_read_timeout(Some(Duration::from_millis(1500))).ok();
-                while let Ok(req) = modbus_read_request(&mut s) {
-                    let Some(w) = parse_tcp_write(&req) else { return };
-                    let outcome = {
-                        let mut g = origin.lock().unwrap();
-                        let (ref mut router, ref mut seq) = *g;
-                        agent_forward(router, seq, &conf, &w)
-                    };
-                    let (resp, n) = oasis_rt::modbus_tcp::hmi_response(&w, outcome);
-                    if s.write_all(&resp[..n]).is_err() {
-                        return;
-                    }
-                    let _ = s.flush();
-                }
+                let _ = serve_hmi(&mut s, &agent, &conf);
             });
         }
     });
