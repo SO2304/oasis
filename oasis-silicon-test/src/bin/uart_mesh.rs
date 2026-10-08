@@ -44,7 +44,10 @@ use usb_device::device::{StringDescriptors, UsbDevice};
 use usb_device::prelude::{UsbDeviceBuilder, UsbVidPid};
 use usbd_serial::SerialPort;
 
-use oasis_rt::actuation::{parse_oac1, parse_oac1_any, parse_osb1, OrderClass};
+use oasis_rt::actuation::{
+    encode_oac1, encode_otm1, parse_oac1, parse_oac1_any, parse_oas1, parse_osb1, parse_otm1, ActCommand,
+    OrderClass, TimeView, OAS1_ALL_ACTUATORS,
+};
 use oasis_rt::enrollment::perm;
 use ef::now_ms64;
 use oasis_rt::mesh::inner_slice;
@@ -695,6 +698,11 @@ fn main() -> ! {
     let mut gws = GwStats::default();
     // Phase 2.1: v0C pre-filter mode (off by default, so the board behaves as before),
     // the token bucket for the single UART0 ingress link, and the counters.
+    // Part K: what this node knows of an actuator's clock, from a signed OTM1
+    // beacon. `None` until one arrives: a commander with no view must REFUSE to
+    // build an order rather than guess.
+    let mut time_view: Option<TimeView> = None;
+    let mut tv_seq: u32 = 1_000;
     let mut pf_v0c = false;
     let mut pf_next_hop: Option<[u8; 8]> = None;
     let mut pf_budget = LinkBudget::default_budget();
@@ -1345,7 +1353,10 @@ fn main() -> ! {
                     ),
                 );
             }
-            // --- Phase 2 parts G/H/I test-harness commands --------------------
+            // --- Phase 2 parts G/H/I/J/K test-harness commands ----------------
+            // Actuator ids on THIS node, for an `OAS1` compact stop: 0 = all,
+            // 1 = the LED, 2 = the Modbus gateway. The mapping is a deployment
+            // decision, not a protocol one.
             // Every letter A..Y is already a command and the dispatch is a chain of
             // independent `if`s, not a match: reusing one would fire TWO branches. So
             // these are subcommands of `Z`, the only free letter.
@@ -1431,6 +1442,87 @@ fn main() -> ! {
                         let (restored, prev) = efs.open_journal();
                         io.log("JRN_WIPE", format_args!("restored={},prev_boot={:?}", restored, prev));
                     }
+                    // Part K: emit this node's own signed time beacon.
+                    b'b' => {
+                        let payload = encode_otm1(efs.boot_id, now_ms64());
+                        match router.origin_wrap_v0b(&payload) {
+                            Some(env) => {
+                                send_framed(&mut uart0, &env);
+                                io.log(
+                                    "TIME_TX",
+                                    format_args!(
+                                        "boot_id={},now_ms={},len={}",
+                                        efs.boot_id,
+                                        now_ms64(),
+                                        env.len()
+                                    ),
+                                );
+                            }
+                            None => io.log("TIME_TX", format_args!("wrap_failed")),
+                        }
+                    }
+                    // Part K: build an order from the VIEW and send it. The PC supplies only
+                    // a validity in ms; it never reads the actuator's clock. `@Zo<ms>`.
+                    b'o' => {
+                        let v_ms = core::str::from_utf8(&line[2..line_len])
+                            .ok()
+                            .and_then(|t| t.parse::<u64>().ok())
+                            .unwrap_or(3_000);
+                        let local = now_ms64();
+                        match time_view.as_ref().and_then(|v| v.stamp(local, v_ms)) {
+                            Some((boot, deadline)) => {
+                                tv_seq = tv_seq.wrapping_add(1);
+                                let cmd = ActCommand {
+                                    actuator_id: 1,
+                                    cmd_seq: tv_seq,
+                                    boot_id: boot,
+                                    deadline_ms: deadline,
+                                    force: 1.0,
+                                    torque: 0.5,
+                                    velocity: 0.2,
+                                    pos: [0.0, 0.0, 1.0],
+                                };
+                                let payload = encode_oac1(&cmd);
+                                match router.origin_wrap_v0b(&payload) {
+                                    Some(env) => {
+                                        send_framed(&mut uart0, &env);
+                                        io.log(
+                                            "ORDER_TX",
+                                            format_args!(
+                                                "from=view,seq={},boot_id={},deadline_ms={},validity_ms={},view_age_ms={:?},len={}",
+                                                tv_seq,
+                                                boot,
+                                                deadline,
+                                                v_ms,
+                                                time_view.as_ref().and_then(|v| v.age_ms(local)),
+                                                env.len()
+                                            ),
+                                        );
+                                    }
+                                    None => io.log("ORDER_TX", format_args!("wrap_failed")),
+                                }
+                            }
+                            None => io.log(
+                                "ORDER_REFUSED",
+                                format_args!(
+                                    "no_usable_view,have_view={},validity_ms={}",
+                                    time_view.is_some(),
+                                    v_ms
+                                ),
+                            ),
+                        }
+                    }
+                    // Part K: report the view without using it.
+                    b'v' => io.log(
+                        "VIEW",
+                        format_args!(
+                            "have={},boot_id={:?},estimate={:?},age_ms={:?}",
+                            time_view.is_some(),
+                            time_view.as_ref().map(|v| v.boot_id),
+                            time_view.as_ref().and_then(|v| v.estimate(now_ms64())),
+                            time_view.as_ref().and_then(|v| v.age_ms(now_ms64()))
+                        ),
+                    ),
                     other => io.log("Z_UNKNOWN", format_args!("sub={}", other as char)),
                 }
             }
@@ -2079,6 +2171,70 @@ fn main() -> ! {
                                     }
                                 }
                                 relay = false; // consumed by the actuator
+                            }
+                            // Part J: compact stop. Same rule as an `OAC1` class `Stop`
+                            // (proof_oas1_equivalent_to_oac1_stop); only the encoding differs.
+                            "OAS1" if BOARD_ID == "C" => {
+                                if let Some(o) = parse_oas1(inner) {
+                                    let d = efs.decide_stop(&router, &pqs.registry, &origin, true);
+                                    // `actuator_id` 0 stops every actuator on the node; 1 the
+                                    // LED, 2 the Modbus gateway. A refused stop latches nothing.
+                                    let hit_led = o.addresses(1);
+                                    let hit_gw = o.addresses(2);
+                                    if d == oasis_rt::actuation::StopDecision::Stop {
+                                        if !hit_led {
+                                            efs.act.clear_stop();
+                                        }
+                                        if hit_gw {
+                                            gw.act.stopped = true;
+                                        }
+                                    }
+                                    let flags = efs.flags_now(true, true, now_ms64());
+                                    let jseq = efs.log_decision(
+                                        &origin,
+                                        o.cmd_seq,
+                                        OrderClass::Stop,
+                                        d.into(),
+                                        flags,
+                                    );
+                                    io.log(
+                                        "STOP",
+                                        format_args!(
+                                            "fmt=OAS1,decision={:?},seq={},actuator_id={},origin={:02x},stopped_led={},stopped_gw={},pin25={},jseq={:?}",
+                                            d,
+                                            o.cmd_seq,
+                                            o.actuator_id,
+                                            origin[0],
+                                            efs.act.stopped,
+                                            gw.act.stopped,
+                                            ef::led_pin_level(),
+                                            jseq
+                                        ),
+                                    );
+                                }
+                                relay = false;
+                            }
+                            // Part K: an actuator's signed time beacon. Any node may hold a
+                            // view; the commander extrapolates it with its OWN clock.
+                            "OTM1" => {
+                                if let Some((boot, now)) = parse_otm1(inner) {
+                                    let local = now_ms64();
+                                    let applied = match time_view.as_mut() {
+                                        Some(v) => v.apply(boot, now, local),
+                                        None => {
+                                            time_view = Some(TimeView::new(boot, now, local));
+                                            true
+                                        }
+                                    };
+                                    io.log(
+                                        "TIME_VIEW",
+                                        format_args!(
+                                            "applied={},origin={:02x},actuator_boot={},actuator_now={},local_rx={}",
+                                            applied, origin[0], boot, now, local
+                                        ),
+                                    );
+                                }
+                                relay = false;
                             }
                             // Part H: supervision beacon. Authenticity comes from the v0B
                             // envelope; the SUPERVISE permission and the boot binding are

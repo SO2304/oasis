@@ -9,6 +9,9 @@
 //!                                           -> OAC1 content (hex), class = **Stop** (part G)
 //!   ef_payloads osb1 <supervisor_fp_hex> <actuator_boot_id> <beacon_seq> <validity_ms>
 //!                                           -> OSB1 supervision beacon (hex, part H)
+//!   ef_payloads oas1 <actuator_id> <cmd_seq>
+//!                                           -> OAS1 **compact** stop, 11 bytes (part J).
+//!                                              actuator_id 0 = every actuator on the node.
 //!
 //! A stop order carries the same `ActCommand` fields as an act order, but the gate ignores
 //! all of them except the class: `stop_decision` keeps only authenticity, the `STOP`
@@ -17,7 +20,8 @@
 
 use oasis_operator_key::sign_with_seed;
 use oasis_rt::actuation::{
-    encode_oac1, encode_oac1_with_class, encode_osb1, ActCommand, OrderClass, SupervisionBeacon,
+    encode_oac1, encode_oac1_with_class, encode_oas1, encode_osb1, ActCommand, OrderClass,
+    StopOrder, SupervisionBeacon,
 };
 use oasis_rt::mesh_revocation::{encode_orv1, signed_message_parts, Fp};
 
@@ -86,6 +90,10 @@ fn main() {
             };
             println!("{}", hex(&encode_oac1_with_class(&c, OrderClass::Stop)));
         }
+        Some("oas1") => {
+            let o = StopOrder { actuator_id: a[1].parse().unwrap(), cmd_seq: a[2].parse().unwrap() };
+            println!("{}", hex(&encode_oas1(&o)));
+        }
         Some("osb1") => {
             let mut fp = [0u8; 8];
             let raw = parse_fp(&a[1]);
@@ -100,7 +108,7 @@ fn main() {
         }
         _ => eprintln!(
             "usage: ef_payloads pub | orv1 <epoch> <fp_hex>... | oac1 <aid> <seq> <boot_id> <deadline_ms> <f> <t> <v> <x> <y> <z> \
-             | stop <aid> <seq> <boot_id> <deadline_ms> | osb1 <sup_fp_hex> <actuator_boot_id> <beacon_seq> <validity_ms>"
+             | stop <aid> <seq> <boot_id> <deadline_ms> | osb1 <sup_fp_hex> <actuator_boot_id> <beacon_seq> <validity_ms>              | oas1 <actuator_id> <cmd_seq>"
         ),
     }
 }

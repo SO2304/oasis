@@ -138,6 +138,8 @@ pub fn content_kind(payload: &[u8]) -> &'static str {
         Some(b"OAU1") => "OAU1",
         Some(b"OMB1") => "OMB1",
         Some(b"OSB1") => "OSB1",
+        Some(b"OAS1") => "OAS1",
+        Some(b"OTM1") => "OTM1",
         _ => "other",
     }
 }
