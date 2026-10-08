@@ -8,3 +8,6 @@ OASIS|C|UART|FW_STATUS|version=25,floor=25,boot=Normal,bootloader_state=Boot,fp=
 ### K3: B builds an order from its view; the PC gives only a validity
 ### K6: C re-emits; then an order must still work
 ### part K pre-reboot done 2026-10-08T10:47:18Z
+### K4/K5/K6 2026-10-08T10:50:19Z — C rebooted by the v26 reflash, B's view is a boot behind
+### K6: forcing a beacon with now_ms=44496, 60 s behind B's estimate of 104496
+### part K done 2026-10-08T10:51:26Z

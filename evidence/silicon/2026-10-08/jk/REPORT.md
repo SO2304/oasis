@@ -11,7 +11,7 @@ Firmware stamp **`6d3429f`**, version 25 on B and C, floor 25, `guard_failed_bef
 
 > **No claim of functional safety.** See `docs/compliance/IEC_TS_63074.md`.
 
-**Result: part J 6/6. Part K 1 of 6 — blocked by the wiring, not by the code (see §3).**
+**Result: part J 6/6, part K 6/6.** Part K needed one wire moved partway through; §2 and §3 record it as it happened, §6 has the completed run.
 
 ---
 
@@ -111,3 +111,55 @@ different hat. So K is reported as 1 of 6, not as passed by proxy.
 `payloads/*.hex` — every payload sent, byte for byte.
 `journal_jk.txt`, `39_j5_verify.txt` — the journal and its verification (exit 0).
 `SHA256SUMS` — verified from a fresh clone after the commit.
+
+---
+
+## 6. Part K completed (wire moved, 2026-10-08)
+
+The operator moved the wire on `B.GP1` from `A.GP0` to `C.GP0`, giving a bidirectional
+B↔C link. Board A keeps its role unchanged, reached over UART1.
+
+| # | Test | Result |
+|---|---|---|
+| **K1** | B has no view, an order is requested | **`ORDER_REFUSED no_usable_view`** — a commander without a view refuses to build rather than guess |
+| **K2** | C emits its beacon, B receives it | C: `TIME_TX boot_id=49629, len=119`. B: `ARRIVED sig=verified` then **`TIME_VIEW applied=true, origin=a7`** |
+| **K3** | **B builds an order from its view** | `ORDER_TX from=view, boot_id=49629, deadline_ms=764238, validity_ms=3000, **view_age_ms=46939**` → C: **`Act`**, LED on |
+| **K4** | C reboots; B keeps the stale view and sends | `ORDER_TX from=view, boot_id=49629, view_age_ms=205970` → C (now `boot_id=50908`): **`Reject(Expired)`**, LED off |
+| **K5** | C emits a fresh beacon, B refreshes, order again | `TIME_VIEW applied=true, actuator_boot=50908, actuator_now=80275` → `ORDER_TX boot_id=50908` → **`Act`** |
+| **K6** | a beacon whose clock does **not** advance (`@Zb` with `now_ms` 60 s behind) | **`TIME_VIEW applied=false`**, the view is **unchanged**, and the next order is still accepted |
+
+### The result part K exists for
+
+In K3 the PC supplied **one number: `3000`**, the validity in milliseconds. It never read
+`boot_id`, never read `now_ms`, never computed a deadline. B extrapolated a signed beacon it
+had received over the mesh — **46,9 seconds old** — and C accepted the order. That is the
+laboratory shortcut of C4 removed, not worked around.
+
+K4 is the other half, and it is the one that makes the mechanism usable rather than
+fragile: a view a whole boot out of date produced an order that was **refused**, LED off,
+and the refusal is how the commander learns to refresh. Every error direction costs an
+order, never an unintended execution.
+
+### A detail that confirms the shape of the proof
+
+In K5 the new boot's `now_ms` is **80 275**, far **smaller** than the stale view's estimate
+of 943 188 — a reboot restarts the millisecond counter. `TimeView::apply` accepted it anyway
+**because the `boot_id` differs**, which is exactly the case
+`proof_timeview_apply_is_monotone_within_a_boot` carves out: monotonic *within* a boot,
+replaced outright *across* boots. The silicon and the proof agree on a case that is easy to
+get wrong in the other direction.
+
+### What K still does not show
+
+- **The reboot in K4 came from reflashing C to v26, not from a power cut.** It is a real
+  reset — `boot_id` 49629 → 50908 — but the cleanest version of K4 would pull the cable.
+  The journal's survival across a true power cut is separately proved (`../hardening/` §7).
+- **K6 is not a byte-exact replay.** Nothing on this bench can drive B's RX pin from the PC,
+  so a captured beacon cannot be re-injected toward B. What K6 does test is the one rule
+  `TimeView` adds beyond the mesh layer — a same-boot beacon that does not advance is
+  refused — using `@Zb<ms>` to force the clock. A true byte replay is stopped a layer below
+  by the v0B counter, proved since phase 1.
+- **A.GP0 → B.GP1 is now disconnected**, so the three-hop A→B→C mesh chain is not available
+  until the wire is moved back. Nothing in parts J or K needed it.
+- **No beacon scheduler.** The rule is "one at boot, then periodically" (§K.4); the firmware
+  emits on command. Scheduling belongs to a product, not a bench.
