@@ -100,7 +100,7 @@ question before it is a technical one.
 | SBOM | CycloneDX 1.5 JSON, one per crate, firmware SBOMs for their real targets (`cargo cyclonedx --format json --spec-version 1.5`) | `evidence/supply-chain/<date>/sbom/` |
 | Known vulnerabilities | `cargo audit` on the workspace and on each firmware lockfile | `evidence/supply-chain/<date>/` |
 | Licences, sources, bans, advisories | `cargo deny check` with `deny.toml` (permissive licences only, crates.io only, no wildcard versions; every advisory exception documented with its reason) | `deny.toml` |
-| Parser robustness | `cargo-fuzz` over 9 parsers (v0B, ORV1, OAC1, MAVLink, authority, fragment, enrollment, firmware, Modbus), ~1.5 × 10⁹ executions, one real finding: a non-canonical `OAC1` encoding, fixed | `evidence/fuzz/2026-10-07/` |
+| Parser robustness | `cargo-fuzz` over **13 parsers in 9 targets**. Nine (v0B, ORV1, OAC1, MAVLink, authority, fragment, enrollment, firmware, Modbus): **~1.5 × 10⁹ executions**, one real finding — a non-canonical `OAC1` encoding, fixed. Four more, added with the TCP read path (`OMQ1`, `OMV1`, the HMI read frame, the device's answer): **2.23 × 10⁷ executions, 0 crashes**. The two totals are kept apart on purpose: the second did not contribute to the first, and averaging them would hide that the read path is the least-fuzzed in the repo | `evidence/fuzz/2026-10-07/`, `evidence/fuzz/2026-10-08/` |
 | Formal proofs | Kani harnesses in `oasis-rt` (CI job `kani-proofs`) | `evidence/kani/` |
 
 Dependencies with security weight are pinned exactly and justified in their

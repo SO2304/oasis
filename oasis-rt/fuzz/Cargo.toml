@@ -73,3 +73,10 @@ path = "fuzz_targets/mavlink.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "modbus_read"
+path = "fuzz_targets/modbus_read.rs"
+test = false
+doc = false
+bench = false
