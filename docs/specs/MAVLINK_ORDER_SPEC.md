@@ -169,13 +169,17 @@ alloue, et ce qui est pertinent pour la sûreté d'exécution est *s'il y a* une
 octets sont couverts par les tests, qui les relisent.
 
 ⚠️ **Erratum du premier passage.** Les deux harnais qui atteignent `encode_command_long`
-sont d'abord revenus `VERIFICATION:- FAILED`, et le log de ce passage est **conservé**
-dans le dossier de preuves. Ce n'était **pas un contre-exemple** : la vérification en
+sont d'abord revenus `VERIFICATION:- FAILED`. Les logs de ce passage **n'existent plus**
+— le script d'exécution commence par `rm -rf` sur son dossier de sortie, donc le second
+passage les a écrasés ; seule la **transcription console** est conservée
+(`evidence/kani/2026-10-08/b1/run1/`). Ce n'était **pas un contre-exemple** : la vérification en
 échec était une *unwinding assertion* dans la boucle de `crc_over` sur une trame de
 43 octets, c'est-à-dire CBMC disant « je n'ai pas pu regarder assez loin ». Mon
 `unwind(2)` était l'erreur ; `unwind(64)` la corrige (`e2e2045`). La distinction est
-écrite ici parce qu'un log disant FAILED reste au dépôt et qu'il ne faut pas qu'il soit lu
-comme une réfutation.
+écrite ici parce qu'une trace disant FAILED reste au dépôt et qu'il ne faut pas qu'elle soit
+lue comme une réfutation. Le script d'exécution, lui, **étiquette à tort** toute sortie
+`FAILED` comme « counterexample » : c'est un défaut du script, noté dans
+`run1/README.md`, et il est commun aux campagnes Kani précédentes du dépôt.
 
 **Contrôle négatif** — trois mutations, trois preuves nommées, les trois doivent échouer :
 
