@@ -199,7 +199,7 @@ Trois statuts, et un seul donne le droit d'une affirmation publique :
 
 | # | Statut | Ce qui le ferme, ou ce qui manque |
 |---|---|---|
-| **B1** couche MAVLink | **partiellement fermé** | `mavlink_order` : enveloppe v0B dans un `V2_EXTENSION` (msgid 248), armement construit **seulement** dans la branche `Act`. 7 tests sur un vrai `MeshRouter` couvrant les quatre cas demandés, 4 preuves Kani **4/4** avec contrôle négatif 3/3 (`evidence/kani/2026-10-08/b1/`). ⚠️ **Rien sur PX4 SITL** : PX4 n'est plus installé sur cette machine, donc « l'ordre valide arme le drone » **n'est pas montré**. C'est la moitié manquante, et B1 sert **S3**, pas le segment retenu |
+| **B1** couche MAVLink | **fermé avec preuve** | `mavlink_order` : enveloppe v0B dans un `V2_EXTENSION` (msgid 248), armement construit **seulement** dans la branche `Act`. 7 tests sur un vrai `MeshRouter` couvrant les quatre cas demandés, 4 preuves Kani **4/4** avec contrôle négatif 3/3 (`evidence/kani/2026-10-08/b1/`). **Silicium/SITL 2026-10-08** (`evidence/silicon/2026-10-08/b1-sitl/`, PX4 `v1.18.0-beta1-985-gdf387bdec2`, SIH quadx) : **5/5**. L'ordre valide → `GATE Act` → une trame `COMMAND_LONG(400)` → **`INFO [commander] Armed by external command`**. Forgé → `unknown sender`, altéré après signature → `bad mesh signature`, rejoué → `stale counter` sur la deuxième copie (**une trame, pas deux**), révoqué → `Reject(Revoked)` : **0 armement** dans les trois cas, lu dans le journal de PX4. Le `V2_EXTENSION` traverse une **vraie socket UDP entre deux processus**. Construit **sans `sudo`** (venv + roues pip) et **sans Java** (SIH fait voler PX4 avec sa physique interne). ⚠️ Reste de la **simulation** : ni Pixhawk, ni cellule, ni radio. Et B1 sert **S3**, pas le segment retenu |
 | **B2** secure boot PX4 | **sans objet (information)** | Sert à se positionner comme complémentaire. Rien à fermer |
 | **B3** ROS 2 / SROS2 | **ouvert** | Aucun pont ROS 2. Les primitives équivalentes existent et sont mesurées (A/B contre rclcpp), ce qui n'est pas un pont |
 | **B4** automates du parc existant | **partiellement fermé** | La **forme passerelle** est prouvée : phase 1.4, équipement `rmodbus` indépendant, **4 décisions « agir » = 4 trames = 4 écritures** octet pour octet, 12 refus + 3 injections brutes = **0 octet** sur le bus. ⚠️ Ce n'est pas un **produit certifié**, et C14 (clé lisible en flash) sera la première objection |
@@ -244,9 +244,9 @@ Trois statuts, et un seul donne le droit d'une affirmation publique :
 
 | Statut | A | B | C | D | **Total** |
 |---|---:|---:|---:|---:|---:|
-| Fermé avec preuve | 1 | 0 | 6 | 0 | **7** |
+| Fermé avec preuve | 1 | 1 | 6 | 0 | **8** |
 | Fermé (documentaire) | 1 | 0 | 1 | 2 | **4** |
-| Partiellement fermé | 5 | 3 | 4 | 1 | **13** |
+| Partiellement fermé | 5 | 2 | 4 | 1 | **12** |
 | Ouvert | 4 | 3 | 3 | 5 | **15** |
 | Sans objet / information | 1 | 1 | 0 | 1 | **3** |
 | | **12** | **7** | **14** | **9** | **42** |

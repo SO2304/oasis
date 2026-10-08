@@ -29,9 +29,9 @@ Il n'est pas recopié ici : une seule source de vérité.
 
 | Statut | A | B | C | D | **Total** |
 |---|---:|---:|---:|---:|---:|
-| Fermé avec preuve | 1 | 0 | 6 | 0 | **7** |
+| Fermé avec preuve | 1 | 1 | 6 | 0 | **8** |
 | Fermé (documentaire) | 1 | 0 | 1 | 2 | **4** |
-| Partiellement fermé | 5 | 3 | 4 | 1 | **13** |
+| Partiellement fermé | 5 | 2 | 4 | 1 | **12** |
 | Ouvert | 4 | 3 | 3 | 5 | **15** |
 | Sans objet / information | 1 | 1 | 0 | 1 | **3** |
 | | **12** | **7** | **14** | **9** | **42** |
@@ -75,13 +75,14 @@ mémoire, tous faux. Ceux-ci viennent d'un `git worktree` sur le point de branch
 | Silicium G/H/I | **19/20**, dont une **coupure de courant réelle** | `evidence/silicon/2026-10-08/hardening/` |
 | Silicium J et K | 6/6 et 6/6 | `evidence/silicon/2026-10-08/jk/` |
 | Silicium non-régression après C9 et B1 | **5/5** sur le firmware flashé, pas sur HEAD | `evidence/silicon/2026-10-08/regress/` |
+| **B1 sur PX4 SITL** | **5/5** — le valide arme, les quatre autres non | `evidence/silicon/2026-10-08/b1-sitl/` |
 
 ---
 
 ## 4. Ce que ma propre vérification a trouvé — et qui serait passé sans elle
 
 C'est la partie du rapport qui vaut le plus, parce qu'elle dit ce que les preuves coûtent.
-**Cinq des quatorze sont des fautes de comptabilité ou d'affirmation à moi** (points 6, 8, 9, 10bis et 11bis) : c'est
+**Six des seize sont des fautes de comptabilité ou d'affirmation à moi** (points 6, 8, 9, 10bis, 11bis et 13), et **trois des seize sont des essais qui ne testaient pas ce qu'ils annonçaient** (points 12, 14 et le R5 de la campagne de non-régression) : c'est
 un taux, pas un accident, et la règle qui en sort est écrite dans chaque correctif —
 **compter depuis l'arbre, jamais additionner des écarts mémorisés**.
 
@@ -150,12 +151,27 @@ un taux, pas un accident, et la règle qui en sort est écrite dans chaque corre
     rien réfuté est une suite que personne n'a exécutée. `main` a aussi corrigé
     **« preuves brutes publiques »** — le dépôt est privé.
 
+12. **Un essai qui ne testait rien, pris pour un succès possible (B1 sur SITL).** Mon
+    motif d'attente de PX4 acceptait n'importe quelle ligne `INFO [commander]`, qui
+    apparaît au bout de 2 s : l'ordre arrivait pendant le transitoire de démarrage, PX4
+    répondait `Preflight Fail: no heading reference` puis `Arming denied`, et **le refus
+    venait de l'EKF de PX4, pas de la porte**. Mesuré ensuite : PX4 est armable à **5 s**
+    (`Ready for takeoff`). Sans cette correction, le même passage aurait pu être présenté
+    comme « la porte a refusé ». Troisième occurrence de la même classe après K6 et R5.
+13. **Une explication fausse, avancée puis retirée (B1 sur SITL).** Le véhicule ne reçoit
+    jamais le flux de PX4 (`px4_heartbeats=0`), donc l'armement est établi par le **journal
+    de l'autopilote** et non par l'observation interne du test. J'ai attribué cela au
+    drapeau `-f` de `mavlink start`, en le croyant « diffusion » ; lecture faite de
+    `mavlink_main.cpp`, **`-f` met `_forwarding_on`**, c'est-à-dire le transfert entre
+    instances. Lier la socket à 14550 n'a rien changé. La cause reste **inconnue**, et le
+    rapport de campagne le dit au lieu d'avancer une seconde hypothèse.
+
 **Dans la méthode :**
 
-12. **Un essai qui n'en était pas un.** K6 prétendait tester un rejeu de balise ; une
+14. **Un essai qui n'en était pas un.** K6 prétendait tester un rejeu de balise ; une
     seconde balise rafraîchissait simplement la vue. Il a fallu ajouter `@Zb<ms>` pour
     forcer une horloge qui n'avance pas.
-13. **Un raccourci de labo refusé.** La partie K était bloquée : le câblage mesh est à sens
+15. **Un raccourci de labo refusé.** La partie K était bloquée : le câblage mesh est à sens
     unique, donc C ne pouvait pas atteindre B. J'ai rapporté **K à 1/6** et **refusé** de
     relayer la balise par le PC, parce que c'est exactement le raccourci que le manque C4
     dénonce. Le fil déplacé, K est passé 6/6.
@@ -184,13 +200,24 @@ couverture des shards verte, et `origin/main` est **ancêtre de HEAD** — donc 
 
 ## 5. Ce qui reste ouvert, et pourquoi
 
-### Deux points en attente de vous
+### Les deux points qui étaient en attente, et ce qu'ils ont donné
 
-- **B1, la moitié PX4 SITL.** « L'ordre valide arme le drone » **n'est pas montré** : PX4
-  n'est plus installé (`/root/PX4-Autopilot` n'est pas lisible, `sudo` demande un mot de
-  passe). Le logiciel est prouvé (7 tests, 4 Kani 4/4) ; la démonstration attend un accès.
-- **Le fil `B.GP1`** est toujours sur `C.GP0` depuis la partie K : la chaîne A→B→C à trois
-  sauts est **indisponible**, donc aucune vérification de non-régression mesh n'est possible.
+- **B1, la moitié PX4 SITL : faite le 2026-10-08, 5/5**
+  ([`evidence/silicon/2026-10-08/b1-sitl/`](../evidence/silicon/2026-10-08/b1-sitl/)).
+  `/root/PX4-Autopilot` est resté inaccessible — `/root` est en `drwx------`, donc aucun
+  `chmod` sur son contenu ne pouvait suffire, et ma première recette était inopérante. PX4 a
+  été recloné dans `$HOME`, et la chaîne de compilation montée **sans un seul `sudo`** :
+  venv + `get-pip.py`, puis `cmake` et `ninja` en roues pip et les 14 dépendances Python en
+  roues pour Python 3.14. `java` et `ant` sont absents de la machine et se sont révélés
+  **inutiles** : l'airframe `10040_sihsim_quadx` fait voler PX4 avec sa physique interne.
+  L'ordre valide arme (`Armed by external command`) ; forgé, altéré, rejoué et révoqué
+  n'arment pas.
+- **Le fil `B.GP1` remis sur `A.GP0`.** La chaîne à trois sauts est **recâblée mais pas
+  fonctionnelle** : le firmware de A (équipement Modbus) maintient `GP0` haut et ne s'en
+  sert jamais. Une non-régression **5/5** a tourné sur B→C
+  ([`…/2026-10-08/regress/`](../evidence/silicon/2026-10-08/regress/)) — sur le firmware
+  **flashé**, pas sur HEAD, parce que B et C sont sous le chargeur A/B avec plancher = version
+  courante et que relever ce plancher est irréversible pour ce qui n'est qu'un champ de log.
 
 ### Les manques qu'aucun code ne ferme
 

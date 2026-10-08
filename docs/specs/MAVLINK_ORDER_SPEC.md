@@ -193,10 +193,14 @@ lue comme une réfutation. Le script d'exécution, lui, **étiquette à tort** t
 
 ## 5. Ce que ce module ne fait pas
 
-- ⚠️ **Rien n'a tourné sur PX4 SITL.** Tout ce qui précède est en logiciel, sur table. La
-  démonstration « le drone s'arme » demande un PX4 SITL, qui **n'est plus installé** sur
-  cette machine (`/root/PX4-Autopilot` des campagnes précédentes n'est pas accessible).
-  C'est la moitié manquante de B1 et elle est nommée comme telle.
+- ✅ **Exécuté sur PX4 SITL le 2026-10-08**, 5 cas sur 5
+  (`evidence/silicon/2026-10-08/b1-sitl/`). L'ordre valide arme
+  (`Armed by external command`) ; forgé, altéré, rejoué et révoqué
+  n'arment pas. ⚠️ Mais c'est de la **simulation** : SIH est un modèle de vol
+  dans PX4, il n'y a ni Pixhawk, ni cellule, ni radio, et le dépôt n'a jamais
+  volé. ⚠️ Et le véhicule **ne voit pas lui-même** l'état armé : il
+  ne reçoit jamais le flux de PX4, cause **inconnue**, donc l'armement est établi
+  par le journal de l'autopilote (§3 du rapport de campagne).
 - ⚠️ **`OrderClass::Stop` est refusé par ce porteur.** Pour un véhicule en vol, la
   « direction sûre » n'est pas un désarmement — un désarmement en vol le fait tomber — et
   OASIS ne définit pas ce qu'elle est. Refuser est honnête ; inventer ici un atterrissage
