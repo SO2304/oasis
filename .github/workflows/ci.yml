@@ -56,6 +56,12 @@ jobs:
     name: cargo-audit (RustSec)
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # audit-check publishes its result as a check run; on push to main the
+    # default read-only token was refused ("Resource not accessible by
+    # integration") even though no vulnerability was found.
+    permissions:
+      contents: read
+      checks: write
     steps:
       - uses: actions/checkout@v4
       - uses: rustsec/audit-check@v2
@@ -63,15 +69,27 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
 
   kani-proofs:
-    name: Kani proofs (oasis-rt lib)
+    name: Kani proofs (${{ matrix.shard }})
     runs-on: ubuntu-latest
-    # Authoritative formal-verification run for the ~113 #[kani::proof] harnesses.
-    # CBMC is RAM-heavy: a local 3.3 GB WSL2 VM could NOT finish the full suite
-    # (heavy mesh/spinal/synapse proofs OOM or time out). Hosted runners have far
-    # more RAM and no per-command time cap. If a heavy proof still exhausts the
-    # runner, lower -j or raise --harness-timeout (or split by module).
-    # -j 2 was killed by the runner (exit 143) after ~14 min: run serially.
-    timeout-minutes: 90
+    # Authoritative formal-verification run for all #[kani::proof] harnesses.
+    # oasis-rt/kani_shards.sh assigns each harness to exactly one shard (checked
+    # by kani-shard-coverage). Harnesses that do not fit the 600 s budget run
+    # alone in a heavy-* shard with 60 min, in kani-heavy.yml (weekly and on
+    # demand, not on every push: about 7 runner-hours each time); they count as
+    # verified only when their shard is green. History: -j 2 on the whole suite was killed (exit
+    # 143), -j 1 hit the 90-min job timeout.
+    timeout-minutes: ${{ matrix.minutes }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { shard: mesh-ac-af, harness_timeout: 600s, minutes: 120 }
+          - { shard: mesh-ag-aj, harness_timeout: 600s, minutes: 120 }
+          - { shard: mesh-core-v0b, harness_timeout: 600s, minutes: 120 }
+          - { shard: spinal-synapse, harness_timeout: 600s, minutes: 120 }
+          - { shard: authority, harness_timeout: 600s, minutes: 120 }
+          - { shard: authority-phase1, harness_timeout: 600s, minutes: 120 }
+          - { shard: other-modules, harness_timeout: 600s, minutes: 120 }
     defaults:
       run:
         working-directory: oasis-rt
@@ -87,8 +105,29 @@ jobs:
           cargo kani setup
       # -Z stubbing: proof_frag_reassembler_never_panics replaces SHA-256 with an
       # arbitrary digest (#[kani::stub]); without the flag that harness fails.
-      - name: cargo kani --lib (all proof harnesses)
-        run: cargo kani --lib -Z unstable-options -Z stubbing --harness-timeout 600s -j 1 --output-format terse
+      - name: cargo kani --lib (shard)
+        run: |
+          H=""
+          for h in $(./kani_shards.sh "${{ matrix.shard }}"); do H="$H --harness $h"; done
+          [ -n "$H" ] || { echo "::error::shard ${{ matrix.shard }} has no harness"; exit 1; }
+          cargo kani --lib $H --exact -Z unstable-options -Z stubbing --harness-timeout ${{ matrix.harness_timeout }} -j 1 --output-format terse
+
+  kani-shard-coverage:
+    name: Kani shard coverage (every harness in exactly one shard)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    defaults:
+      run:
+        working-directory: oasis-rt
+    steps:
+      - uses: actions/checkout@v4
+      - name: Every harness maps to one shard, and every shard is in a CI matrix
+        run: |
+          ./kani_shards.sh --check
+          for s in $(./kani_shards.sh --all | awk '{print $1}' | sort -u); do
+            case "$s" in heavy-*) f=../.github/workflows/kani-heavy.yml ;; *) f=../.github/workflows/ci.yml ;; esac
+            grep -q "shard: $s," "$f" || { echo "::error::shard $s is not in the matrix of $f"; exit 1; }
+          done
 
   docker-build:
     name: Docker image build + healthcheck

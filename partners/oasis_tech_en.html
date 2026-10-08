@@ -87,9 +87,9 @@ footer { font-size: 0.8rem; color: var(--muted); border-top: 1px solid var(--lin
     <p class="sub">No machine moves on a forged, modified, stale, revoked or unsafe order, even when a node of the fleet has been captured. Rust <code>no_std</code>, runs on a $1 Cortex-M0+. Proven in the lab on real silicon (TRL 4); looking for field pilots to take it to TRL 5–6.</p>
     <div class="meta">
       <span><b>TRL 4</b> · pre-1.0 · single maintainer</span>
-      <span>last silicon run <b>2026-10-06</b></span>
+      <span>last silicon run <b>2026-10-08</b></span>
       <span><b>3 × RP2040</b> · wired link · <b>no radio</b></span>
-      <span><b>662</b> tests · <b>182</b> Kani harnesses, no counterexample</span>
+      <span><b>662</b> tests · <b>182</b> Kani harnesses · <b>123/129</b> verified on CI before this branch</span>
     </div>
   </header>
 
@@ -127,12 +127,13 @@ footer { font-size: 0.8rem; color: var(--muted); border-top: 1px solid var(--lin
   </section>
 
   <section aria-labelledby="s3">
-    <h2 id="s3"><span>§3</span>Two ways to deploy</h2>
+    <h2 id="s3"><span>§3</span>Three ways to deploy</h2>
     <div class="box">
       <table class="wide">
         <thead><tr><th>Mode</th><th>When</th><th>Status</th></tr></thead>
         <tbody>
           <tr><th>Closed OASIS mesh</th><td>Relays are not trusted: every hop must filter forged, modified, replayed, revoked or foreign traffic</td><td><span class="tag proven">TRL 4</span> 3 boards, wired link</td></tr>
+          <tr><th>Gateway in front of an existing Modbus RTU device</th><td>The device cannot be changed: the OASIS gateway is its only writer and turns a signed order into a Modbus frame only when the gate says act, per register and per value range</td><td><span class="tag proven">TRL 4</span> 3 boards, TTL wire, one device</td></tr>
           <tr><th>Authority layer over an existing transport</th><td>MAVLink, serial, Reticulum or microReticulum already carry the traffic; OASIS adds authority, freshness, revocation and the safety gate at the machine</td><td><span class="tag proven">BUILT FOR MAVLINK</span> the order travels inside a <code>V2_EXTENSION</code> and the gate decides before arming: 7 tests over a real router, 4 Kani proofs 4/4. <b>Nothing on PX4 SITL</b>, and Reticulum is still untested</td></tr>
         </tbody>
       </table>
@@ -144,7 +145,8 @@ footer { font-size: 0.8rem; color: var(--muted); border-top: 1px solid var(--lin
     <h2 id="s4"><span>§4</span>Architecture</h2>
     <div class="layers">
       <div class="layer"><b>Actuation gate</b><p>Nine-condition decision before any actuator moves, and a stop that keeps only three of them so cryptography can never block it. Bound to the actuator's own clock and boot id, so no shared clock is needed.</p></div>
-      <div class="layer"><b>Authority</b><p>Operator key (single or k-of-n) signs revocation lists; per-actuator command authorities. Revocation is carried by the mesh as a signed content type.</p></div>
+      <div class="layer"><b>Authority</b><p>Operator key (single or k-of-n) signs revocation lists, enrollment attestations, ownership transfers and firmware manifests. These rare messages are signed with Ed25519 <em>and</em> ML-DSA-44 (FIPS 204); a per-kind minimum suite is persisted and never lowered, so a downgrade is refused before any signature work. Frequent orders stay Ed25519.</p></div>
+      <div class="layer"><b>Identity and lifecycle</b><p>Key generated on the board; enrollment with proof of possession; ownership transfer needs the old and the new owner; signed A/B firmware update with anti-rollback floor and automatic revert.</p></div>
       <div class="layer"><b>Signed envelope (v0B)</b><p>Ed25519 over a domain tag, network id, origin, counter, payload length and SHA-256 of the payload. Relay state changes only after full verification.</p></div>
       <div class="layer"><b>Transport security</b><p>ChaCha20-Poly1305, X25519 and Noise-KK for confidentiality between peers. Standard primitives only.</p></div>
       <div class="layer"><b>Link</b><p>Wired UART on silicon. LoRa SX1262 driver tested against a mock only. Flooding with TTL; no routing yet.</p></div>
@@ -164,6 +166,11 @@ footer { font-size: 0.8rem; color: var(--muted); border-top: 1px solid var(--lin
           <tr><th>Sender power-cut</th><td>Sender resumed at counter 1280 from its flash ceiling; relay accepted it</td></tr>
           <tr><th>Revocation</th><td>Applied on B and C, revoked origin dropped at the first hop, held across C's power-cut, old list refused</td></tr>
           <tr><th>Actuation gate (GPIO read back)</th><td>4 legitimate orders executed; non-authorised, expired, replayed, lost-sensor, over-limit and NaN orders all refused</td></tr>
+          <tr><th>Post-quantum hybrid authority</th><td>14-fragment Ed25519 + ML-DSA-44 revocation applied hop by hop; altered fragment or message refused, nothing forwarded; Ed25519-only message refused as a downgrade in 4 ms; policy and list restored after a power cut</td></tr>
+          <tr><th>Enrollment and ownership</th><td>Unenrolled node dropped at the first hop; enrollment with proof of possession; transfer o1&nbsp;→&nbsp;o2 on 3 boards, attacker and old-owner messages refused afterwards, also after a power cut</td></tr>
+          <tr><th>Signed A/B firmware update</th><td>Valid image installed; tampered, older and wrongly signed images refused; hanging image reverted by the watchdog; power cut during the upload and during the swap, both recovered</td></tr>
+          <tr><th>Modbus RTU gateway</th><td>Untouched device counting every byte on its bus: 4 act decisions = 4 frames = its 4 writes, byte for byte. Forged, modified, replayed, expired, previous-boot, unlisted register, out-of-range, unauthorised, lost-sensor orders and raw Modbus injected three ways: none reached the device. Control: the device alone executes the raw write</td></tr>
+          <tr><th>Supply chain</th><td>0 known vulnerabilities in 6 dependency graphs (cargo audit, cargo deny), 9 CycloneDX SBOMs</td></tr>
         </tbody>
       </table>
     </div>
@@ -179,7 +186,8 @@ footer { font-size: 0.8rem; color: var(--muted); border-top: 1px solid var(--lin
           <tr><th>Sign (cached keypair)</th><td class="n">≈ 175 ms</td><td>Orders and authority messages, not telemetry</td></tr>
           <tr><th>Verify, per hop</th><td class="n">≈ 179 ms</td><td>Each relay pays it once per signed message</td></tr>
           <tr><th>v0B over v0A</th><td class="n">+1 %</td><td>Binding payload, counter and network costs one SHA-256</td></tr>
-          <tr><th>Firmware flash</th><td class="n">≈ 136–158 KB</td><td>Mesh node with v0B and revocation; actuator node with the gate</td></tr>
+          <tr><th>Hybrid check (ML-DSA-44 + Ed25519)</th><td class="n">≈ 377 ms, 48.7 KB stack</td><td>Rare authority messages only; 14 fragments of 300 B per message</td></tr>
+          <tr><th>Firmware flash</th><td class="n">≈ 265–288 KB</td><td>Full node with hybrid authority, enrollment and update; ≈ 136–158 KB without them</td></tr>
           <tr><th>RAM</th><td class="n">not measured</td><td>160 KB heap reserved; about 34 KB per router</td></tr>
           <tr><th>Energy</th><td class="n">not measured</td><td>Estimate: one signature ≈ one LoRa SF7 transmission</td></tr>
         </tbody>
@@ -205,7 +213,11 @@ footer { font-size: 0.8rem; color: var(--muted); border-top: 1px solid var(--lin
   <section aria-labelledby="s8">
     <h2 id="s8"><span>§8</span>Known limits</h2>
     <ul>
-      <li>No key protection on RP2040: a captured node gives up its key over SWD. It can sign only as itself and can be revoked. Planned: RP2350 OTP and secure boot.</li>
+      <li>No key protection and no secure boot on RP2040: a captured node gives up its key over SWD or BOOTSEL, and BOOTSEL can write any image. It can sign only as itself and can be revoked. Planned: RP2350 OTP and secure boot.</li>
+      <li>On-board key generation uses the RP2040 ring oscillator, which is not a validated entropy source; a nonce from the enrollment tool is mixed in once.</li>
+      <li>Post-quantum covers authority messages only: no ML-KEM, frequent orders are Ed25519.</li>
+      <li>Modbus gateway: RTU over a TTL wire, one device, FC06 on silicon; it protects the device only if it is the device's only path.</li>
+      <li>Firmware updates over USB only, not over the mesh; the bootloader is not itself updatable.</li>
       <li>A revoked node can still relay, delay or drop other nodes' traffic; it cannot modify it.</li>
       <li>k-of-n operator quorum and relay catch-up after a missed revocation are tested on PC only.</li>
       <li>Flooding, not routing: every signed message costs one verification per relay.</li>

@@ -83,14 +83,23 @@ livre **60 messages légitimes sur 60** à 19 % de charge, contre 39/60 à 110 %
 lue dans la flash d'un RP2040), le budget par liaison borne le calcul du relais mais
 **affame le trafic légitime** (4/60) : c'est un plafond de calcul, pas de l'équité.
 
-Et sur le logiciel : Rust `no_std`, **662 tests**, **182 harnais Kani** dont 130 vérifiés
-en suite complète et 52 vérifiés séparément, **sans aucun contre-exemple** (22 restent
-inconnus faute de mémoire locale, et aucune suite complète sur les 182 n'a jamais été
-exécutée : « 182/182 » serait faux),
-1,5 × 10⁹
-exécutions de fuzzing pour un seul défaut trouvé et corrigé, SBOM CycloneDX et
-**0 vulnérabilité connue** sur les 6 arbres de dépendances ; preuves brutes avec SHA-256
-vérifiées dans un clone frais. Tourne sur un Cortex-M0+ à 1 $ (RP2040).
+Et sur le logiciel : Rust `no_std`, **662 tests**, **182 harnais Kani**. Sur les 149
+d'avant cette branche, **123 ont été vérifiés en CI** le 2026-10-06 et 6 ne l'ont pas
+été, nommés ; les 33 ajoutés ici sont vérifiés par campagne, chacune avec son contrôle
+négatif. ⚠️ **Aucune suite complète sur les 182 n'a jamais tourné**, ni en CI ni en
+local — « 182/182 » serait faux — et la suite **a produit deux contre-exemples réels**
+sur des harnais mesh, corrigés le 2026-10-08 : ce n'est pas une suite « sans
+contre-exemple », c'est une suite qui a servi. Plus 1,5 × 10⁹ exécutions de fuzzing pour
+un seul défaut trouvé et corrigé, SBOM CycloneDX et **0 vulnérabilité connue** sur les
+6 arbres de dépendances ; preuves brutes avec SHA-256 vérifiées dans un clone frais.
+Tourne sur un Cortex-M0+ à 1 $ (RP2040), firmware d'environ **136 Ko de flash**, 265 à
+288 Ko avec l'autorité hybride, l'enrôlement et la mise à jour.
+
+Prouvé sur silicium, avec ses limites (voir [`OASIS_VS_VERIDIFY.md`](OASIS_VS_VERIDIFY.md)) :
+messages d'autorité hybrides Ed25519 + ML-DSA-44 avec anti-rétrogradation, enrôlement et
+transfert de propriété, mise à jour A/B signée avec coupures de courant réelles,
+passerelle Modbus RTU devant un équipement existant, arrêt asymétrique qui se verrouille,
+vivacité de la supervision, et un journal de décisions infalsifiable à distance.
 
 ## 5. Deux façons de l'utiliser
 

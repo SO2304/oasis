@@ -1,4 +1,4 @@
-# OASIS face à Veridify DOME (2026-10-07)
+# OASIS face à Veridify DOME (mis à jour le 2026-10-08)
 
 > ⚠️ **OASIS n'est pas une fonction de sûreté certifiée** : ni PL (ISO 13849-1) ni SIL
 > (IEC 62061). Il ne réduit aucun risque machine — il décide si un ordre est authentique,
@@ -119,22 +119,43 @@ un plafond de calcul, pas de l'équité.
 
 ---
 
-## 4. Ce qui reste à faire avant de parler à un client
+## 4. Loyauté envers Veridify
 
-Dans l'ordre d'importance, d'après `POSITIONING_GAPS.md` :
+Aucune faiblesse de Veridify n'est affirmée ici au-delà de ce qui est public : le
+cassage de WalnutDSA en 2018 est publié, et Veridify y a répondu en 2019 et 2020,
+sans analyse indépendante publiée depuis ; tout le reste est **« non
+documenté »**. Veridify peut parfaitement faire, sans le publier, ce que ce tableau
+marque non documenté. Aucun de leurs produits n'a été testé, sondé ni
+téléchargé ; personne n'a été contacté.
 
-- **Des entretiens client.** Zéro à ce jour ; les quatre segments du positionnement sont
-  des hypothèses (D1, D2).
-- **Un arrêt d'urgence et un comportement défini en perte de liaison** (C2) : un
-  ingénieur sûreté l'exigera, et ce n'est pas spécifié.
-- **Un journal infalsifiable** des ordres exécutés et refusés (C5) : les compteurs
-  actuels sont en RAM.
-- **Un cycle de vie des clés** : injection en fabrication, rotation, stockage de la clé
-  opérateur, récupération (C6).
-- **Une radio réelle** et le budget associé (C3) : tout est mesuré sur fil.
-- **L'équité du pré-filtre** contre un initié (ci-dessus).
-- **Les 22 harnais Kani inconnus** (mémoire insuffisante en local) et une CI qui passe
-  la suite complète.
+## 5. Ce qui reste à faire avant de parler à un client
 
-Tant que ces points ne sont pas traités, la position honnête est : *une brique technique
-démontrée, pas un produit.*
+État au 2026-10-08, d'après la **section G** de
+[`POSITIONING_GAPS.md`](POSITIONING_GAPS.md), qui est la source de vérité du statut de
+chaque manque :
+
+- **Des entretiens client.** Zéro à ce jour. C'est **le seul manque 🔴 encore
+  ouvert** (D1) ; [`CUSTOMER_DISCOVERY.md`](CUSTOMER_DISCOVERY.md) est prêt et aucune de
+  ses cinq hypothèses n'est testée.
+- **Le stockage sécurisé de la clé** (C14) : la clé privée est lisible en flash
+  par BOOTSEL ou SWD. **Ne se ferme pas en logiciel** — c'est l'avantage matériel de
+  Veridify et la première objection d'un RSSI.
+- **La rotation de clé de nœud** (C6) : elle n'existe pas, et `MAX_REVOKED = 16` est un
+  plafond dur. C'est le prérequis qui gouverne tout calendrier de migration
+  cryptographique.
+- **Une radio réelle** (C11) : aucune radio n'a jamais émis, tous les budgets sont
+  calculés, et le duty-cycle n'est **pas appliqué par le code** (C3).
+- **Un KEM post-quantique** : l'échange de clés reste X25519. C'est l'écart réel
+  avec le ML-KEM documenté de Veridify.
+- **La confidentialité des ordres** (C13) : v0B et v0C authentifient, ils ne chiffrent
+  pas.
+- **L'équité du pré-filtre contre un initié** : le seau à jetons est un plafond
+  de calcul, et la livraison légitime tombe à 4/60. À ne jamais présenter comme une
+  protection de disponibilité.
+- **Une suite Kani complète sur les 182 harnais** : elle n'a jamais tourné, ni en CI
+  ni en local. « 182/182 » serait faux.
+
+Fermés depuis la version précédente de ce document, et donc retirés de cette liste :
+**C2** (arrêt asymétrique et perte de liaison), **C5** (journal infalsifiable),
+**C12** (vivacité de la supervision) et **C4** (protocole d'émission d'un ordre) —
+tous les quatre prouvés sur silicium le 2026-10-08.
