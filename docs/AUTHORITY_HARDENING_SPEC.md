@@ -328,11 +328,15 @@ C = passerelle).
 
 - **C14** (stockage sécurisé, clé lisible en flash) : ne se ferme pas en logiciel.
 - **C6** : fermé par [`KEY_LIFECYCLE.md`](KEY_LIFECYCLE.md), qui nomme ses cinq manques.
-- **C3** : mesuré en partie J, et la réduction `OAS1` est **écrite** (4 tests, 3 preuves
-  vérifiées). ⚠️ Le respect du duty-cycle n'est toujours **pas** appliqué par le code
-  (§J.6), et le plan silicium J1–J6 n'est **pas encore exécuté**.
-- **C4** : fermé côté logiciel en partie K (`TimeView`, 8 tests, 4 preuves) ; le plan
-  silicium K1–K6 n'est **pas encore exécuté**.
+- **C3** : mesuré en partie J, réduction `OAS1` écrite (4 tests, 3 preuves vérifiées) et
+  **J1–J6 passés sur silicium** (`evidence/silicon/2026-10-08/jk/`). ⚠️ Le respect du
+  duty-cycle n'est toujours **pas** appliqué par le code (§J.6), et il n'y a **pas de
+  radio** : les temps d'antenne restent calculés.
+- **C4** : **fermé**. Partie K (`TimeView`, 8 tests, 4 preuves) et **K1–K6 passés sur
+  silicium** : en K3 le PC n'a fourni qu'une validité en millisecondes, et B a construit
+  l'ordre depuis une balise signée de 46,9 s. ⚠️ Il a fallu **déplacer un fil** (le mesh est
+  à sens unique) ; le redémarrage de K4 vient d'un reflash, pas d'une coupure ; K6 n'est pas
+  un rejeu octet-exact ; aucun ordonnanceur de balise.
 - L'arrêt d'urgence **reste hors d'OASIS**, par conception.
 - Les trois exigences ouvertes de I.6 (durée 5 ans, désactivation, horodatage).
 - Aucune de ces parties ne fait d'OASIS une fonction de sûreté.
