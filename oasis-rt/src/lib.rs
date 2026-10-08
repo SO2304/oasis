@@ -65,6 +65,10 @@ pub mod tx_lease;
 // MCU users typically have their own MAVLink stack tied to their UART.
 #[cfg(feature = "std")]
 pub mod mavlink_min;
+// mavlink_order: a signed OASIS order carried inside a MAVLink V2_EXTENSION, and the
+// arming rule that only acts on the gate's Act. Needs mavlink_min, so std.
+#[cfg(all(feature = "std", feature = "mesh_v10"))]
+pub mod mavlink_order;
 pub mod synapse;
 pub mod tension;
 // transport: transport abstractions (UdpSocket, file, LoRa-stub) that

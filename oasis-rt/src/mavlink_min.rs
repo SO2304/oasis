@@ -224,7 +224,7 @@ fn crc_accumulate(data: u8, crc: u16) -> u16 {
     (crc >> 8) ^ (tmp16 << 8) ^ (tmp16 << 3) ^ (tmp16 >> 4)
 }
 
-fn crc_over(bytes: &[u8], extra: u8) -> u16 {
+pub(crate) fn crc_over(bytes: &[u8], extra: u8) -> u16 {
     let mut crc = 0xFFFFu16;
     for &b in bytes {
         crc = crc_accumulate(b, crc);
