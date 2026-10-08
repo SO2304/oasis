@@ -183,6 +183,9 @@ fn spawn_agent(conf: Config) -> String {
     let agent = Arc::new(Mutex::new(AgentState {
         origin: MeshRouter::new_v0b(fp(0xAA), NET, seed(0xAA), MeshPubRegistry::new()),
         seq: SeqStore::load(p.to_str().unwrap()).unwrap(),
+        // No restart in a bench, so the send counter stays in RAM. A deployed agent must
+        // persist it or a restart locks it out of its own gateway.
+        txc: None,
     }));
     thread::spawn(move || {
         for s in srv.incoming() {

@@ -44,7 +44,7 @@ use std::net::TcpListener;
 use std::sync::{Arc, Mutex};
 
 use oasis_rt::mbtcp_conf::Config;
-use oasis_rt::mbtcp_pilot::{serve_hmi, AgentState, SeqStore};
+use oasis_rt::mbtcp_pilot::{serve_hmi, AgentState, SeqStore, TxCounterStore};
 use oasis_rt::mesh::MeshRouter;
 
 fn main() {
@@ -71,9 +71,23 @@ fn main() {
         }
     };
 
-    let origin = MeshRouter::new_v0b(conf.our_fp, conf.network_id, conf.our_seed.clone(), conf.registry.clone());
+    let mut origin = MeshRouter::new_v0b(conf.our_fp, conf.network_id, conf.our_seed.clone(), conf.registry.clone());
     let next_seq = seq.peek();
-    let agent = Arc::new(Mutex::new(AgentState { origin, seq }));
+
+    // The v0B send counter, leased to disk and restored here. Without this a restart
+    // begins again at 1, the gateway's counter window refuses the envelopes as stale —
+    // correctly — and the agent is locked out of its own gateway. Found by restarting
+    // this binary in the end-to-end campaign, not by any in-process test.
+    let txc = match TxCounterStore::load(&format!("{path}.txc")) {
+        Ok(t) => t,
+        Err(e) => {
+            eprintln!("tx counter: {e}");
+            std::process::exit(2);
+        }
+    };
+    txc.restore_into(&mut origin);
+    println!("AGENT tx_counter restored_to={} (next send {})", txc.claimed(), txc.claimed() + 1);
+    let agent = Arc::new(Mutex::new(AgentState { origin, seq, txc: Some(txc) }));
 
     let listener = match TcpListener::bind(&conf.listen) {
         Ok(l) => l,

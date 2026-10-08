@@ -173,7 +173,13 @@ fn spawn_agent(conf: Config) -> String {
     let seq_path = std::env::temp_dir().join(format!("oasis_mbtcp_test_{}_{}.seq", std::process::id(), addr.replace(':', "_")));
     let _ = std::fs::remove_file(&seq_path);
     let seq = SeqStore::load(seq_path.to_str().unwrap()).unwrap();
-    let agent = Arc::new(Mutex::new(AgentState { origin: MeshRouter::new_v0b(fp(0xAA), NET, seed(0xAA), MeshPubRegistry::new()), seq }));
+    let agent = Arc::new(Mutex::new(AgentState {
+        origin: MeshRouter::new_v0b(fp(0xAA), NET, seed(0xAA), MeshPubRegistry::new()),
+        seq,
+        // This test never restarts the agent, which is exactly why it did not catch
+        // the send counter not being persisted; the end-to-end campaign did.
+        txc: None,
+    }));
     thread::spawn(move || {
         for s in srv.incoming() {
             let Ok(mut s) = s else { continue };

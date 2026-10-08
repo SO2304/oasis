@@ -161,7 +161,9 @@ if [ "$FULL" = 1 ]; then
   # oasis-trl-harness turned on — and a visitor building one crate hit it, not CI.
   echo
   echo "== chaque membre compile seul (l'unification des features cache les manques) =="
-  for p in oasis-rt oasis-operator-key oasis-secure-element oasis-trl-harness; do
+  # Read the member list from the workspace manifest rather than naming them here,
+  # so a new member is covered the day it is added.
+  for p in $(awk '/^members = \[/{f=1;next} f&&/^\]/{exit} f&&/^[[:space:]]*#/{next} f&&/"/{gsub(/[",]/,"");print $1}' Cargo.toml); do
     if cargo test -p "$p" --release --no-run >/dev/null 2>&1; then
       printf '  ok    %-34s compile seul\n' "$p"
     else

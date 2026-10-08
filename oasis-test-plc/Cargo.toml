@@ -1,0 +1,22 @@
+# oasis-test-plc — a Modbus TCP device this PC can play, to stand in for a real PLC.
+#
+# It depends on `rmodbus` and NOT on `oasis-rt`. That is the whole point and it is
+# checkable from this file: when this device applies a frame, it is not OASIS agreeing
+# with itself. The same property the RP2040 campaign got from board A running `rmodbus`
+# with no OASIS code on it.
+#
+# `rmodbus` is pinned to the exact version the gateway tests already use, so the device in
+# the end-to-end campaign and the device in `oasis-rt`'s tests are the same implementation.
+[package]
+name = "oasis-test-plc"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+publish = false
+
+[dependencies]
+rmodbus = "=0.12.2"
+
+[[bin]]
+name = "oasis_test_plc"
+path = "src/main.rs"

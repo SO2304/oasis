@@ -10,7 +10,7 @@
 //! ```
 //!
 //! ```text
-//! oasis_mbtcp_gateway --config gateway.conf
+//! oasis_mbtcp_gateway --config gateway.conf --journal /var/oasis/jrn
 //! ```
 //!
 //! An audit found that `oasis-rt` contained **no socket at all**: the Modbus TCP layer was
@@ -51,7 +51,7 @@ fn main() {
     let path = match args.iter().position(|a| a == "--config").and_then(|i| args.get(i + 1)) {
         Some(p) => p.clone(),
         None => {
-            eprintln!("usage: oasis_mbtcp_gateway --config <file>");
+            eprintln!("usage: oasis_mbtcp_gateway --config <file> [--journal <prefix>]");
             std::process::exit(2);
         }
     };
@@ -67,7 +67,29 @@ fn main() {
     // refusable; reusing one would reopen the replay window the gate exists to close.
     let boot_id = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as u64;
     let router = MeshRouter::new_v0b(conf.our_fp, conf.network_id, conf.our_seed.clone(), conf.registry.clone());
-    let state = Arc::new(Mutex::new(GatewayState::new(router, boot_id)));
+
+    // Where the journal is written. Without it the chain lives in RAM and dies with the
+    // process, which is what this binary did until 2026-10-09 while its own header said
+    // it appended every decision. `--journal` is how an operator gets evidence that
+    // outlives the run; `oasis_journal_verify` reads
+    // `cat <prefix>.head <prefix>.entries` directly.
+    let jprefix = args.iter().position(|a| a == "--journal").and_then(|i| args.get(i + 1));
+    let state = match jprefix {
+        Some(p) => match GatewayState::with_journal(router, boot_id, p) {
+            Ok(s) => {
+                println!("GATEWAY journal={p}.entries + {p}.head");
+                Arc::new(Mutex::new(s))
+            }
+            Err(e) => {
+                eprintln!("journal {p}: {e}");
+                std::process::exit(2);
+            }
+        },
+        None => {
+            eprintln!("GATEWAY warning: no --journal <prefix>, decisions are kept in RAM only and lost on exit");
+            Arc::new(Mutex::new(GatewayState::new(router, boot_id)))
+        }
+    };
 
     let listener = match TcpListener::bind(&conf.listen) {
         Ok(l) => l,

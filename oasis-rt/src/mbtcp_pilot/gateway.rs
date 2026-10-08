@@ -15,11 +15,105 @@ use crate::modbus_gateway::{parse_omb1, Gateway, OrderContext, Response};
 use crate::modbus_read::{check_read_response, decide_read, encode_omv1, parse_omq1, MbQuery, ReadCheck};
 use crate::modbus_tcp::{check_tcp_response, decide_tcp, Outcome, TcpFrame};
 
+/// Where the gateway writes its journal so it survives the process.
+///
+/// Until this existed the TCP gateway called `Journal::append`, **threw the returned bytes
+/// away**, and kept the chain in RAM — so the journal died with the process and was not
+/// evidence of anything, while the documentation said every decision was appended. Annex
+/// III 1.1.9 ¶5 asks a machine to *collect* evidence; a record that vanishes on exit
+/// collects nothing. The RP2040 firmware persisted via `jstore` from the start; the host
+/// gateway simply never did.
+///
+/// Two files, in the order that makes a crash detectable — **entry first, then head**,
+/// exactly as `jstore` does on the MCU. A cut between the two leaves one entry the head
+/// does not cover, which `verify` reports as `Unconfirmed` rather than hiding.
+///
+/// The format is the one `oasis_journal_verify` already reads, so nothing new has to be
+/// parsed: `cat <prefix>.head <prefix>.entries` is a valid input to it.
+pub struct JournalSink {
+    /// Both files are held **open**. Reopening them per decision cost 12.7 ms of the
+    /// 13.2 ms an authorised write took through the real binaries, measured by the
+    /// end-to-end campaign — two opens and two flushes on Windows. Holding the handles
+    /// keeps the durability ordering identical and pays the open once.
+    entries: std::fs::File,
+    head: std::fs::File,
+}
+
+impl JournalSink {
+    /// `prefix.entries` and `prefix.head`. Truncates both: a fresh process starts a fresh
+    /// chain under a fresh `boot_id`, and mixing two boots' entries in one file would make
+    /// the sequence appear to jump.
+    pub fn create(prefix: &str, boot_id: u64) -> io::Result<Self> {
+        let entries = std::fs::File::create(format!("{prefix}.entries"))?;
+        let head = std::fs::File::create(format!("{prefix}.head"))?;
+        let mut s = JournalSink { entries, head };
+        let g = crate::journal::JournalHead::new(boot_id);
+        s.write_head(&g)?;
+        Ok(s)
+    }
+
+    /// Rewrite the head in place: two short lines, truncated first so a shorter head
+    /// cannot leave a tail of the previous one behind.
+    fn write_head(&mut self, head: &crate::journal::JournalHead) -> io::Result<()> {
+        use std::io::{Seek, SeekFrom, Write};
+        let seq = match head.seq {
+            Some(s) => alloc_fmt(s),
+            None => "none".to_string(),
+        };
+        let text = format!(
+            "JRN_BOOT boot_id={}
+JRN_HEAD seq={seq} hash={} overwritten={}
+",
+            head.boot_id,
+            hex32(&head.hash),
+            head.overwritten
+        );
+        self.head.seek(SeekFrom::Start(0))?;
+        self.head.set_len(0)?;
+        self.head.write_all(text.as_bytes())?;
+        self.head.flush()
+    }
+
+    /// Append one entry, then rewrite the head. Both flushed: a campaign that kills this
+    /// process must still find the record on disk.
+    fn persist(&mut self, head: &crate::journal::JournalHead, entry: &[u8; crate::journal::ENTRY_LEN]) -> io::Result<()> {
+        use std::io::Write;
+        // Entry first, flushed, then the head: a crash between the two leaves one entry
+        // the head does not cover, which `verify` reports as `Unconfirmed`.
+        self.entries.write_all(
+            format!(
+                "JRN_E {}
+",
+                hex32(entry)
+            )
+            .as_bytes(),
+        )?;
+        self.entries.flush()?;
+        self.write_head(head)
+    }
+}
+
+fn alloc_fmt(v: u32) -> String {
+    format!("{v}")
+}
+
+fn hex32(b: &[u8]) -> String {
+    use core::fmt::Write as _;
+    let mut s = String::with_capacity(b.len() * 2);
+    for x in b {
+        let _ = write!(s, "{x:02x}");
+    }
+    s
+}
+
 /// The gateway's mutable state. One per process, behind the caller's mutex.
 pub struct GatewayState {
     pub gw: Gateway,
     pub router: MeshRouter,
     pub journal: Journal,
+    /// Where decisions are written. `None` keeps the pre-2026-10-09 behaviour — a chain in
+    /// RAM that dies with the process — which is why the binary always sets it.
+    pub jsink: Option<JournalSink>,
     /// Fresh per process start: that is what makes an order from a previous run
     /// refusable, so reusing one would reopen the replay window the gate exists to close.
     pub boot_id: u64,
@@ -35,7 +129,29 @@ pub struct GatewayState {
 
 impl GatewayState {
     pub fn new(router: MeshRouter, boot_id: u64) -> Self {
-        Self { gw: Gateway::new(), router, journal: Journal::new(boot_id), boot_id, plc: None }
+        Self { gw: Gateway::new(), router, journal: Journal::new(boot_id), boot_id, plc: None, jsink: None }
+    }
+
+    /// Same, writing every decision to `prefix.entries` / `prefix.head`.
+    pub fn with_journal(router: MeshRouter, boot_id: u64, prefix: &str) -> io::Result<Self> {
+        let mut s = Self::new(router, boot_id);
+        s.jsink = Some(JournalSink::create(prefix, boot_id)?);
+        Ok(s)
+    }
+
+    /// Append a decision **and persist it**. Every journalling path in this module goes
+    /// through here, so a future branch cannot record a decision in RAM only by
+    /// forgetting a line — which is exactly how the original defect looked.
+    ///
+    /// A failed write is not silently swallowed: it returns the error to the caller, who
+    /// drops the connection. A gateway that cannot write its journal must not keep
+    /// deciding as if it could.
+    fn journal_and_persist(&mut self, origin_fp: [u8; 8], cmd_seq: u32, class: OrderClass, decision: LoggedDecision, flags: u8) -> io::Result<()> {
+        let bytes = self.journal.append(origin_fp, cmd_seq, class, decision, flags);
+        if let Some(sink) = self.jsink.as_mut() {
+            sink.persist(&self.journal.head, &bytes)?;
+        }
+        Ok(())
     }
 
     /// Exchange one frame with the PLC, redialling once if the cached socket is stale.
@@ -180,7 +296,7 @@ pub fn handle_frame(sock: &mut TcpStream, st: &mut GatewayState, conf: &Config, 
             // A dropped envelope has no order to name, so it is journalled as a refusal
             // at the verification step with sequence 0 — enough to count it, and honest
             // that nothing else is known.
-            st.journal.append([0u8; 8], 0, OrderClass::Act, LoggedDecision::Reject(Reason::NotVerified), 0);
+            st.journal_and_persist([0u8; 8], 0, OrderClass::Act, LoggedDecision::Reject(Reason::NotVerified), 0)?;
             write_frame(sock, &encode_reply(0, &Outcome::NoAnswer))?;
             return Ok(Served::MeshDrop(why));
         }
@@ -210,7 +326,7 @@ pub fn handle_frame(sock: &mut TcpStream, st: &mut GatewayState, conf: &Config, 
     let tid = (order.cmd_seq & 0xFFFF) as u16;
     let (decision, rules, frame) = decide_tcp(&mut st.gw, &ctx, &order, conf.unit, &conf.map, tid);
 
-    st.journal.append(
+    st.journal_and_persist(
         [0u8; 8],
         order.cmd_seq,
         OrderClass::Act,
@@ -219,7 +335,7 @@ pub fn handle_frame(sock: &mut TcpStream, st: &mut GatewayState, conf: &Config, 
             Decision::Reject(r) => LoggedDecision::Reject(r),
         },
         0,
-    );
+    )?;
 
     let (outcome, plc_written) = match (decision, frame) {
         (Decision::Act, Some(f)) => {

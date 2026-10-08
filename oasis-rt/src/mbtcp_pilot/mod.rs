@@ -25,7 +25,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 pub mod agent;
 pub mod gateway;
 
-pub use agent::{serve_hmi, AgentState, GatewayLink, SeqStore, CLOCK_REFRESH_MS};
+pub use agent::{serve_hmi, AgentState, GatewayLink, SeqStore, TxCounterStore, CLOCK_REFRESH_MS};
 pub use gateway::{handle_gateway_conn, serve_gateway_conn, GatewayState, Served};
 
 /// Reply to the agent: `"OMR1" | cmd_seq u32 | kind u8 | code u8`.

@@ -97,10 +97,72 @@ impl SeqStore {
     }
 }
 
-/// The agent's shared state: its signing identity and its sequence.
+/// How many v0B send counters one disk write buys. Larger than [`SEQ_LEASE`] because a
+/// mesh counter is 64 bits and skipping some costs nothing at all.
+pub const TX_LEASE: u64 = 256;
+
+/// The v0B **send counter**, leased to a file so a restart cannot reuse one.
+///
+/// This exists because the end-to-end campaign restarted the agent and every write after
+/// it came back as exception 0x0B. The order sequence was persisted — `SeqStore` — but the
+/// *mesh* counter was not, so a restarted agent began again at 1 and the gateway's counter
+/// window refused its envelopes as stale, exactly as it should. The agent was locking
+/// itself out. `tx_lease` solved the same problem on the MCU and was silicon-proven across
+/// a real power cut; the host agent simply never got it, and no library test restarts a
+/// process so nothing caught it.
+///
+/// Same guarantee as the lease on the order sequence: a crash loses up to [`TX_LEASE`]
+/// counters and can never **reuse** one, because the file claimed them before any was
+/// sent.
+pub struct TxCounterStore {
+    path: String,
+    high_water: u64,
+}
+
+impl TxCounterStore {
+    pub fn load(path: &str) -> Result<Self, String> {
+        let high_water = match std::fs::read_to_string(path) {
+            Ok(t) => t.trim().parse::<u64>().map_err(|e| format!("{path}: {e}"))?,
+            Err(e) if e.kind() == io::ErrorKind::NotFound => 0,
+            Err(e) => return Err(format!("{path}: {e}")),
+        };
+        Ok(TxCounterStore { path: path.to_string(), high_water })
+    }
+
+    pub fn claimed(&self) -> u64 {
+        self.high_water
+    }
+
+    /// Start this run strictly above everything the previous run could have sent.
+    pub fn restore_into(&self, origin: &mut MeshRouter) {
+        origin.set_tx_counter(self.high_water);
+    }
+
+    /// Make sure the **next** counter the router will use is already claimed on disk.
+    /// Called before every send; writes only when a lease runs out.
+    ///
+    /// Takes the current counter rather than the router so a caller holding the router
+    /// mutably can still call it.
+    pub fn ensure(&mut self, current: u64) -> Result<(), String> {
+        let next = current.saturating_add(1);
+        if next > self.high_water {
+            let want = next.saturating_add(TX_LEASE - 1);
+            std::fs::write(&self.path, want.to_string()).map_err(|e| format!("{}: {e}", self.path))?;
+            self.high_water = want;
+        }
+        Ok(())
+    }
+}
+
+/// The agent's shared state: its signing identity, its order sequence, and its v0B send
+/// counter.
 pub struct AgentState {
     pub origin: MeshRouter,
     pub seq: SeqStore,
+    /// `None` keeps the counter in RAM only, which means **a restart locks the agent out
+    /// of its own gateway** until the window catches up. The binary always sets it; the
+    /// in-process tests leave it `None` because they never restart.
+    pub txc: Option<TxCounterStore>,
 }
 
 /// One HMI connection's link to the gateway: the socket, and the view of its clock.
@@ -207,6 +269,13 @@ pub fn serve_hmi(hmi: &mut TcpStream, agent: &Mutex<AgentState>, conf: &Config) 
     let to = Duration::from_millis(conf.timeout_ms);
     hmi.set_read_timeout(Some(to))?;
     hmi.set_write_timeout(Some(to))?;
+    // Every Modbus exchange is one small request and one small reply, strictly alternating
+    // — the worst case for Nagle, which holds a small write waiting for an ACK that only
+    // arrives once the peer has the write. The end-to-end campaign measured **13.6 ms**
+    // per write through the real binaries against ~460 us in process, and this one line is
+    // most of that difference. The gateway and the PLC link already set it; the socket
+    // facing the HMI did not.
+    hmi.set_nodelay(true).ok();
     let mut link = GatewayLink::new();
 
     loop {
@@ -264,6 +333,10 @@ fn agent_read_try(link: &mut GatewayLink, agent: &Mutex<AgentState>, conf: &Conf
     // query — and not from fields this payload would otherwise have to carry.
     let env = {
         let mut st = agent.lock().map_err(|_| ReadFail::Transport)?;
+        let tx_now = st.origin.tx_counter();
+        if let Some(t) = st.txc.as_mut() {
+            t.ensure(tx_now).map_err(|_| ReadFail::Transport)?;
+        }
         let payload = encode_omq1(q);
         st.origin.origin_wrap_v0b(&payload).ok_or(ReadFail::Transport)?
     };
@@ -341,6 +414,12 @@ pub fn agent_try(link: &mut GatewayLink, agent: &Mutex<AgentState>, conf: &Confi
     // 2. Sign under the lock, and only that: the round trip below must not hold it.
     let (env, seq) = {
         let mut st = agent.lock().map_err(|_| "agent state poisoned".to_string())?;
+        // The v0B counter this envelope will use must be claimed on disk first, or a
+        // restart would reuse it and the gateway would refuse everything that follows.
+        let tx_now = st.origin.tx_counter();
+        if let Some(t) = st.txc.as_mut() {
+            t.ensure(tx_now)?;
+        }
         let seq = st.seq.reserve()?;
         // `gateway_id` is the logical actuator, not the Modbus unit: the unit is inside
         // the order and is checked by the register rules.

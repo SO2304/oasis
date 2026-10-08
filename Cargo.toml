@@ -22,6 +22,10 @@ members = [
     "oasis-secure-element",
     "oasis-operator-key",
     "oasis-trl-harness",
+    # The device this PC plays so the TCP path can meet something other than itself.
+    # Depends on `rmodbus` and NOT on `oasis-rt`, which is what makes "no OASIS code in
+    # the device" checkable from its manifest rather than asserted in a README.
+    "oasis-test-plc",
 ]
 
 exclude = [

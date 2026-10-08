@@ -758,6 +758,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "oasis-test-plc"
+version = "0.1.0"
+dependencies = [
+ "rmodbus",
+]
+
+[[package]]
 name = "oasis-trl-harness"
 version = "0.1.0"
 dependencies = [
