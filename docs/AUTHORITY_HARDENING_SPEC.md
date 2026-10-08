@@ -11,8 +11,7 @@ de ce segment, dans l'ordre où ils doivent être construits :
 | **I** | **C5** — journal infalsifiable des décisions | annexe III **1.1.9 al. 5** et **1.2.1 al. 2 f)** ; CRA annexe **I-I-2 l)** ; IEC 62443-4-2 **CR 2.8, 2.9, 2.10, 2.11, 2.12, 3.9** | à construire |
 
 **C6 est fermé** par [`KEY_LIFECYCLE.md`](KEY_LIFECYCLE.md). **C3 est traité en partie J**
-ci-dessous (mesure faite, réduction spécifiée). **C4** (émission d'un ordre sur le terrain)
-fera l'objet de la section K.
+ci-dessous (mesure faite, réduction spécifiée). **C4** est traité en **partie K**.
 
 > **Aucune revendication de sûreté de fonctionnement.** Rien ici n'est une fonction de sûreté
 > certifiée (PL au sens d'ISO 13849-1, SIL au sens d'IEC 62061). Voir
@@ -331,7 +330,8 @@ C = passerelle).
 - **C6** : fermé par [`KEY_LIFECYCLE.md`](KEY_LIFECYCLE.md), qui nomme ses cinq manques.
 - **C3** : mesuré en partie J ; la réduction `OAS1` est spécifiée, **pas encore écrite**, et
   le respect du duty-cycle n'est **pas** appliqué par le code (§J.6).
-- **C4** (émission d'un ordre sur le terrain) : section K, à venir.
+- **C4** : fermé côté logiciel en partie K (`TimeView`, 8 tests, 4 preuves) ; le plan
+  silicium K1–K6 n'est **pas encore exécuté**.
 - L'arrêt d'urgence **reste hors d'OASIS**, par conception.
 - Les trois exigences ouvertes de I.6 (durée 5 ans, désactivation, horodatage).
 - Aucune de ces parties ne fait d'OASIS une fonction de sûreté.
@@ -522,3 +522,112 @@ sur silicium, pour 31 octets. À faire avec sa propre campagne, pas en passant.
   irréductibles sans changer de primitive, et les 35 autres portent le réseau, l'origine, le
   compteur et le condensé de charge utile — tous liés par la signature. Il n'y a rien à
   gagner là sans perdre une propriété prouvée.
+
+---
+
+# Partie K — émettre un ordre sur le terrain (C4)
+
+**Écrit le 2026-10-08.** Ferme `POSITIONING_GAPS.md` **C4**.
+
+## K.1 Le problème, dit sans ménagement
+
+La garantie de fraîcheur de la partie F est énoncée dans le **temps de l'actionneur** : un
+ordre porte `boot_id` et `deadline_ms`, et la porte le refuse sauf si
+`cmd_boot_id == actuator_boot_id` et `now_ms ≤ deadline_ms ≤ now_ms + MAX_VALIDITY_MS`.
+
+Jusqu'au 2026-10-08 inclus, **le PC lisait ces deux valeurs sur l'USB de la carte C avant
+chaque ordre** (`@G`). C'est un raccourci de laboratoire : sur le terrain, le commandant n'a
+pas de câble. La fraîcheur était donc démontrée, mais le protocole pour l'obtenir n'existait
+pas — c'est exactement ce que C4 reproche.
+
+## K.2 Le mécanisme
+
+Le format existait déjà et n'était pas utilisé : `OTM1 = "OTM1" ‖ boot_id u64 ‖ now_ms u64`,
+**20 octets de charge utile, 119 sur le fil**, originés par l'**actionneur**.
+
+L'actionneur émet une balise `OTM1` signée. Le commandant tient une `TimeView` : les valeurs
+de la balise **plus sa propre horloge monotone** à la réception. Pour horodater un ordre, il
+ajoute le temps local écoulé au `now_ms` de la balise.
+
+```
+estimate(local_now) = beacon_now_ms + (local_now − local_rx_ms)
+stamp(local_now, v) = (boot_id, estimate(local_now) + v)
+```
+
+L'authenticité vient de **l'enveloppe v0B** qui transporte la balise : origine, compteur,
+réseau et condensé de charge utile y sont liés, donc une balise forgée ou rejouée est
+écartée par le mesh avant que ce module la voie. `TimeView::apply` ajoute une règle propre :
+**à l'intérieur d'un même boot, une balise dont `now_ms` recule est refusée**. Une balise
+d'un **autre** boot remplace la vue sans condition — un redémarrage est précisément ce que
+le commandant doit apprendre.
+
+## K.3 Toutes les erreurs vont dans le sens sûr
+
+C'est ce qui rend le mécanisme acceptable, et pas seulement commode.
+
+| Si l'estimation est… | Alors… | Décision |
+|---|---|---|
+| **trop basse** | l'échéance est déjà passée | `Expired` |
+| **trop haute** | `deadline − now` dépasse `MAX_VALIDITY_MS` chez l'actionneur | `Expired` |
+| d'un **boot périmé** | `cmd_boot_id ≠ actuator_boot_id` | `Expired` |
+| **trop ancienne** (> 1 h) | `stamp` rend `None`, l'ordre n'est pas construit | rien n'est émis |
+
+Une vue fausse ou périmée coûte donc **un ordre, jamais une exécution non voulue** — et le
+commandant apprend à se rafraîchir **par le refus**. Les deux premières lignes sont
+vérifiées par un test contre la porte réelle (`tv_estimation_errors_only_ever_refuse`), pas
+seulement raisonnées.
+
+## K.4 Coût en messages radio
+
+Une balise fait 119 octets : **≈ 4,5 s à SF12** en LoRa brut, soit 8 par heure et par bande
+sur les 36 s du budget (`§J.2`).
+
+Mais il n'en faut pas 8. L'horloge du RP2040 a été **mesurée** à 124,9986 MHz contre
+125 MHz nominal, soit **1,1 × 10⁻⁵** : une heure d'extrapolation dérive d'environ **40 ms**,
+négligeable devant `MAX_VALIDITY_MS` = 10 s. Ce n'est donc pas la dérive qui impose une
+balise, c'est le **redémarrage**, qui change `boot_id`.
+
+**Règle : une balise au démarrage, puis périodiquement.** `MAX_VIEW_AGE_MS` est fixé à
+**1 heure** — non pour la dérive, mais parce qu'au-delà la probabilité qu'un redémarrage
+soit passé inaperçu cesse d'être négligeable, et qu'un ordre horodaté pour un boot mort est
+un créneau radio perdu.
+
+## K.5 Invariants prouvés et tests
+
+| Harnais Kani | Ce qu'il établit |
+|---|---|
+| `proof_timeview_stamp_total` | `stamp`, `estimate` et `age_ms` sont totaux : aucun débordement, aucune panique, y compris au voisinage de `u64::MAX` |
+| `proof_timeview_window_is_bounded` | **l'invariant central** : quand `stamp` rend une échéance, la fenêtre ouverte vaut **au plus `MAX_VALIDITY_MS`** depuis l'estimation, et le `boot_id` est celui de la vue. Un commandant ne peut pas construire un ordre qui demande à la porte plus de temps qu'elle n'en accorde |
+| `proof_timeview_refuses_stale_and_backwards` | un refus a **exactement** une de trois causes : horloge locale en arrière, vue périmée, débordement |
+| `proof_timeview_apply_is_monotone_within_a_boot` | une balise rejouée **ne change rien** ; une balise acceptée vient d'un autre boot ou fait avancer l'horloge |
+
+8 tests `tv_*`, dont deux de bout en bout **contre la porte réelle** : un ordre horodaté
+depuis une vue est accepté, le même horodaté depuis une vue du boot précédent est refusé.
+
+## K.6 Plan silicium
+
+Le point à démontrer est négatif et c'est le plus important : **le PC ne lit jamais
+l'horloge de C**. B construit l'ordre à partir de sa seule vue.
+
+| # | Test | Attendu |
+|---|---|---|
+| K1 | B sans vue, on demande un ordre | **refus de construire**, rien n'est émis |
+| K2 | C émet une balise `OTM1` (119 o), B la reçoit | B retient `(boot_id, now_ms)` ; la balise est vérifiée v0B |
+| K3 | B construit et envoie un ordre depuis sa vue | `Act` sur C, **sans aucune lecture USB de C** |
+| K4 | C redémarre, B garde sa vue périmée, B envoie | `Reject(Expired)` — le `boot_id` ne correspond plus |
+| K5 | C émet une nouvelle balise, B reconstruit | `Act` |
+| K6 | balise rejouée vers B | vue inchangée, et l'ordre suivant reste accepté |
+
+## K.7 Ce que la partie K ne fait pas
+
+- **Aucune synchronisation d'horloge** entre nœuds, et c'est voulu : OASIS n'a pas d'horloge
+  absolue et n'en veut pas. C'est ce qui le rend insensible au leurrage GPS qui ouvre un
+  rejeu sur la signature MAVLink ([`compliance/MAVLINK_SIGNING_GAP.md`](compliance/MAVLINK_SIGNING_GAP.md) L5).
+  Le revers est ici : il faut une balise.
+- **Aucun horodatage absolu dans le journal.** La partie I enregistre `boot_id` et le
+  compteur, pas une date. IEC 62443-4-2 **CR 2.11** demande des horodatages ; c'est l'une des
+  trois exigences restées ouvertes en §I.6, et la partie K ne la ferme pas — elle donne à un
+  **opérateur** de quoi rattacher un `boot_id` à une date, puisque lui a une horloge.
+- **Aucune rythmique de balise implémentée.** La règle « une au démarrage puis
+  périodiquement » est spécifiée ; le firmware de test émet sur commande (`@Zb`). Un
+  ordonnanceur appartient au produit, pas au banc.

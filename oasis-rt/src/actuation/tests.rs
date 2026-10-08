@@ -386,3 +386,84 @@ fn osb1_roundtrip_and_parser_is_strict() {
     bad[0] = b'X';
     assert_eq!(parse_osb1(&bad), None);
 }
+
+// ---------------------------------------------------------------------------
+// Part J — compact stop order OAS1
+// ---------------------------------------------------------------------------
+
+#[test]
+fn oas1_roundtrip_and_parser_is_strict() {
+    let o = StopOrder { actuator_id: 1, cmd_seq: 77 };
+    let b = encode_oas1(&o);
+    assert_eq!(b.len(), OAS1_LEN);
+    assert_eq!(b.len(), 11, "the whole point of part J is the size");
+    assert_eq!(parse_oas1(&b), Some(o));
+    assert_eq!(parse_oas1(&[]), None);
+    assert_eq!(parse_oas1(&b[..OAS1_LEN - 1]), None);
+    let mut bad = b;
+    bad[0] = b'X';
+    assert_eq!(parse_oas1(&bad), None, "wrong magic");
+    let mut res = b;
+    res[10] = 1;
+    assert_eq!(parse_oas1(&res), None, "the reserved byte must be zero: one encoding per stop");
+}
+
+/// On the wire a stop costs 110 bytes instead of 153 — the number section J.4 justifies the
+/// whole addition with. Asserted so it cannot drift silently.
+#[test]
+fn oas1_is_43_bytes_shorter_than_oac1() {
+    assert_eq!(OAC1_LEN - OAS1_LEN, 43);
+    let v0b_header = crate::mesh::MESH_V0B_HEADER_LEN;
+    assert_eq!(v0b_header + OAC1_LEN, 153);
+    assert_eq!(v0b_header + OAS1_LEN, 110);
+}
+
+#[test]
+fn oas1_actuator_zero_addresses_every_actuator() {
+    let all = StopOrder { actuator_id: OAS1_ALL_ACTUATORS, cmd_seq: 1 };
+    assert!(all.addresses(1), "0 means all, not actuator number zero");
+    assert!(all.addresses(2));
+    assert!(all.addresses(u16::MAX));
+    let one = StopOrder { actuator_id: 2, cmd_seq: 1 };
+    assert!(one.addresses(2));
+    assert!(!one.addresses(1));
+    assert!(!one.addresses(OAS1_ALL_ACTUATORS));
+}
+
+/// The equivalence that justifies dropping 43 bytes: a compact stop and an `OAC1` class
+/// `Stop` carrying the same id and sequence are decided identically, whatever the dropped
+/// fields held. Sampled here over values that would each refuse an `Act`; the general
+/// statement is `proof_oas1_equivalent_to_oac1_stop`.
+#[test]
+fn oas1_decides_like_an_oac1_stop() {
+    let o = StopOrder { actuator_id: 1, cmd_seq: 5 };
+    let long = encode_oac1_with_class(&o.as_act_command(), OrderClass::Stop);
+    let (parsed_long, class) = parse_oac1_any(&long).unwrap();
+    assert_eq!(class, OrderClass::Stop);
+    let parsed_short = parse_oas1(&encode_oas1(&o)).unwrap();
+    assert_eq!(parsed_long.actuator_id, parsed_short.actuator_id);
+    assert_eq!(parsed_long.cmd_seq, parsed_short.cmd_seq);
+
+    // Both route to the same rule, and the rule reads neither of them.
+    for i in [
+        StopInput { v0b_ok: true, stop_authorized: true, revoked: false },
+        StopInput { v0b_ok: false, stop_authorized: true, revoked: false },
+        StopInput { v0b_ok: true, stop_authorized: false, revoked: false },
+        StopInput { v0b_ok: true, stop_authorized: true, revoked: true },
+    ] {
+        let mut a = Actuator::new();
+        let mut b = Actuator::new();
+        assert_eq!(a.decide_stop(&i), b.decide_stop(&i));
+        assert_eq!(a.stopped, b.stopped);
+    }
+
+    // And the dropped fields really are arbitrary: an OAC1 stop whose setpoints would be
+    // refused as an act is still a stop.
+    let mut wild = o.as_act_command();
+    wild.force = f32::NAN;
+    wild.boot_id = u64::MAX;
+    wild.deadline_ms = 0;
+    let (p, c) = parse_oac1_any(&encode_oac1_with_class(&wild, OrderClass::Stop)).unwrap();
+    assert_eq!(c, OrderClass::Stop);
+    assert_eq!(p.cmd_seq, o.cmd_seq);
+}

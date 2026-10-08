@@ -126,3 +126,74 @@ pub fn parse_otm1(b: &[u8]) -> Option<(u64, u64)> {
     }
     Some((u64_at(b, 4), u64_at(b, 12)))
 }
+
+// ---------------------------------------------------------------------------
+// Part J — compact stop order `OAS1`
+// ---------------------------------------------------------------------------
+
+pub const OAS1_MAGIC: [u8; 4] = *b"OAS1";
+pub const OAS1_LEN: usize = 11;
+/// `actuator_id` 0 means **every actuator on the node**, not actuator number zero.
+pub const OAS1_ALL_ACTUATORS: u16 = 0;
+
+/// A stop order, carrying only what the stop rule reads.
+///
+/// Part G established that a stop is evaluated by **three** conditions — a valid v0B frame,
+/// the `STOP` permission, a non-revoked origin — so it need not carry the 43 bytes of
+/// `OAC1` that nothing reads: `boot_id`, `deadline_ms`, `force`, `torque`, `velocity`,
+/// `pos[3]`. 54 bytes become 11, and on the wire 153 become 110 (−28 %), which at SF12 in
+/// raw LoRa is 6 stops per hour instead of 8 (`docs/AUTHORITY_HARDENING_SPEC.md` §J.4).
+///
+/// `cmd_seq` is **not** evaluated either; it is kept so the journal can tell two stops
+/// apart, which part I needs for the trace to be usable as evidence.
+///
+/// `OAC1` with [`OrderClass::Stop`] stays valid: this is one more encoding, not a
+/// replacement, so nothing already proved on silicon is withdrawn.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StopOrder {
+    /// [`OAS1_ALL_ACTUATORS`] for every actuator on the node, else that one only.
+    pub actuator_id: u16,
+    pub cmd_seq: u32,
+}
+
+pub fn encode_oas1(o: &StopOrder) -> [u8; OAS1_LEN] {
+    let mut b = [0u8; OAS1_LEN];
+    b[0..4].copy_from_slice(&OAS1_MAGIC);
+    b[4..6].copy_from_slice(&o.actuator_id.to_le_bytes());
+    b[6..10].copy_from_slice(&o.cmd_seq.to_le_bytes());
+    // b[10] reserved, must stay zero: one encoding per stop.
+    b
+}
+
+/// Total on every input. The reserved byte must be zero, so a stop has exactly one
+/// encoding — the lesson of the `parse_oac1` fuzzing find and of the 4-byte hole Kani
+/// refuted in the journal entry.
+pub fn parse_oas1(b: &[u8]) -> Option<StopOrder> {
+    if b.len() != OAS1_LEN || b[0..4] != OAS1_MAGIC || b[10] != 0 {
+        return None;
+    }
+    Some(StopOrder { actuator_id: u16::from_le_bytes([b[4], b[5]]), cmd_seq: u32::from_le_bytes([b[6], b[7], b[8], b[9]]) })
+}
+
+impl StopOrder {
+    /// Does this stop address the actuator with id `id`?
+    pub fn addresses(&self, id: u16) -> bool {
+        self.actuator_id == OAS1_ALL_ACTUATORS || self.actuator_id == id
+    }
+
+    /// The equivalent `OAC1` class-`Stop` order, for the equivalence proof and for callers
+    /// that still speak the long format. The dropped fields take values the stop rule
+    /// never reads.
+    pub fn as_act_command(&self) -> ActCommand {
+        ActCommand {
+            actuator_id: self.actuator_id,
+            cmd_seq: self.cmd_seq,
+            boot_id: 0,
+            deadline_ms: 0,
+            force: 0.0,
+            torque: 0.0,
+            velocity: 0.0,
+            pos: [0.0, 0.0, 0.0],
+        }
+    }
+}

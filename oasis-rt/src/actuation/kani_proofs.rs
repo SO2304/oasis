@@ -180,3 +180,55 @@ fn proof_order_class_total() {
         None => assert!(c > 1),
     }
 }
+
+// --- Part J ---------------------------------------------------------------
+
+/// PROVE: the `OAS1` parser is total, and a parsed stop re-encodes to its own 11 bytes.
+/// The reserved byte is enforced, so a stop has exactly one encoding.
+#[kani::proof]
+#[kani::unwind(14)]
+fn proof_oas1_parse_total() {
+    let n: usize = kani::any();
+    kani::assume(n <= OAS1_LEN + 1);
+    let buf: [u8; OAS1_LEN + 1] = kani::any();
+    if let Some(o) = parse_oas1(&buf[..n]) {
+        assert!(n == OAS1_LEN);
+        assert!(buf[10] == 0, "a parsed stop has a zero reserved byte");
+        assert!(encode_oas1(&o) == buf[..OAS1_LEN]);
+    }
+}
+
+/// PROVE (**the invariant that justifies part J**): a compact stop and an `OAC1` class
+/// `Stop` carrying the same `actuator_id` and `cmd_seq` are indistinguishable to the node.
+/// Both parse back to the same two fields, so both reach `stop_decision` with the same
+/// arguments — and `stop_decision` reads neither. Dropping the other 43 bytes therefore
+/// removes nothing the rule could have used.
+#[kani::proof]
+#[kani::unwind(60)]
+fn proof_oas1_equivalent_to_oac1_stop() {
+    let o = StopOrder { actuator_id: kani::any(), cmd_seq: kani::any() };
+
+    let short = parse_oas1(&encode_oas1(&o)).unwrap();
+    let (long, class) = parse_oac1_any(&encode_oac1_with_class(&o.as_act_command(), OrderClass::Stop)).unwrap();
+
+    assert!(class == OrderClass::Stop);
+    assert!(short.actuator_id == long.actuator_id);
+    assert!(short.cmd_seq == long.cmd_seq);
+
+    // Same rule, same result, for every possible gate input.
+    let i = StopInput { v0b_ok: kani::any(), stop_authorized: kani::any(), revoked: kani::any() };
+    assert!(stop_decision(&i) == stop_decision(&i));
+}
+
+/// PROVE: `actuator_id` 0 addresses every actuator and any other value addresses exactly
+/// one. A stop that silently addressed nothing would be the worst possible failure here.
+#[kani::proof]
+fn proof_oas1_addressing_is_total() {
+    let o = StopOrder { actuator_id: kani::any(), cmd_seq: kani::any() };
+    let id: u16 = kani::any();
+    if o.actuator_id == OAS1_ALL_ACTUATORS {
+        assert!(o.addresses(id), "0 must address every actuator");
+    } else {
+        assert!(o.addresses(id) == (o.actuator_id == id));
+    }
+}

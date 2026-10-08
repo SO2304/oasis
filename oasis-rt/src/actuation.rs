@@ -44,8 +44,10 @@ pub const DEFAULT_VALIDITY_MS: u64 = 3_000;
 pub const MAX_VALIDITY_MS: u64 = 10_000;
 
 mod supervision;
+mod timeview;
 mod wire;
 pub use supervision::*;
+pub use timeview::*;
 pub use wire::*;
 
 /// `true` iff `clamp_command` changed nothing and saw no geofence breach.
