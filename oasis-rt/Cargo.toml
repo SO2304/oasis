@@ -172,3 +172,7 @@ path = "src/bin/bench_payload_sweep.rs"
 [[bin]]
 name = "oasis_journal_verify"
 path = "src/bin/oasis_journal_verify.rs"
+
+[[bin]]
+name = "px4_order_arm"
+path = "src/bin/px4_order_arm.rs"
