@@ -1,11 +1,12 @@
 # OASIS — Open Agentic System for Intelligent Simulation
 
-[![CI](https://github.com/oasis-project/oasis/actions/workflows/ci.yml/badge.svg)](https://github.com/oasis-project/oasis/actions)
+[![CI](https://github.com/SO2304/oasis/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/SO2304/oasis/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 
 Bio-inspired agentic middleware: tension fields, Hebbian/STDP synapses, emotional
-modulation, reflex arcs, federated learning. Runtime in Rust (30 modules, 443
-unit tests). Validated on:
+modulation, reflex arcs, federated learning. Runtime in Rust (47 modules, 649 lib tests, 689 across the workspace, 189 Kani proof
+harnesses of which 182 are verified on CI). `tools/check_claims.sh` re-derives every
+one of those numbers from the tree. Validated on:
 
 - **Real hardware (claimed)** — Samsung S23 FE (Android/Termux), 3h23 continuous
   session with real sensors (LSM6DSVTR IMU, barometer, light, mic), 121 290 ticks.
@@ -76,7 +77,7 @@ federated resonance.
 
 Source layout:
 ```
-oasis-rt/                # Rust — production runtime (30 modules, 443 tests, 18 bins)
+oasis-rt/                # Rust — production runtime (47 modules, 649 lib tests, 23 bins)
   src/vec.rs              # 128D vector algebra, zero-alloc
   src/hyper_state.rs      # Mechanism 2 — continuous state + entropy gate
   src/tension.rs          # Mechanism 1 — tension field, interference
@@ -102,7 +103,7 @@ docker run --rm oasis-rt
 ```bash
 cd oasis-rt
 cargo build --release
-cargo test --workspace --release # 443 unit tests
+cargo test --workspace --release # 689 tests
 ./target/release/drone_bridge patrol1 0 < sensor_stream.jsonl
 ```
 
@@ -206,7 +207,7 @@ physical flight with OASIS kernel onboard. Until then, cite this repository:
   title  = {OASIS: Bio-Inspired Agentic Middleware},
   author = {OASIS Project contributors},
   year   = {2026},
-  url    = {https://github.com/oasis-project/oasis},
+  url    = {https://github.com/SO2304/oasis},
   note   = {Research prototype, hardware validation in progress}
 }
 ```
