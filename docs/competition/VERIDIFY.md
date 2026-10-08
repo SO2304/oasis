@@ -109,7 +109,7 @@ prouvé ; **absent** = n'existe pas.
 | Certification | ISO 26262 ASIL D (2019) | **absent** | — |
 | Partenaires, clients | documentés (fabricants, distributeurs, AWS, Intel…) | **absents** | — |
 | Primitives standard uniquement | non (WalnutDSA, Ironwood) + ML-DSA/ML-KEM/Falcon | oui (Ed25519, X25519, ChaCha20-Poly1305, SHA-256) | `CLAUDE.md` |
-| Preuves brutes publiques | non | **non à ce jour : le dépôt est privé** (HTTP 404 anonyme, 2026-10-06) | — |
+| Preuves brutes publiques | non | **oui depuis le 2026-10-08** : `private: false`, HTTP 200 anonyme. Était **non** le 2026-10-06 (HTTP 404 anonyme), et c'est l'évolution, pas la correction d'une erreur | — |
 
 ## 8. Ce que cette veille corrige dans nos propres documents
 
@@ -125,7 +125,7 @@ prouvé ; **absent** = n'existe pas.
    état), non documentée chez Veridify.
 5. **Veridify a une certification** (ISO 26262 ASIL D, 2019) que nos documents
    n'indiquent pas dans « ce qu'ils font mieux ».
-6. **« Preuves brutes publiques » (M4) est faux tant que le dépôt est privé.**
+6. **« Preuves brutes publiques » (M4) était faux tant que le dépôt était privé — vrai depuis le 2026-10-08.**
 7. **Enrôlement** : notre firmware de test utilise des graines compilées
    (`seed_for`), ce qui est l'opposé d'une clé générée sur l'équipement.
 

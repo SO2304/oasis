@@ -149,7 +149,7 @@ un taux, pas un accident, et la règle qui en sort est écrite dans chaque corre
     est remplacée partout par ce qui est vrai : la suite **a produit deux
     contre-exemples**, ils étaient réels, ils sont corrigés. Une suite qui n'a jamais
     rien réfuté est une suite que personne n'a exécutée. `main` a aussi corrigé
-    **« preuves brutes publiques »** — le dépôt est privé.
+    **« preuves brutes publiques »** — le dépôt était privé à ce moment-là. Il est **public depuis le 2026-10-08**, donc l'affirmation est redevenue vraie ; la correction de `main` n'en était pas moins juste quand elle a été faite.
 
 12. **Un essai qui ne testait rien, pris pour un succès possible (B1 sur SITL).** Mon
     motif d'attente de PX4 acceptait n'importe quelle ligne `INFO [commander]`, qui
@@ -188,8 +188,8 @@ si elle ne l'est pas sur cette WSL de 3,3 Go. Elle n'a toujours **jamais** tourn
 seul tenant, ni en CI ni en local.
 
 Six conflits, **tous résolus en fusionnant les deux côtés**, jamais en choisissant.
-`main` apportait des faits que la branche n'avait pas : le dépôt est privé donc les
-preuves ne sont **pas** publiques, 17 partenaires Veridify nommés, la taille du firmware
+`main` apportait des faits que la branche n'avait pas : le dépôt était privé donc les
+preuves n'étaient **pas** publiques (il l'est devenu le 2026-10-08), 17 partenaires Veridify nommés, la taille du firmware
 en flash, une ligne de déploiement passerelle Modbus, une couche d'architecture
 « identité et cycle de vie », et le paragraphe de loyauté sur WalnutDSA. La branche
 apportait les neuf conditions de la porte, les chiffres courants et la phase 5.
