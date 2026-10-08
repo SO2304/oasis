@@ -43,7 +43,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use oasis_rt::mbtcp_conf::Config;
-use oasis_rt::mbtcp_pilot::{handle_gateway_conn, GatewayState, Served};
+use oasis_rt::mbtcp_pilot::{serve_gateway_conn, GatewayState, Served};
 use oasis_rt::mesh::MeshRouter;
 
 fn main() {
@@ -86,21 +86,20 @@ fn main() {
                 let conf = conf.clone();
                 std::thread::spawn(move || {
                     let peer = s.peer_addr().map(|a| a.to_string()).unwrap_or_default();
-                    let served = {
-                        let mut st = state.lock().unwrap();
-                        handle_gateway_conn(&mut s, &mut st, &conf)
-                    };
-                    match served {
-                        Ok(Served::Clock { boot_id }) => println!("GATEWAY {peer} CLOCK boot_id={boot_id}"),
-                        Ok(Served::MeshDrop(why)) => println!("GATEWAY {peer} MESH_DROP why={why:?} -> no PLC write"),
-                        Ok(Served::NotAnOrder) => println!("GATEWAY {peer} NOT_AN_ORDER -> no PLC write"),
-                        Ok(Served::Decided { cmd_seq, decision, outcome, plc_written }) => {
+                    let log = |served: Served| match served {
+                        Served::Clock { boot_id } => println!("GATEWAY {peer} CLOCK boot_id={boot_id}"),
+                        Served::MeshDrop(why) => println!("GATEWAY {peer} MESH_DROP why={why:?} -> no PLC write"),
+                        Served::NotAnOrder => println!("GATEWAY {peer} NOT_AN_ORDER -> no PLC write"),
+                        Served::Decided { cmd_seq, decision, outcome, plc_written } => {
                             println!("GATEWAY {peer} seq={cmd_seq} {decision:?} outcome={outcome:?} plc_written={plc_written}")
                         }
-                        // The normal end of a short exchange, and also what a third party
-                        // poking the port produces. Logged, never fatal: one bad peer must
-                        // not stop the gateway.
-                        Err(e) => println!("GATEWAY {peer} conn_end err={:?}", e.kind()),
+                    };
+                    // The normal end of a connection is an error kind: the agent closed,
+                    // or said nothing before the timeout. Also what a third party poking
+                    // the port produces. Logged, never fatal: one bad peer must not stop
+                    // the gateway.
+                    if let Err(e) = serve_gateway_conn(&mut s, &state, &conf, log) {
+                        println!("GATEWAY {peer} conn_end err={:?}", e.kind());
                     }
                 });
             }

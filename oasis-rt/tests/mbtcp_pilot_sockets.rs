@@ -23,9 +23,13 @@ use std::time::{Duration, Instant};
 
 use oasis_rt::mbtcp_conf::Config;
 use oasis_rt::mbtcp_net::{connect_timeout, modbus_read_request, read_frame, write_frame};
-use oasis_rt::mbtcp_pilot::{handle_gateway_conn, serve_hmi, AgentState, GatewayState, SeqStore, Served};
+use oasis_rt::mbtcp_pilot::{serve_gateway_conn, serve_hmi, AgentState, GatewayState, SeqStore, Served};
 use oasis_rt::mesh::{mesh_v10_pubkey_from_seed, MeshEdSeed, MeshPubRegistry, MeshRouter, FP_LEN, MESH_V0B_NETWORK_LEN};
 use oasis_rt::modbus_gateway::RegRule;
+use rmodbus::server::context::ModbusContext;
+use rmodbus::server::storage::ModbusStorageSmall;
+use rmodbus::server::ModbusFrame;
+use rmodbus::{ModbusFrameBuf, ModbusProto};
 
 const NET: [u8; MESH_V0B_NETWORK_LEN] = *b"OASISnet";
 const UNIT: u8 = 0x11;
@@ -67,34 +71,53 @@ fn conf(listen: &str, peer: &str) -> Config {
     }
 }
 
-/// A minimal Modbus TCP server standing in for the PLC, backed by `rmodbus`'s frame
-/// handling. It counts every write it applies.
-fn spawn_plc(writes: Arc<AtomicU32>) -> String {
+/// The PLC: a Modbus TCP server whose frames are parsed and applied by **`rmodbus`**,
+/// which contains no OASIS code. It counts the writes it applies and keeps the register
+/// values, so a test can check both that a write happened and what landed.
+///
+/// This used to be a hand-written responder that echoed the request back, while the file
+/// said three times that the PLC was an `rmodbus` server. It was not, so "an independent
+/// implementation applied the frame" — the whole point of using one — was unearned here;
+/// only the RTU tests had it. Now the frame really has to satisfy `rmodbus`'s parser in
+/// `ModbusProto::TcpUdp`, and the value read back comes out of its storage.
+fn spawn_plc(writes: Arc<AtomicU32>, store: Arc<Mutex<ModbusStorageSmall>>) -> String {
     let srv = TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = srv.local_addr().unwrap().to_string();
     thread::spawn(move || {
         for s in srv.incoming() {
             let Ok(mut s) = s else { continue };
             let writes = Arc::clone(&writes);
+            let store = Arc::clone(&store);
             thread::spawn(move || {
                 s.set_read_timeout(Some(Duration::from_millis(1500))).ok();
                 while let Ok(req) = modbus_read_request(&mut s) {
-                    // FC06 and FC16 are writes; echo the Modbus TCP ack and count it.
-                    if req.len() >= 8 && (req[7] == 0x06 || req[7] == 0x10) {
-                        writes.fetch_add(1, Ordering::SeqCst);
-                        let mut resp = Vec::new();
-                        resp.extend_from_slice(&req[0..4]); // tid + protocol
-                        resp.extend_from_slice(&6u16.to_be_bytes());
-                        resp.push(req[6]); // unit
-                        resp.push(req[7]); // fc
-                        resp.extend_from_slice(&req[8..12]); // echo addr + value/qty
-                        if s.write_all(&resp).is_err() {
-                            return;
-                        }
-                        let _ = s.flush();
-                    } else {
+                    let mut buf: ModbusFrameBuf = [0; 256];
+                    if req.len() > buf.len() {
                         return;
                     }
+                    buf[..req.len()].copy_from_slice(&req);
+                    let mut resp = Vec::new();
+                    let mut f = ModbusFrame::new(UNIT, &buf, ModbusProto::TcpUdp, &mut resp);
+                    if f.parse().is_err() {
+                        return; // rmodbus rejected the frame: nothing is applied
+                    }
+                    if f.processing_required {
+                        let mut st = store.lock().unwrap();
+                        let r = if f.readonly { f.process_read(&mut *st) } else { f.process_write(&mut *st) };
+                        if r.is_err() {
+                            return;
+                        }
+                        if !f.readonly {
+                            writes.fetch_add(1, Ordering::SeqCst);
+                        }
+                    }
+                    if f.response_required && f.finalize_response().is_err() {
+                        return;
+                    }
+                    if s.write_all(&resp).is_err() {
+                        return;
+                    }
+                    let _ = s.flush();
                 }
             });
         }
@@ -116,11 +139,11 @@ fn spawn_gateway(conf: Config, log: Arc<Mutex<Vec<Served>>>) -> String {
             let conf = conf.clone();
             let log = Arc::clone(&log);
             thread::spawn(move || {
-                let mut guard = st.lock().unwrap();
-                match handle_gateway_conn(&mut s, &mut guard, &conf) {
-                    Ok(served) => log.lock().unwrap().push(served),
-                    Err(_) => {} // a third party poking the port, or a closed connection
-                }
+                // `serve_gateway_conn`, not one call to `handle_gateway_conn`: the agent
+                // keeps its connection open across writes, so the gateway must serve more
+                // than one frame on it. It takes the state lock per frame, which is also
+                // what lets a second agent in while the first holds a connection.
+                let _ = serve_gateway_conn(&mut s, &st, &conf, |served| log.lock().unwrap().push(served));
             });
         }
     });
@@ -186,7 +209,8 @@ fn hmi_write(agent: &str, tid: u16, reg: u16, value: u16) -> (u8, u8) {
 #[test]
 fn hmi_agent_gateway_plc_over_real_sockets() {
     let writes = Arc::new(AtomicU32::new(0));
-    let plc = spawn_plc(Arc::clone(&writes));
+    let store = Arc::new(Mutex::new(ModbusStorageSmall::new()));
+    let plc = spawn_plc(Arc::clone(&writes), Arc::clone(&store));
     let log = Arc::new(Mutex::new(Vec::new()));
     let gw = spawn_gateway(conf("127.0.0.1:0", &plc), Arc::clone(&log));
     let agent = spawn_agent(conf("127.0.0.1:0", &gw));
@@ -196,6 +220,7 @@ fn hmi_agent_gateway_plc_over_real_sockets() {
     let (fc, _) = hmi_write(&agent, 1, REG_OK, 500);
     assert_eq!(fc, 0x06, "a legitimate write must be acknowledged, not excepted");
     assert_eq!(writes.load(Ordering::SeqCst), 1, "exactly one write reached the PLC");
+    assert_eq!(store.lock().unwrap().get_holding(REG_OK).unwrap(), 500, "rmodbus parsed the gateway's frame and stored the ordered value");
 
     // 2. A register outside the map: refused, and the PLC is untouched.
     let (fc, code) = hmi_write(&agent, 2, REG_OK + 7, 1);
@@ -380,7 +405,7 @@ fn a_dead_gateway_still_answers_the_hmi() {
 #[test]
 fn a_read_is_refused_not_relayed() {
     let writes = Arc::new(AtomicU32::new(0));
-    let plc = spawn_plc(Arc::clone(&writes));
+    let plc = spawn_plc(Arc::clone(&writes), Arc::new(Mutex::new(ModbusStorageSmall::new())));
     let log = Arc::new(Mutex::new(Vec::new()));
     let gw = spawn_gateway(conf("127.0.0.1:0", &plc), log);
     let agent = spawn_agent(conf("127.0.0.1:0", &gw));
