@@ -683,17 +683,13 @@ fn main() -> ! {
     // chain for THIS boot (the chain is boot-bound by `genesis`), while the stored
     // entries stay readable, so a power cut can be inspected afterwards.
     let (jrn_restored, jrn_prev_boot) = efs.open_journal();
-    io.log(
-        "JRN_OPEN",
-        format_args!(
-            "restored={},prev_boot={:?},boot_id={},seq={:?},capacity={}",
-            jrn_restored,
-            jrn_prev_boot,
-            boot_id,
-            efs.journal.as_ref().and_then(|j| j.head.seq),
-            jstore::CAPACITY
-        ),
-    );
+    // DO NOT add a log line here. This runs BEFORE the main loop, so before the image
+    // confirms itself and before the watchdog is fed, and `Io::log` spins waiting for a
+    // USB reader. With nobody draining the port the 8 s watchdog fires, three boots in a
+    // row, and the bootloader parks the board in BOOTSEL — which is exactly how board C
+    // boot-looped on 2026-10-08. It is the same defect the phase 2.1 report recorded for
+    // the per-frame log, reintroduced at boot time. `@Zd` reports these values instead.
+    let _ = (jrn_restored, jrn_prev_boot);
     // Phase 1.4: the Modbus gateway's own gate state (not the LED actuator's).
     let mut gw = mbg::Gateway::new();
     let mut gws = GwStats::default();
@@ -1410,7 +1406,13 @@ fn main() -> ! {
                                 io.log("JRN_E", format_args!("{} slot={}", Hx(&e), slot));
                                 n += 1;
                             }
-                            io.log("JRN_END", format_args!("entries={},capacity={}", n, jstore::CAPACITY));
+                            io.log(
+                                "JRN_END",
+                                format_args!(
+                                    "entries={},capacity={},restored={},prev_boot={:?}",
+                                    n, jstore::CAPACITY, jrn_restored, jrn_prev_boot
+                                ),
+                            );
                         }
                         _ => io.log("JRN_END", format_args!("entries=0,capacity=0,no_journal")),
                     },
