@@ -56,6 +56,10 @@ pub mod mbtcp_net;
 // testable, not duplicated in two bins.
 #[cfg(feature = "std")]
 pub mod mbtcp_conf;
+// mbtcp_pilot: the gateway and agent logic, in the library so the integration test
+// exercises the shipped path and not a copy of it.
+#[cfg(all(feature = "std", feature = "mesh_v10"))]
+pub mod mbtcp_pilot;
 pub mod nav;
 pub mod ownership;
 pub mod parameters;
