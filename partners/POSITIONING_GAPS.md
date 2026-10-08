@@ -223,7 +223,7 @@ Trois statuts, et un seul donne le droit d'une affirmation publique :
 | **C10** assurance logicielle | **partiellement fermé** | `cargo-fuzz` sur 9 parseurs (une anomalie trouvée : encodage non canonique d'`OAC1`, corrigée), `cargo-audit`, `cargo-deny`, SBOM CycloneDX, `SECURITY.md` : `evidence/fuzz/2026-10-07/` et `evidence/supply-chain/2026-10-07/`. **Balayage séquentiel du 2026-10-08** (`evidence/kani/2026-10-08/sweep/`, empreinte `fb1db2c`) : **175 des 182 harnais vérifiés, 0 réfuté, 0 indéterminé**, un harnais à la fois, ~1 h 10 sur les mêmes 3 381 Mo. L'OOM du passage intégral du 2026-10-07 (130/152) venait du **parallélisme**, pas des harnais. ⚠️ Les **7 lourds** ne sont pas tentés en local — le script de shards leur donne 60 min chacun, seuls, sur CI — donc « 182/182 » reste faux. |
 | **C11** routage, radio réelle, énergie | **ouvert** | **Aucune radio n'a jamais émis.** Le pilote SX1262 existe et n'est testé que contre un mock. Tous les budgets sont calculés. L'énergie n'est pas mesurée |
 | **C12** vivacité de la supervision | **fermé avec preuve** | Partie H : `OSB1` (kind 4), `MAX_SUPERVISION_MS = 300_000`, et la supervision est un **choix explicite de constructeur** (`new_supervised()`), pas un défaut caché. Silicium. ⚠️ Un défaut trouvé pendant les essais : `content_kind` ne connaissait pas `OSB1`, donc la partie H ne faisait **rien** en journalisant « vérifié » — corrigé (`a09781e`) |
-| **C13** v0B et v0C ne chiffrent pas | **ouvert** | La charge utile d'un ordre circule **en clair**. L'AEAD existe à la couche spore, pas en mesh. Aucun travail fait |
+| **C13** v0B et v0C ne chiffrent pas | **fermé avec preuve** | `sealed` (`OSE1`, 2026-10-08) : la charge utile est scellée **de l'origine à l'actionneur adressé**, clé dérivée des deux identités par `HKDF-SHA256(X25519(...))` avec son propre domaine — **rien n'est distribué** et **un relais n'a aucune clé**, à la différence de la clé par lien du pré-filtre. L'AAD lie domaine, réseau, les deux empreintes et le compteur, donc un chiffré sorti d'une enveloppe ne s'ouvre pas dans une autre ; le nonce vient du compteur v0B, strictement croissant et persisté. **v0B et la porte sont inchangés** : un blob scellé est une charge utile comme une autre, et `open` rend les octets `OAC1` que la règle de la partie F lit sans modification. 8 tests (dont balayage exhaustif d'inversion d'un octet et cinq AAD erronés), **5 preuves Kani 5/5** avec contrôle négatif 2/2 (`evidence/kani/2026-10-08/sealed/`). Surcoût **50 o** : un ordre scellé fait 203 o sur le fil, toujours une trame. ⚠️ **N'occulte pas l'adressage** — origine, compteur, longueur et destinataire restent lisibles, donc l'**analyse de trafic n'est pas fermée**. ⚠️ **Rien sur silicium** : le firmware n'émet ni n'accepte `OSE1` |
 | **C14** stockage sécurisé | **ouvert** | **Ne se ferme pas en logiciel.** Clé privée lisible en flash par BOOTSEL ou SWD, aucun élément sécurisé, aucun effacement sûr. C'est la première objection d'un RSSI et la réponse honnête est « il faut un autre silicium » |
 
 ### D — marché et entreprise
@@ -244,10 +244,10 @@ Trois statuts, et un seul donne le droit d'une affirmation publique :
 
 | Statut | A | B | C | D | **Total** |
 |---|---:|---:|---:|---:|---:|
-| Fermé avec preuve | 1 | 1 | 7 | 0 | **9** |
+| Fermé avec preuve | 1 | 1 | 8 | 0 | **10** |
 | Fermé (documentaire) | 1 | 0 | 1 | 2 | **4** |
 | Partiellement fermé | 5 | 2 | 3 | 2 | **12** |
-| Ouvert | 4 | 3 | 3 | 4 | **14** |
+| Ouvert | 4 | 3 | 2 | 4 | **13** |
 | Sans objet / information | 1 | 1 | 0 | 1 | **3** |
 | | **12** | **7** | **14** | **9** | **42** |
 
