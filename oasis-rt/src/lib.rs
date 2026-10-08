@@ -52,6 +52,10 @@ pub mod nav;
 pub mod ownership;
 pub mod parameters;
 pub mod quorum;
+// sealed: OSE1, end-to-end confidentiality for a mesh payload (C13). Needs mesh_v10
+// for the identity keys it derives from.
+#[cfg(feature = "mesh_v10")]
+pub mod sealed;
 pub mod services;
 #[cfg(feature = "std_env")]
 pub mod spore;

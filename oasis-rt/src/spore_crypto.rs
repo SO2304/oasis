@@ -58,7 +58,9 @@ pub const NONCE_LEN: usize = 12;
 pub const TAG_LEN: usize = 16;
 pub const X25519_PUBKEY_LEN: usize = 32;
 pub const X25519_PRIVKEY_LEN: usize = 32;
-const HEADER_LEN: usize = 6 + NONCE_LEN + 4; // v3: magic + nonce + ct_len
+/// v3 envelope header: magic + nonce + ct_len. Public because `sealed` wraps a v3
+/// envelope and must state its own overhead from this number rather than copy it.
+pub const HEADER_LEN: usize = 6 + NONCE_LEN + 4;
 const V4_HEADER_LEN: usize = 6 + X25519_PUBKEY_LEN + NONCE_LEN + 4; // v4: + eph_pub
 pub const SENDER_FP_LEN: usize = 8;
 const V5_HEADER_LEN: usize = 6 + SENDER_FP_LEN + X25519_PUBKEY_LEN + NONCE_LEN + 4;
