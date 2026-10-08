@@ -1,7 +1,9 @@
-### campaign start 2026-10-08T08:48:01Z
-OASIS|A|MODBUS|MB_DEV_STATUS|rx_bytes=0,rx_errors=0,overflow=0,frames=0,parse_errors=0,writes=0,local_frames=0|device|a39d5fe
-OASIS|A|MODBUS|MB_DEV_REGS|r10=0,r11=0,r12=0,r20=0|device|a39d5fe
-OASIS|B|UART|FW_STATUS|version=21,floor=21,boot=Normal,bootloader_state=Boot,fp=f6bd34440030a136,guard_failed_before=0|mesh|c171281
-OASIS|C|UART|FW_STATUS|version=21,floor=21,boot=Normal,bootloader_state=Boot,fp=a7089677a10b7fb0,guard_failed_before=0|mesh|c171281
-### C boot_id=44513 now_ms=148045
-### campaign part 1 done 2026-10-08T08:50:33Z
+### campaign start 2026-10-08T09:05:41Z
+OASIS|A|MODBUS|MB_DEV_STATUS|rx_bytes=16,rx_errors=0,overflow=0,frames=2,parse_errors=0,writes=2,local_frames=0|device|a39d5fe
+OASIS|A|MODBUS|MB_DEV_REGS|r10=232,r11=0,r12=0,r20=0|device|a39d5fe
+OASIS|B|UART|FW_STATUS|version=22,floor=22,boot=Normal,bootloader_state=Boot,fp=f6bd34440030a136,guard_failed_before=0|mesh|13a3b5c
+OASIS|C|UART|FW_STATUS|version=22,floor=22,boot=Normal,bootloader_state=Boot,fp=a7089677a10b7fb0,guard_failed_before=0|mesh|13a3b5c
+### C boot_id=45792 now_ms=125801
+### campaign part 1 done 2026-10-08T09:08:13Z
+### part 2 start 2026-10-08T09:09:39Z, C boot_id=45792
+### part 2 done 2026-10-08T09:13:02Z

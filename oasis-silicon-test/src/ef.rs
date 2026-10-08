@@ -124,6 +124,11 @@ pub fn hex_decode(s: &[u8], out: &mut [u8]) -> Option<usize> {
     Some(s.len() / 2)
 }
 
+/// WARNING: this list is parallel to the dispatch in uart_mesh.rs. A kind missing here
+/// returns "other", so its match arm becomes UNREACHABLE and the payload is silently
+/// relayed instead of consumed. That is how the part H beacon did nothing on silicon on
+/// 2026-10-08: the frame arrived, the signature verified, and OSB1 was forwarded.
+/// Add a kind here in the same commit that adds its handler.
 pub fn content_kind(payload: &[u8]) -> &'static str {
     match payload.get(0..4) {
         Some(b"ORV1") => "ORV1",
@@ -132,6 +137,7 @@ pub fn content_kind(payload: &[u8]) -> &'static str {
         Some(b"OFR1") => "OFR1",
         Some(b"OAU1") => "OAU1",
         Some(b"OMB1") => "OMB1",
+        Some(b"OSB1") => "OSB1",
         _ => "other",
     }
 }
