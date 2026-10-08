@@ -91,20 +91,39 @@ if [ "$FULL" = 1 ]; then
   echo "== suites (--full) =="
   lib=$(cargo test -p oasis-rt --release --lib -- --list 2>/dev/null | grep -c ': test$')
   claim "tests lib oasis-rt" \
-    "$(grep -oE '\*\*[0-9]+ \`oasis-rt\` lib tests' CLAUDE.md | head -1 | grep -oE '[0-9]+')" "$lib"
+    "$(grep -oE '[*][*][0-9]+ .oasis-rt. lib tests' CLAUDE.md | head -1 | grep -oE '[0-9]+' | head -1)" "$lib"
   echo
   echo "== manifestes de preuves (--full) =="
-  n=0; bad=0
+  # The working tree is not the authority: a checkout can carry local divergence that
+  # git itself does not report (two 2026-10-04 logs have 10 extra bytes on one machine
+  # while the blobs match the manifest, and all 27 verify in a fresh clone). So a
+  # working-tree failure is re-tested against the blobs before it is called a break.
+  n=0; bad=0; local_only=0
   while IFS= read -r m; do
     n=$((n + 1))
     d=$(dirname "$m")
-    ( cd "$d" && sha256sum -c SHA256SUMS --quiet >/dev/null 2>&1 ) \
-      || { echo "  ECHEC $d"; bad=$((bad + 1)); }
+    if ( cd "$d" && sha256sum -c SHA256SUMS --quiet >/dev/null 2>&1 ); then
+      continue
+    fi
+    # Same manifest, blob content.
+    blob_bad=0
+    while read -r want name; do
+      name=${name#\*}
+      got=$(git show "HEAD:$d/$name" 2>/dev/null | sha256sum | cut -d' ' -f1)
+      [ "$got" = "$want" ] || blob_bad=$((blob_bad + 1))
+    done < "$m"
+    if [ "$blob_bad" = 0 ]; then
+      echo "  local $d (disque divergent, blobs conformes — verifier dans un clone frais)"
+      local_only=$((local_only + 1))
+    else
+      echo "  ECHEC $d ($blob_bad fichier(s) dont le blob ne correspond pas)"
+      bad=$((bad + 1))
+    fi
   done < <(find evidence -name SHA256SUMS 2>/dev/null)
-  if [ "$bad" = 0 ]; then
-    echo "  ok    $n manifestes verifies"
-  else
-    echo "  $bad manifeste(s) en echec sur $n"
+  echo "  ok    $((n - bad - local_only))/$n manifestes verifies dans l arbre de travail"
+  [ "$local_only" = 0 ] || echo "        + $local_only avec divergence locale seulement (blobs conformes)"
+  if [ "$bad" != 0 ]; then
+    echo "  $bad manifeste(s) reellement casse(s)"
     fail=$((fail + bad))
   fi
 fi
