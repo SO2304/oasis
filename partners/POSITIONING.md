@@ -86,8 +86,9 @@ lue dans la flash d'un RP2040), le budget par liaison borne le calcul du relais 
 Et sur le logiciel : Rust `no_std`, **662 tests**, **182 harnais Kani**. Sur les 149
 d'avant cette branche, **123 ont été vérifiés en CI** le 2026-10-06 et 6 ne l'ont pas
 été, nommés ; les 33 ajoutés ici sont vérifiés par campagne, chacune avec son contrôle
-négatif. ⚠️ **Aucune suite complète sur les 182 n'a jamais tourné**, ni en CI ni en
-local — « 182/182 » serait faux — et la suite **a produit deux contre-exemples réels**
+négatif. **175 des 182 ont été vérifiés d'un seul balayage séquentiel** le 2026-10-08, 0 réfuté,
+0 indéterminé ; les **7 lourds** restent à la CI, donc « 182/182 » serait encore faux. Et la
+suite **a produit deux contre-exemples réels**
 sur des harnais mesh, corrigés le 2026-10-08 : ce n'est pas une suite « sans
 contre-exemple », c'est une suite qui a servi. Plus 1,5 × 10⁹ exécutions de fuzzing pour
 un seul défaut trouvé et corrigé, SBOM CycloneDX et **0 vulnérabilité connue** sur les

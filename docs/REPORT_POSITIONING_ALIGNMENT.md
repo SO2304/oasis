@@ -230,7 +230,7 @@ couverture des shards verte, et `origin/main` est **ancêtre de HEAD** — donc 
 | **D5** une seule personne | Un engagement, pas une tâche technique. **D9** est désormais écrit dans `SECURITY.md` : aucune période de support n'est due aujourd'hui (hors champ du CRA faute de monétisation), et ce qui changerait le jour de la monétisation est dit, avec la réponse « non, pas seul » |
 | **C6** rotation de clé de nœud | Nommé dans `KEY_LIFECYCLE.md` §6. C'est le prérequis qui gouverne toute migration cryptographique |
 | **C3** duty-cycle | **Fermé le 2026-10-08** : appliqué par le transport, qui refuse d'émettre hors budget. Restent la formule non vérifiée à la source et l'absence de radio |
-| **C10** suite Kani complète | 130/152 au seul passage intégral ; **182 harnais existent**. « 182/182 » serait faux |
+| **C10** suite Kani complète | **175/182 vérifiés** le 2026-10-08 en balayage séquentiel, 0 réfuté ; les 7 lourds restent à la CI, donc « 182/182 » serait encore faux |
 
 ---
 
