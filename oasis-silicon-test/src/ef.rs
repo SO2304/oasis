@@ -9,7 +9,7 @@ use oasis_rt::actuation::{
     command_within_limits, ActCommand, Actuator, Decision, GateInput, OrderClass, StopDecision, StopInput,
     SupervisionBeacon,
 };
-use oasis_rt::journal::{Journal, LoggedDecision, FLAG_R14_SAFE, FLAG_STOPPED, FLAG_SUPERVISION_LIVE, FLAG_WITHIN_LIMITS};
+use oasis_rt::journal::{ChangeKind, Journal, LoggedDecision, FLAG_R14_SAFE, FLAG_STOPPED, FLAG_SUPERVISION_LIVE, FLAG_WITHIN_LIMITS};
 use oasis_rt::authority::{kind, verify_authority, AuthPolicy};
 use oasis_rt::enrollment::{perm, Registry};
 use oasis_rt::ownership::{OwnerKeys, OwnerState};
@@ -212,6 +212,30 @@ impl Ef {
         let j = self.journal.as_mut()?;
         let store = self.jstore.as_mut()?;
         let bytes = j.append(*origin, cmd_seq, class, decision, flags);
+        let seq = j.head.seq;
+        let discarded = store.append_entry(&bytes);
+        j.head.overwritten = j.head.overwritten.saturating_add(discarded);
+        self.j_pending += 1;
+        store.commit_head(&j.head);
+        self.j_pending -= 1;
+        seq
+    }
+
+    /// Append one **change** to the software or its configuration and persist it the same
+    /// way — Annex III 1.1.9 ¶5: "evidence of a legitimate or illegitimate intervention in
+    /// the software or a modification of the software installed … or its configuration".
+    ///
+    /// `authority` is who signed the change (operator or owner), `ident` its own monotone
+    /// number (installed version, revocation epoch, `enroll_seq`, policy kind, transfer
+    /// counter). A **refused** change is recorded too: the clause says "legitimate **or
+    /// illegitimate**", so the attempt that failed is the evidence an investigator wants.
+    ///
+    /// Same chain, same two-write order, same ring as `log_decision` — a change is not a
+    /// second journal with second properties.
+    pub fn log_change(&mut self, authority: &Fp, ident: u32, kind: ChangeKind, applied: bool) -> Option<u32> {
+        let j = self.journal.as_mut()?;
+        let store = self.jstore.as_mut()?;
+        let bytes = j.append_change(*authority, ident, kind, applied);
         let seq = j.head.seq;
         let discarded = store.append_entry(&bytes);
         j.head.overwritten = j.head.overwritten.saturating_add(discarded);

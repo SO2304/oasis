@@ -210,11 +210,31 @@ Légende : ✅ prouvé sur silicium · 🟡 partiel · ❌ absent
 | al. 2 (2ᵈᵉ phrase) | **Recueillir la preuve** d'une intervention, légitime ou illégitime, dans ce composant matériel | ❌ | — | Aucune détection d'intrusion matérielle, aucune trace |
 | al. 3 | Les logiciels et données essentiels sont **identifiés comme tels** et protégés | 🟡 L'image est couverte par un condensé SHA-256 dans un manifeste signé ; un plancher anti-retour en arrière est persisté en flash sur deux emplacements | `evidence/silicon/2026-10-06/fwupdate/REPORT.md` : image altérée d'un octet → `HashMismatch` ; v1 ancienne → `Rollback` | L'**identification documentaire** (« identifiés comme tels ») n'existe pas : aucune liste des logiciels et données essentiels à la sécurité. Les clés privées sont lisibles en flash |
 | al. 4 | La machine **identifie les logiciels installés** nécessaires à son fonctionnement sûr et fournit cette information **à tout moment sous une forme aisément accessible** | 🟡 La commande `@V` renvoie `version`, `floor`, état de démarrage, état du chargeur d'amorçage et empreinte du nœud | [`uart_mesh.rs:1317`](../../oasis-silicon-test/src/bin/uart_mesh.rs#L1317) ; `evidence/silicon/2026-10-06/fwupdate/REPORT.md` | `version` est une **constante de compilation**, pas un condensé mesuré de l'image en cours d'exécution ; accessible par USB seulement, pas par le mesh ; interface de test, non spécifiée comme interface produit |
-| al. 5 | **Recueillir la preuve** d'une intervention, légitime ou illégitime, dans les logiciels, ou d'une modification du logiciel ou de **sa configuration** | ❌ **C'est le manque central.** Les refus sont comptés en RAM (`PfStats`) et perdus au redémarrage ; aucun module de journal n'existe (`ls oasis-rt/src/` : pas d'`audit`, pas de `journal`) | — | `POSITIONING_GAPS.md` **C5**. Journal en chaîne de hachages, persisté, avec raison, compteur, origine et `boot_id`, vérifiable depuis le PC |
+| al. 5, 1ᵉʳ déclencheur | **Recueillir la preuve** d'une intervention, légitime ou illégitime, **dans les logiciels** | ✅ Journal en chaîne de hachages (partie I) : `h_n = SHA-256(DOMAIN‖h_{n−1}‖e_n)`, **toute** décision du chemin des commandes, acceptée *et refusée*, avec origine, `cmd_seq`, `boot_id` et drapeaux ; persisté entrée puis tête, vérifié depuis le PC par `oasis_journal_verify` recoupé contre une implémentation Python indépendante | `evidence/silicon/2026-10-08/hardening/` : journal relu de la flash **intact, exit 0** sur 10 entrées dont **4 refus** ; un bit inversé → exit 1 ; **S8, coupure d'alimentation réelle** — les entrées survivent et vérifient contre la tête capturée avant la coupure | Couvre le **chemin des commandes**, pas une intervention sur le logiciel par un autre moyen (BOOTSEL, SWD) |
+| al. 5, 2ᵉ et 3ᵉ déclencheurs | **Recueillir la preuve** d'une **modification du logiciel installé** ou de **sa configuration** | ✅ `journal::ChangeKind` + `Journal::append_change` (2026-10-08) : installation de firmware, enrôlement, liste de révocation, élévation de politique, transfert de propriété — chacun sur **la même** chaîne de hachages, avec **qui l'a autorisé**, le numéro propre du changement (version installée, époque, `enroll_seq`, type de politique, compteur de transfert) et un bit **appliqué ou refusé** — un changement refusé est conservé, puisque la phrase dit « légitime **ou illégitime** ». Format d'entrée **inchangé** : rien de neuf à faire confiance | 6 tests + **6 harnais Kani vérifiés 6/6** (`evidence/kani/2026-10-08/journal-change/`, 2 contrôles négatifs en échec sur une propriété nommée, 0 `unwinding assertion`) ; câblé aux cinq sites réels du firmware, **+1 Kio de flash** | ⚠️ **Rien sur silicium** : le câblage compile mais aucune carte n'a été reflashée, donc la démonstration manque. La carte de registres Modbus reste **compilée**, donc son changement n'est pas un événement |
 
-**Bilan 1.1.9 : OASIS couvre la moitié « rejeter la corruption » et pas la moitié « en garder la
-preuve ».** Trois des cinq alinéas exigent une trace ou un inventaire ; deux sont absents et un
-est partiel. C'est le travail le plus directement vendable à l'échéance de janvier 2027.
+**Bilan 1.1.9, au 2026-10-09.** OASIS couvre la moitié « rejeter la corruption », et
+désormais **la moitié « en garder la preuve » pour tout ce qui passe par le logiciel** :
+les décisions (partie I) et, depuis le 2026-10-08, les **changements de logiciel et de
+configuration** (alinéa 5, 2ᵈ et 3ᵉ déclencheurs).
+
+**Ce qui reste absent, et pourquoi :**
+
+- **Alinéa 2, 2ᵈᵉ phrase — la preuve d'une intervention dans le composant *matériel*.**
+  Ne se ferme pas en logiciel : aucun programme ne détecte qu'on a branché BOOTSEL ou SWD.
+  Il faut du matériel — élément sécurisé à broche d'alerte, contact de capot, boîtier
+  tamper-respondent. OASIS fournit la **place** où ce signal devient une preuve
+  infalsifiable (`ChangeKind::TamperSignal`, sur la même chaîne de hachages), et c'est la
+  moitié « recueillir », pas la moitié « détecter ». Lié à **C14**.
+- **Alinéa 3, l'identification documentaire.** « Identifiés comme tels » suppose une liste
+  des logiciels et données essentiels à la sécurité. Elle n'existe pas.
+- **Alinéa 4, `version` est une constante de compilation**, pas un condensé mesuré de
+  l'image en cours d'exécution, et n'est lisible que par USB.
+
+**Ce qu'OASIS est, dit en une phrase :** il aide un fabricant à remplir 1.1.9 **sur le
+chemin des commandes et sur les changements de configuration**. Il ne rend pas une machine
+conforme à lui seul, il ne couvre pas le matériel, et trois des cinq alinéas gardent une
+part non couverte.
 
 ---
 

@@ -1244,7 +1244,7 @@ fn main() -> ! {
                     &mut lease,
                     &mut lstore,
                     &pqs,
-                    &efs,
+                    &mut efs,
                     &msg,
                     done,
                     &g,
@@ -1311,6 +1311,11 @@ fn main() -> ! {
                 let t0 = now_us();
                 match update::install(&mut fw_up, &pqs.policy, &keys, &msg) {
                     Ok(v) => {
+                        // "a modification of the software installed" — para 5's second
+                        // trigger, and the one case where the record MUST be written
+                        // before the code that follows: this branch resets the board to
+                        // swap images, so a journal write after it never happens.
+                        efs.log_change(&[0u8; 8], v, oasis_rt::journal::ChangeKind::FirmwareInstalled, true);
                         io.log(
                             "FW_INSTALL",
                             format_args!(
@@ -1326,16 +1331,22 @@ fn main() -> ! {
                         }
                         cortex_m::peripheral::SCB::sys_reset();
                     }
-                    Err(r) => io.log(
-                        "FW_INSTALL",
-                        format_args!(
-                            "refused={:?},running={},floor={},check_us={}",
-                            r,
-                            update::FW_VERSION,
-                            update::floor(),
-                            now_us().wrapping_sub(t0)
-                        ),
-                    ),
+                    Err(r) => {
+                        // A refused install is evidence too: para 5 says "legitimate **or
+                        // illegitimate**", and an attempt to install an image the rules
+                        // rejected is exactly what an investigator looks for.
+                        efs.log_change(&[0u8; 8], update::FW_VERSION, oasis_rt::journal::ChangeKind::FirmwareInstalled, false);
+                        io.log(
+                            "FW_INSTALL",
+                            format_args!(
+                                "refused={:?},running={},floor={},check_us={}",
+                                r,
+                                update::FW_VERSION,
+                                update::floor(),
+                                now_us().wrapping_sub(t0)
+                            ),
+                        );
+                    }
                 }
             }
             #[cfg(feature = "bootloaded")]
@@ -2098,7 +2109,7 @@ fn main() -> ! {
                                         &mut lease,
                                         &mut lstore,
                                         &pqs,
-                                        &efs,
+                                        &mut efs,
                                         &msg,
                                         done,
                                         &g,
@@ -2110,6 +2121,19 @@ fn main() -> ! {
                                 if d == oasis_rt::mesh_revocation::RevDecision::Applied {
                                     pqs.rev_signer = pq::RevSigner::Current;
                                 }
+                                // Annex III 1.1.9 para 5: a revocation list is part of the
+                                // configuration that decides who may command, so applying
+                                // one — or refusing one — is a change that must leave a
+                                // trace. Journalled before the log line, so a cut between
+                                // the two loses the print and not the evidence.
+                                let applied = d == oasis_rt::mesh_revocation::RevDecision::Applied;
+                                // The entry's identifier field is 32 bits by format, and
+                                // an epoch is u64. Truncated to its low half deliberately:
+                                // epochs start at 0 and rise by one per published list, so
+                                // 2^32 lists is out of reach, and a reader comparing two
+                                // of these compares modulo 2^32.
+                                let epoch_now = efs.rev.epoch as u32;
+                                efs.log_change(&origin, epoch_now, oasis_rt::journal::ChangeKind::Revocation, applied);
                                 io.log(
                                     "REV",
                                     format_args!(
@@ -2474,11 +2498,61 @@ fn finish_authority(
     lease: &mut TxLease,
     lstore: &mut DualSlotStore<FlashSlots>,
     pqs: &pq::Pq,
-    efs: &ef::Ef,
+    efs: &mut ef::Ef,
     msg: &[u8],
     done: pq::Done,
     g: &pq::Gate,
 ) {
+    // Annex III 1.1.9 para 5 asks for evidence of a modification of the software installed
+    // "or its configuration". Every authority message that reaches here changes, or tries
+    // to change, that configuration: who may command (enrolment), who may no longer
+    // (revocation), which signature suite is required (policy), who owns the node
+    // (ownership). Journalled FIRST, so a power cut between the record and the log line
+    // costs the print and not the evidence.
+    //
+    // `authority` is the origin whose signature carried the change — what makes the
+    // record say *legitimate or illegitimate* rather than merely *happened*.
+    {
+        use oasis_rt::journal::ChangeKind;
+        // Who signed the change. `Gate` does not carry an origin fingerprint, and an
+        // authority message is signed by the **owner**, so the attribution recorded is
+        // the first 8 bytes of the current owner's Ed25519 key — not a node fingerprint,
+        // which is what this field holds on a decision entry. A reader needs to know
+        // which, and `decision.is_change()` is how it tells.
+        //
+        // ⚠️ For an ownership *acceptance* the signer is the incoming key, not this one,
+        // so a transfer records the outgoing owner as the authority. That is the party
+        // who offered it, which is the one with authority to do so.
+        let mut authority = [0u8; 8];
+        authority.copy_from_slice(&pqs.owner.current.ed25519[..8]);
+        let rec: Option<(ChangeKind, u32, bool)> = match done {
+            pq::Done::Revocation(d) => Some((
+                ChangeKind::Revocation,
+                efs.rev.epoch as u32,
+                d == oasis_rt::mesh_revocation::RevDecision::Applied,
+            )),
+            // `changed` is false for a policy message that did not strengthen anything;
+            // that is still an intervention and is recorded as not applied.
+            pq::Done::Policy { changed, .. } => Some((ChangeKind::AuthPolicy, g.kind as u32, changed)),
+            pq::Done::Enroll(d) => Some((
+                ChangeKind::Enrollment,
+                pqs.registry.entries.len() as u32,
+                matches!(d, oasis_rt::enrollment::EnrollDecision::Enrolled | oasis_rt::enrollment::EnrollDecision::Updated),
+            )),
+            pq::Done::Own(d) => Some((
+                ChangeKind::Ownership,
+                pqs.owner.seq,
+                matches!(d, oasis_rt::ownership::OwnDecision::Transferred),
+            )),
+            // Verified but unhandled, or refused before any state could move: no change
+            // to the configuration, so nothing to record as one. The AUTH log line below
+            // still carries it.
+            pq::Done::Unsupported(_) | pq::Done::Rejected(_) => None,
+        };
+        if let Some((kind, ident, applied)) = rec {
+            efs.log_change(&authority, ident, kind, applied);
+        }
+    }
     io.log(
         "AUTH",
         format_args!(
