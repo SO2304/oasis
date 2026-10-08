@@ -23,7 +23,7 @@ technique, et rien n'est affirmé sans preuve dans `evidence/`.
 > • byte-exact replay refused after a real power-cut
 > • revoked node dropped at the first hop, also after a power-cut
 > • non-authorised, expired, replayed, lost-sensor and NaN orders never moved the actuator
-> • Rust no_std, 646 tests, 173 Kani harnesses, proofs of the actuation rule
+> • Rust no_std, 662 tests, 182 Kani harnesses, proofs of the actuation rule
 > • Not a certified safety function: no PL (ISO 13849-1), no SIL (IEC 62061). It reduces no machine risk — it decides whether an order is authentic, authorised, fresh and within limits.
 >
 > Not done yet: radio on hardware, routing, hardware key protection, external audit.
@@ -32,7 +32,7 @@ technique, et rien n'est affirmé sans preuve dans `evidence/`.
 
 **Expérience (poste en cours)**
 > Founder & lead engineer · OASIS · 2026 – present
-> Command-authority layer for autonomous fleets, in Rust no_std. Signed envelopes verified at every relay, operator-signed fleet-wide revocation, seven-condition actuation gate with Kani proofs, MAVLink v2 bridge to PX4. Silicon test suite with raw logs and SHA-256 manifests.
+> Command-authority layer for autonomous fleets, in Rust no_std. Signed envelopes verified at every relay, operator-signed fleet-wide revocation, nine-condition actuation gate with Kani proofs, MAVLink v2 bridge to PX4. Silicon test suite with raw logs and SHA-256 manifests.
 
 **Compétences (5 à épingler)**
 Rust · Embedded Systems · Applied Cryptography · Robotics · Drones

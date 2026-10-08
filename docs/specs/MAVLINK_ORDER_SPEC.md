@@ -115,7 +115,7 @@ pub fn arm_decision_ctx(...) -> (Decision, Option<ArmAction>, Option<Vec<u8>>)
 ```
 
 1. `OrderClass::Stop` → refus immédiat (`OutOfLimits`). Voir §5.
-2. Sinon, `actuation_decision_ctx` — les dix conditions de la partie F, inchangées.
+2. Sinon, `actuation_decision_ctx` — les **neuf** conditions de la partie F, inchangées.
 3. `Act` → `encode_command_long(..., 400, 0, param1, 0,…)`, c'est-à-dire
    `MAV_CMD_COMPONENT_ARM_DISARM` avec `param1 = 1` pour armer, `0` pour désarmer.
 4. `Reject(_)` → `(decision, None, None)`. Rien n'est construit.
@@ -148,7 +148,7 @@ enveloppe v0B et un **vrai** `MeshRouter` :
 Deux barrières distinctes, et les tests **nomment laquelle a joué**. C'est volontaire :
 dire « l'ordre forgé n'arme pas » sans dire où il s'arrête rend la preuve invérifiable.
 
-Plus : les neuf autres conditions de la porte une par une (non vérifié, non autorisé,
+Plus : les autres conditions de la porte une par une (non vérifié, non autorisé,
 démarrage précédent, expiré, capteurs verrouillés, autre véhicule, `force` 0,5, `force`
 NaN, classe `Stop`) — **aucune ne produit de trame** ; le désarmement par le même chemin ;
 et l'octet de classe, qui est dans la zone signée, ne peut pas être promu de `Stop` à
@@ -160,7 +160,7 @@ et l'octet de classe, qui est dans la zone signée, ne peut pas être promu de `
 | Harnais | Énoncé |
 |---|---|
 | `proof_no_arm_frame_without_act` | **l'invariant de B1** : pour tout ordre, tout état d'actionneur et toute classe, une trame existe **si et seulement si** la décision est `Act` |
-| `proof_arm_implies_every_condition` | `Act` implique les dix conditions **et** que l'ordre nomme ce véhicule avec un `force` binaire : le porteur n'affaiblit pas la porte |
+| `proof_arm_implies_every_condition` | `Act` implique les **neuf** conditions **et** que l'ordre nomme ce véhicule avec un `force` binaire : le porteur n'affaiblit pas la porte |
 | `proof_stop_class_never_arms` | une classe `Stop` n'arme jamais, quoi que vaille le reste, et donne la même raison qu'un hors-limites — elle n'apprend rien à un attaquant |
 | `proof_action_is_total_and_binary` | `action_of` est totale et binaire ; `NaN` tombe dans le refus |
 

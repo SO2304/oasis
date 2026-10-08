@@ -32,8 +32,9 @@ possibilités, une seule acceptable :
 - OASIS **ne peut pas** empêcher un arrêt → il reste hors du périmètre SRP/CS ;
 - OASIS **peut** l'empêcher → il entre dans le périmètre, au PLr applicable.
 
-**Aujourd'hui OASIS est dans le second cas**, et c'est un défaut : `actuation_decision` applique
-ses 7 conditions à tout ordre. Un ordre d'arrêt dont le `cmd_seq` est en retard, dont le
+**Au moment d'écrire cette spec, OASIS était dans le second cas**, et c'était le défaut à
+corriger : `actuation_decision` appliquait ses conditions — neuf depuis les parties G et H —
+à tout ordre, arrêt compris. Un ordre d'arrêt dont le `cmd_seq` est en retard, dont le
 `boot_id` ne correspond pas, ou qui arrive pendant que l'état des capteurs est défavorable, est
 **refusé**. Sur ce point précis, OASIS est contraire à 1.2.1 al. 4 f) (« l'arrêt […] n'est pas
 empêché »).

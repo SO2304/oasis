@@ -183,7 +183,7 @@ La source officielle la plus explicite est PX4 *MAVLink Security Hardening* : la
 peut envoyer. Un opérateur légitime et un opérateur légitime compromis sont indiscernables.
 
 **Réponse OASIS — prouvé.** C'est le cœur du positionnement. Porte d'actionnement pure à
-**7 conditions ordonnées** : trame v0B valide, origine **habilitée pour cet actionneur**, non
+**9 conditions ordonnées** (7 à la rédaction de ce fichier ; les parties G et H ont ajouté le verrou d'arrêt et la vivacité de la supervision) : trame v0B valide, origine **habilitée pour cet actionneur**, non
 révoquée, non expirée dans l'horloge de l'actionneur (`boot_id`), verrou d'état des capteurs,
 **dans les limites physiques** (avec garde NaN), `cmd_seq` strictement plus récent. 15 tests
 `act_*`, 3 harnais Kani vérifiés, et sur silicium un ordre non habilité, expiré, rejoué, à
@@ -212,7 +212,7 @@ intégrateur qui ne lit que la spécification ne voit aucune de ces neuf limites
 | L5 | Horodatage dérivable du GPS → rejeu (#13860) | ARDU | Pas d'horloge : `boot_id` + compteur persisté | **prouvé** |
 | L6 | 1 à 4 messages exemptés, variables selon l'autopilote | SPEC, PX4, ARDU | Aucune exemption (`ttl`/`hops` en plage) | **prouvé** |
 | L7 | Aucune rotation, aucune révocation, rien en vol | PX4, ARDU | ORV1 signée, époque, appliquée par relais, persistée | **prouvé** |
-| L8 | N'autorise pas **par commande** | PX4 | Porte à 7 conditions | **prouvé** |
+| L8 | N'autorise pas **par commande** | PX4 | Porte à 9 conditions, atteinte depuis un `V2_EXTENSION` (B1) | **prouvé en logiciel**, rien sur PX4 SITL |
 | L9 | Pas de modèle de menace dans la spécification | SPEC | `docs/specs/` : modèle de menace par spécification | **prouvé** |
 
 **Et le manque qui annule la démonstration commerciale :**

@@ -42,7 +42,12 @@ Seule **EN 18031-1** ne l'exige pas — son mécanisme de journalisation (LGM) e
 liaison (**C2**). Le Règlement Machines, annexe III 1.2.1, dit « l'arrêt automatique ou manuel des
 éléments mobiles, quels qu'ils soient, **n'est pas empêché** » et « pour la commande sans fil, une
 défaillance de la communication […] **n'entraîne pas de situation dangereuse** ». Tant que la
-porte applique ses 7 conditions à un ordre d'arrêt, OASIS est contraire à cette clause.
+porte appliquait ses 7 conditions à un ordre d'arrêt, OASIS était contraire à cette clause.
+
+> **Fermé le 2026-10-08.** `stop_decision` ne garde que **3** des 9 conditions de la porte
+> (v0B valide, droit `STOP`, origine non révoquée) et l'arrêt **se verrouille**. Voir
+> [`IEC_TS_63074.md`](IEC_TS_63074.md) et la section G de
+> [`../../partners/POSITIONING_GAPS.md`](../../partners/POSITIONING_GAPS.md).
 
 ## Notes de recherche brutes
 

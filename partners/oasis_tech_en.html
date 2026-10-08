@@ -88,8 +88,8 @@ footer { font-size: 0.8rem; color: var(--muted); border-top: 1px solid var(--lin
     <div class="meta">
       <span><b>TRL 4</b> · pre-1.0 · single maintainer</span>
       <span>last silicon run <b>2026-10-06</b></span>
-      <span><b>3 × RP2040</b> · wired link</span>
-      <span><b>534</b> tests · <b>16/16</b> new Kani harnesses verified</span>
+      <span><b>3 × RP2040</b> · wired link · <b>no radio</b></span>
+      <span><b>662</b> tests · <b>182</b> Kani harnesses, no counterexample</span>
     </div>
   </header>
 
@@ -133,7 +133,7 @@ footer { font-size: 0.8rem; color: var(--muted); border-top: 1px solid var(--lin
         <thead><tr><th>Mode</th><th>When</th><th>Status</th></tr></thead>
         <tbody>
           <tr><th>Closed OASIS mesh</th><td>Relays are not trusted: every hop must filter forged, modified, replayed, revoked or foreign traffic</td><td><span class="tag proven">TRL 4</span> 3 boards, wired link</td></tr>
-          <tr><th>Authority layer over an existing transport</th><td>MAVLink, serial, Reticulum or microReticulum already carry the traffic; OASIS adds authority, freshness, revocation and the safety gate at the machine</td><td><span class="tag todo">DESIGNED</span> the signed envelope is transport-independent bytes; not yet tested over MAVLink or Reticulum</td></tr>
+          <tr><th>Authority layer over an existing transport</th><td>MAVLink, serial, Reticulum or microReticulum already carry the traffic; OASIS adds authority, freshness, revocation and the safety gate at the machine</td><td><span class="tag proven">BUILT FOR MAVLINK</span> the order travels inside a <code>V2_EXTENSION</code> and the gate decides before arming: 7 tests over a real router, 4 Kani proofs 4/4. <b>Nothing on PX4 SITL</b>, and Reticulum is still untested</td></tr>
         </tbody>
       </table>
     </div>
@@ -143,7 +143,7 @@ footer { font-size: 0.8rem; color: var(--muted); border-top: 1px solid var(--lin
   <section aria-labelledby="s4">
     <h2 id="s4"><span>§4</span>Architecture</h2>
     <div class="layers">
-      <div class="layer"><b>Actuation gate</b><p>Seven-condition decision before any actuator moves. Bound to the actuator's own clock and boot id, so no shared clock is needed.</p></div>
+      <div class="layer"><b>Actuation gate</b><p>Nine-condition decision before any actuator moves, and a stop that keeps only three of them so cryptography can never block it. Bound to the actuator's own clock and boot id, so no shared clock is needed.</p></div>
       <div class="layer"><b>Authority</b><p>Operator key (single or k-of-n) signs revocation lists; per-actuator command authorities. Revocation is carried by the mesh as a signed content type.</p></div>
       <div class="layer"><b>Signed envelope (v0B)</b><p>Ed25519 over a domain tag, network id, origin, counter, payload length and SHA-256 of the payload. Relay state changes only after full verification.</p></div>
       <div class="layer"><b>Transport security</b><p>ChaCha20-Poly1305, X25519 and Noise-KK for confidentiality between peers. Standard primitives only.</p></div>
@@ -210,11 +210,57 @@ footer { font-size: 0.8rem; color: var(--muted); border-top: 1px solid var(--lin
       <li>k-of-n operator quorum and relay catch-up after a missed revocation are tested on PC only.</li>
       <li>Flooding, not routing: every signed message costs one verification per relay.</li>
       <li>No radio on hardware, no power measurement, no certification, no external audit.</li>
+      <li>The decision journal is tamper-<i>evident</i> against a remote attacker only: whoever holds the flash can rewrite the chain.</li>
+      <li>The radio duty cycle is computed and documented, <b>not enforced by the code</b>.</li>
+      <li><b>No node-key rotation</b>, and at most 16 revoked nodes: this is what governs any cryptographic migration.</li>
+      <li>Mesh orders travel <b>in clear</b>: v0B and v0C authenticate, they do not encrypt.</li>
+      <li>Against an <b>insider</b>, the per-link budget caps a relay's CPU but starves legitimate traffic (4/60). It is not a fairness mechanism.</li>
+      <li><b>Zero customer interviews.</b> Every market hypothesis is untested.</li>
     </ul>
   </section>
 
-  <section class="ask" aria-labelledby="s9">
-    <h2 id="s9"><span>§9</span>Six-week field pilot</h2>
+  <section aria-labelledby="s9">
+    <h2 id="s9"><span>§9</span>Regulatory correspondence</h2>
+    <p>
+      Every text below has its own file in <code>docs/compliance/</code> with the
+      <b>verbatim requirement</b>, a link to the primary source, the date it applies from, and
+      a requirement &rarr; coverage &rarr; evidence &rarr; gap table. Paywalled standards (IEC,
+      ISO) are marked <b>not verified at the source</b> and say where the information came from.
+    </p>
+    <ul>
+      <li><b>Machinery Regulation (EU) 2023/1230</b>, Annex III 1.1.9 and 1.2.1, applicable
+        <b>20 January 2027</b> &mdash; a chained, persisted log of accepted <i>and refused</i>
+        orders, plus firmware identity. The conformity obligation stays with the
+        <b>machine manufacturer</b> (Art. 8 and 10).</li>
+      <li><b>Cyber Resilience Act</b> &mdash; CycloneDX SBOM, 0 known vulnerabilities across 6
+        dependency trees, a <code>SECURITY.md</code> with contact and 24 h / 72 h deadlines,
+        signed A/B updates. Updates are <b>USB, not over the network</b>.</li>
+      <li><b>RED delegated act / EN 18031</b> &mdash; message authentication and a secure update
+        mechanism. <b>No lab assessment, and no radio has ever transmitted.</b></li>
+      <li><b>IEC 62443-4-2</b> &mdash; CR 1.2 identity, CR 2.8 auditable log, <b>CR 7.1 denial of
+        service, measured</b> (0.70 ms against 179.4 ms per forged frame), EDR 3.10 update. Boot
+        integrity is partial: <b>no secure boot</b>. The &minus;4&minus;1 development process is
+        open.</li>
+      <li><b>IEC TS 63074:2023</b> &mdash; the boundary document. It exists to say OASIS is
+        <b>not</b> a safety function: the PL or SIL stays in the certified control system.</li>
+      <li><b>EU post-quantum roadmap</b> (high-risk cases migrated by <b>end 2030</b>) &mdash;
+        authority messages are already hybrid Ed25519 + ML&#8209;DSA&#8209;44 on silicon, which
+        is that milestone's named &quot;quantum-safe firmware updates&quot;. A <b>per-hop</b>
+        post-quantum signature does not fit LoRa's legal duty cycle at any spreading factor.</li>
+      <li><b>MAVLink 2 signing</b>, 9 documented limits &mdash; a per-node signed order travels
+        inside a <code>V2_EXTENSION</code> and the gate decides before arming. <b>Nothing on PX4
+        SITL yet.</b></li>
+    </ul>
+    <p class="note">
+      <b>None of this is a declaration of conformity.</b> OASIS is not certified, not audited and
+      not assessed by a notified body. The Machinery Regulation creates <b>no downward chain of
+      obligations</b> toward an integrated component, which is why the sellable deliverable is the
+      <b>evidence dossier</b> and not the code &mdash; the code is MIT.
+    </p>
+  </section>
+
+  <section class="ask" aria-labelledby="s10">
+    <h2 id="s10"><span>§10</span>Six-week field pilot</h2>
     <p>For teams running drones, field robots or remote actuators under one operator. Together we take OASIS from TRL 4 to TRL 5–6 on your hardware:</p>
     <ul>
       <li>the authority gate on one real actuator class (motor, valve, PX4 command);</li>
@@ -225,5 +271,5 @@ footer { font-size: 0.8rem; color: var(--muted); border-top: 1px solid var(--lin
     <p class="contact">Contact: direct message on LinkedIn.</p>
   </section>
 
-  <footer>OASIS · Rust · pre-1.0 · TRL 4 · not certified · no external audit · figures dated 2026-10-06</footer>
+  <footer>OASIS · Rust · pre-1.0 · TRL 4 · not certified · no external audit · figures dated 2026-10-08</footer>
 </div>

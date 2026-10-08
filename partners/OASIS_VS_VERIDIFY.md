@@ -23,7 +23,7 @@ fil, pas de produit, pas de client. Veridify vend un produit déployé.
 | --- | --- | --- | --- |
 | Authentification d'équipement à équipement | documenté ([DOME](https://www.veridify.com/dome/), 2025-11-10) | prouvé | `evidence/silicon/2026-10-06/REPORT_MESH_V0B.md` |
 | **Vérification de l'origine ET du contenu à chaque relais, avec la clé propre de l'émetteur** | **non documenté** (authentification d'équipement à équipement ; mesh multi-saut non documenté) | prouvé, fil UART | 0/150 inversions de bit acceptées ; contenu remplacé rejeté ; `…/followup/REPORT.md` |
-| **Porte d'actionnement par ordre** : habilitation par actionneur, expiration dans l'horloge de l'actionneur, état des capteurs, limites physiques, anti-rejeu | **non documenté** (les équipements non authentifiés sont bloqués et journalisés — [Modbus article](https://www.veridify.com/article/modbus-security-issues-and-how-to-mitigate-cyber-risks/), 2023-05-15) | prouvé, 7 conditions | `evidence/silicon/2026-10-06/ef/REPORT.md` |
+| **Porte d'actionnement par ordre** : habilitation par actionneur, expiration dans l'horloge de l'actionneur, état des capteurs, limites physiques, anti-rejeu | **non documenté** (les équipements non authentifiés sont bloqués et journalisés — [Modbus article](https://www.veridify.com/article/modbus-security-issues-and-how-to-mitigate-cyber-risks/), 2023-05-15) | prouvé, 9 conditions | `evidence/silicon/2026-10-06/ef/REPORT.md` |
 | **Preuve formelle de la règle d'actionnement** | non documenté | prouvé | 3 harnais Kani, `evidence/kani/2026-10-06/` |
 | Post-quantique standardisé | documenté : ML-KEM (FIPS 203), ML-DSA (FIPS 204), Falcon ([DOME](https://www.veridify.com/dome/)). Par défaut, en option ou hybride : non documenté | **hybride Ed25519 + ML-DSA-44** sur les messages d'autorité ; pas de KEM, pas de Falcon | `evidence/silicon/2026-10-06/pq/REPORT.md` (377 ms, 48,7 Ko de pile sur RP2040) |
 | Enrôlement | documenté : « Zero-Touch Provisioning », certificats créés, distribués, renouvelés ([article](https://www.veridify.com/article/zero-trust-security-for-legacy-ot-devices/), 2025-05-09) | prouvé : clé générée **sur la carte**, jamais sortie, attestation signée par le propriétaire après preuve de possession | `evidence/silicon/2026-10-06/enroll/REPORT.md` |
@@ -98,7 +98,7 @@ Chacune ne dit que ce qui est mesuré, et la preuve est citable.
 > et un rejeu après coupure de courant est refusé depuis la fenêtre restaurée en flash. »
 > — `evidence/silicon/2026-10-06/REPORT_MESH_V0B.md`
 
-> **2.** « Un ordre n'atteint un actionneur que si **sept conditions** sont vraies, dont
+> **2.** « Un ordre n'atteint un actionneur que si **neuf conditions** sont vraies, dont
 > l'état des capteurs et les limites physiques de la machine. La règle est **prouvée
 > formellement** et vérifiée sur silicium : ordre non habilité, expiré, rejoué, capteur
 > perdu, hors limites et NaN sont tous refusés. »

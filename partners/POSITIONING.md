@@ -1,8 +1,16 @@
-# OASIS : positionnement (référence, 2026-10-06)
+# OASIS : positionnement (référence, mis à jour le 2026-10-08)
 
 Ce document est la source de vérité pour la page technique, la page partenaires,
 LinkedIn et les échanges avec les prospects. Toute affirmation renvoie à une
 preuve du dépôt. Rien n'y est affirmé sans preuve.
+
+> **Mise à jour du 2026-10-08 (phase 5 de `prompts/POSITIONING_ALIGNMENT.md`).** Le
+> segment de tête est **S1 — machines mobiles autonomes**
+> ([`SEGMENT_COMPARISON.md`](SEGMENT_COMPARISON.md)). Le statut de chaque manque est en
+> **section G** de [`POSITIONING_GAPS.md`](POSITIONING_GAPS.md) : **7 fermés avec preuve,
+> 4 fermés sur document, 13 partiellement fermés, 15 ouverts**. En cas de désaccord entre
+> ce document et la section G, **c'est la section G qui a raison**. La correspondance
+> réglementaire est en §10.
 
 ## 1. En une phrase
 
@@ -75,9 +83,10 @@ livre **60 messages légitimes sur 60** à 19 % de charge, contre 39/60 à 110 %
 lue dans la flash d'un RP2040), le budget par liaison borne le calcul du relais mais
 **affame le trafic légitime** (4/60) : c'est un plafond de calcul, pas de l'équité.
 
-Et sur le logiciel : Rust `no_std`, **646 tests**, **173 harnais Kani** dont 130 vérifiés
-en suite complète et 21 vérifiés séparément, **sans aucun contre-exemple** (22 restent
-inconnus faute de mémoire locale, et une suite complète sur les 173 n'a pas été relancée),
+Et sur le logiciel : Rust `no_std`, **662 tests**, **182 harnais Kani** dont 130 vérifiés
+en suite complète et 52 vérifiés séparément, **sans aucun contre-exemple** (22 restent
+inconnus faute de mémoire locale, et aucune suite complète sur les 182 n'a jamais été
+exécutée : « 182/182 » serait faux),
 1,5 × 10⁹
 exécutions de fuzzing pour un seul défaut trouvé et corrigé, SBOM CycloneDX et
 **0 vulnérabilité connue** sur les 6 arbres de dépendances ; preuves brutes avec SHA-256
@@ -88,11 +97,12 @@ vérifiées dans un clone frais. Tourne sur un Cortex-M0+ à 1 $ (RP2040).
 | Mode | Quand | État |
 |---|---|---|
 | **Mesh OASIS fermé** (v0B + révocation + porte) | Les relais ne sont pas dignes de confiance : chaque saut doit filtrer | TRL 4 : démontré sur 3 cartes, liaison filaire |
-| **Couche d'autorité par-dessus un transport existant** (MAVLink, série, Reticulum ou microReticulum) | Le transport est déjà en place et mature ; on ajoute l'autorité, la fraîcheur, la révocation et la porte de sûreté **à l'arrivée** | Conçu pour : l'enveloppe v0B est un bloc d'octets indépendant du transport. **Pas encore testé** sur MAVLink ni sur Reticulum |
+| **Couche d'autorité par-dessus un transport existant** (MAVLink, série, Reticulum ou microReticulum) | Le transport est déjà en place et mature ; on ajoute l'autorité, la fraîcheur, la révocation et la porte de sûreté **à l'arrivée** | **Fait pour MAVLink** : l'ordre voyage dans un `V2_EXTENSION` (msgid 248) et la porte décide avant l'armement — 7 tests sur un vrai routeur, 4 preuves Kani 4/4 (`evidence/kani/2026-10-08/b1/`). ⚠️ **Rien sur PX4 SITL** : « l'ordre valide arme le drone » n'est pas montré. Reticulum : toujours pas testé |
 
 Le second mode est la réponse à « pourquoi pas Reticulum ? » : **on ne le
 remplace pas, on s'installe au-dessus.** Reticulum transporte ; OASIS décide si
-la machine a le droit d'agir.
+la machine a le droit d'agir. Depuis le 2026-10-08 ce mode n'est plus une intention :
+il existe pour MAVLink, en logiciel ([`docs/specs/MAVLINK_ORDER_SPEC.md`](../docs/specs/MAVLINK_ORDER_SPEC.md)).
 
 ## 6. Ce qui nous distingue de microReticulum (lu dans son code, commit `40fa628`)
 
@@ -101,7 +111,7 @@ la machine a le droit d'agir.
 | Ses relais vérifient les données | Non (`Transport.cpp` l.1980-2000) | Oui, origine, contenu, fraîcheur, réseau |
 | Anti-rejeu | Liste d'empreintes persistée, non signée | Compteur signé, vérifiable par chaque relais |
 | Exclusion d'un nœud | Listes « blackhole » locales | Révocation signée par l'opérateur, propagée |
-| Lien avec les actionneurs | Aucun | Porte à 7 conditions, prouvée par Kani |
+| Lien avec les actionneurs | Aucun | Porte à 9 conditions, prouvée par Kani, et un arrêt qui n'en garde que 3 |
 | Maturité | **TRL 6-7**, radio réelle, écosystème | **TRL 4** |
 
 ## 7. Ce qu'on ne sait pas encore (à dire avant qu'on nous le demande)
@@ -115,6 +125,18 @@ la machine a le droit d'agir.
 - Pas d'audit externe, pas de certification, consommation non mesurée.
 - Aucune attaque n'a encore été exécutée contre un concurrent : les comparaisons
   viennent de lectures de code.
+- **Le journal est tamper-évident contre un attaquant distant seulement** : qui tient
+  la flash réécrit la chaîne (C14, et C14 ne se ferme pas en logiciel).
+- **Le duty-cycle radio n'est pas appliqué par le code.** Il est calculé et documenté
+  ([`docs/compliance/PQC.md`](../docs/compliance/PQC.md) §3, `docs/lora_budget.py`), ce qui
+  est une obligation réglementaire documentée et non tenue.
+- **Aucune rotation de clé de nœud**, et `MAX_REVOKED = 16` est un plafond dur : c'est le
+  prérequis qui gouverne le calendrier d'une migration cryptographique
+  ([`docs/CRYPTO_MIGRATION.md`](../docs/CRYPTO_MIGRATION.md) §6-b).
+- **Les ordres mesh circulent en clair** : v0B et v0C authentifient, ils ne chiffrent pas
+  (C13).
+- **Zéro entretien client mené** (D1). Les segments restent des hypothèses, et les cinq
+  hypothèses de [`CUSTOMER_DISCOVERY.md`](CUSTOMER_DISCOVERY.md) sont toutes « non testée ».
 
 ## 8. L'offre
 
@@ -133,3 +155,28 @@ TRL 5-6 ensemble :
 - **Titre LinkedIn :** *Building OASIS · No machine moves on a forged, replayed or revoked order · Command authority for autonomous fleets · Rust no_std · Looking for field pilots*
 - **Accroche orale :** « Si un de vos drones ou robots est volé demain, combien de temps vous faut-il pour l'exclure de la flotte, et qu'est-ce qui l'empêche de donner des ordres aux autres ? »
 - **Réponse à « pourquoi pas Reticulum ? » :** « Reticulum est un excellent transport. OASIS n'est pas un transport : c'est ce qui décide si une machine a le droit d'exécuter un ordre. Les deux se combinent. »
+
+---
+
+## 10. Correspondance réglementaire
+
+Chaque texte a son fichier dans [`docs/compliance/`](../docs/compliance/), avec le
+**verbatim**, le lien vers la source, la date d'applicabilité et un tableau exigence →
+couverture OASIS → preuve → manque. Les normes payantes (IEC, ISO) portent la mention
+**« non vérifié à la source »** et disent d'où vient l'information.
+
+| Texte | Fichier | Ce qu'OASIS apporte, et jusqu'où |
+|---|---|---|
+| **Règlement Machines (UE) 2023/1230** — annexe III 1.1.9 et 1.2.1, applicable le **20 janvier 2027** | [`MACHINERY_REGULATION_2023_1230.md`](../docs/compliance/MACHINERY_REGULATION_2023_1230.md) | Journal des ordres acceptés **et refusés**, chaîné et persisté (partie I, silicium + coupure de courant) ; identité du firmware (phase 1.3). ⚠️ La conformité reste celle du **fabricant de la machine** (art. 8 et 10) : OASIS fournit la preuve, pas le marquage |
+| **Cyber Resilience Act** — signalement dès le **11 septembre 2026**, application le **11 décembre 2027** | [`CRA.md`](../docs/compliance/CRA.md) | SBOM CycloneDX, `cargo-audit`/`cargo-deny` à 0 vulnérabilité connue, `SECURITY.md` avec contact et délais 24 h/72 h, mise à jour signée A/B. ⚠️ Mise à jour **USB, pas par le réseau** ; les 5 ans d'assistance sont un engagement contractuel |
+| **RED, acte délégué** + **EN 18031-1/2/3** | [`EN_18031.md`](../docs/compliance/EN_18031.md) | Authentification des messages, mécanisme de mise à jour sécurisé. ⚠️ **Aucune évaluation par un laboratoire**, et OASIS **n'a aucune radio** : l'applicabilité se juge sur un produit qui émet |
+| **IEC 62443-4-2** (composants) | [`IEC_62443_4_2.md`](../docs/compliance/IEC_62443_4_2.md) | CR 1.2 identité ; **CR 2.8 journal auditable** ; **CR 7.1 déni de service, mesuré** (0,70 ms contre 179,4 ms par trame forgée) ; EDR 3.10 mise à jour. ⚠️ Intégrité du démarrage partielle (pas de secure boot) ; **-4-1 ouvert** |
+| **IEC TS 63074:2023** | [`IEC_TS_63074.md`](../docs/compliance/IEC_TS_63074.md) | **Le document de la frontière** : il sert à dire qu'OASIS **n'est pas** une fonction de sûreté, et que le PL ou le SIL reste dans le système de commande certifié (ISO 13849-1, IEC 62061). ⚠️ Norme payante, non vérifiée à la source |
+| **Feuille de route post-quantique de l'UE** — cas à haut risque migrés **fin 2030** | [`PQC.md`](../docs/compliance/PQC.md) + [`CRYPTO_MIGRATION.md`](../docs/CRYPTO_MIGRATION.md) | Messages d'autorité déjà **hybrides Ed25519 + ML-DSA-44** (silicium, coupure de courant), ce qui couvre nommément les « mises à jour de micrologiciel quantum-safe » du jalon 2030 ; plan de migration écrit pour le reste. ⚠️ **Aucun ordre par saut post-quantique sur LoRa** : c'est le budget légal d'émission, pas une difficulté d'ingénierie |
+| **Signature MAVLink 2** — 9 limites documentées | [`MAVLINK_SIGNING_GAP.md`](../docs/compliance/MAVLINK_SIGNING_GAP.md) | Ordre signé **par nœud** transporté dans un `V2_EXTENSION`, vérifié par la porte avant armement (B1). ⚠️ **Rien sur PX4 SITL** |
+
+**Ce que cette section ne dit pas** : aucune de ces lignes n'est une déclaration de
+conformité. OASIS n'est ni certifié, ni audité, ni évalué par un organisme notifié, et le
+Règlement Machines **n'organise aucune chaîne d'obligations descendante** vers un composant
+intégré — ce qui est précisément pourquoi le livrable vendable est le **dossier de preuve**
+et non le code, qui est sous licence MIT.
