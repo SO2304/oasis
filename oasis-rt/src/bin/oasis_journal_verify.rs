@@ -122,6 +122,17 @@ fn main() -> ExitCode {
     };
     head.boot_id = boot_id;
 
+    // Keep only the entries of THIS boot. After a reboot the ring still holds the previous
+    // boot entries while the head is a fresh chain, so a raw dump mixes two boots and
+    // nothing would verify. Each entry carries its own boot_id, which is what makes the
+    // separation possible — and it is how a power cut is checked: take the head captured
+    // BEFORE the cut and the entries read AFTER it.
+    let total = entries.len();
+    entries.retain(|e| parse_entry(e).map(|x| x.boot_id) == Some(boot_id));
+    if entries.len() != total {
+        println!("filtered {} of {total} entries to boot_id={boot_id}", entries.len());
+    }
+
     println!("boot_id={boot_id} entries={} head_seq={:?} overwritten={}", entries.len(), head.seq, head.overwritten);
     for (i, raw) in entries.iter().enumerate() {
         match parse_entry(raw) {
