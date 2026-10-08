@@ -1,5 +1,10 @@
 # OASIS face à Veridify DOME (2026-10-07)
 
+> ⚠️ **OASIS n'est pas une fonction de sûreté certifiée** : ni PL (ISO 13849-1) ni SIL
+> (IEC 62061). Il ne réduit aucun risque machine — il décide si un ordre est authentique,
+> habilité, frais et dans les limites. L'arrêt d'urgence reste un circuit dédié qu'OASIS ne
+> peut pas atteindre. Voir [`docs/compliance/IEC_TS_63074.md`](../docs/compliance/IEC_TS_63074.md).
+
 **Comment lire cette page.** Côté Veridify, uniquement des **sources publiques**, datées :
 pages produit, communiqués, publications, documents du NIST. Aucun produit Veridify n'a
 été testé, sondé ni téléchargé ; personne n'a été contacté. **« Non documenté » veut dire

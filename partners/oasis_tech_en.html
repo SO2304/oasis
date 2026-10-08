@@ -103,11 +103,22 @@ footer { font-size: 0.8rem; color: var(--muted); border-top: 1px solid var(--lin
           <tr><th>Integrity at every relay</th><td>Origin, payload digest, counter and network id signed (v0B); strict mode refuses older formats</td><td>0 of 150 single-bit flips accepted, 150/150 traced; relay-swapped payload dropped; downgrade to v0A refused</td></tr>
           <tr><th>Freshness</th><td>Signed counter with a 128-bit window persisted in flash; sender counter lease; orders expire 10 s after issue, bound to the actuator's boot id</td><td>Byte-exact replay refused after a relay power-cut; rebooted sender accepted again; order from a previous boot refused</td></tr>
           <tr><th>Fleet-wide revocation</th><td>Operator-signed list (single key or k-of-n), monotonic epoch, persisted before it is applied, enforced by every relay</td><td>Revoked origin dropped at the first hop, also after a power-cut; replay of an older list refused</td></tr>
-          <tr><th>Safe to act</th><td>R14 sensor-uncertainty gate, physical limits, non-finite values refused</td><td>Lost sensor: <code>R14Unsafe</code>; 1000 N on a 50 N limit and NaN: <code>OutOfLimits</code>; pin stays low</td></tr>
+          <tr><th>Cleared to act</th><td>Sensor-state lock (threshold on measured uncertainty), physical limits, non-finite values refused &mdash; <strong>not a certified safety function</strong></td><td>Lost sensor: the sensor-state lock refuses; 1000 N on a 50 N limit and NaN: <code>OutOfLimits</code>; pin stays low</td></tr>
         </tbody>
       </table>
     </div>
-    <p class="note">An order is executed only if all seven checks pass: verified envelope, authorised origin, not revoked, not expired, R14 favourable, within limits, not already executed. The decision is a pure function with three Kani proofs: it acts only if every condition holds, never acts when R14 is unfavourable, and is total and deterministic.</p>
+
+    <p class="note"><strong>OASIS is not a safety function.</strong> It is not a certified
+    functional-safety component: no PL under ISO 13849-1, no SIL under IEC 62061, and no
+    functional-safety certification of any kind. It reduces no machine risk. What it does
+    is decide whether a received order is authentic, authorised, fresh and within
+    configured limits; risk reduction remains the job of the manufacturer's safety-related
+    control system, and the <strong>emergency stop stays a dedicated circuit OASIS cannot
+    reach</strong> (ISO 13850:2015 4.1.1.3). ISO 13849-1:2023 explicitly excludes IT
+    security from its scope while noting it can affect safety functions, and points to
+    IEC TS 63074 — that is the gap OASIS occupies: <em>below</em> the safety-related
+    control system, never in its place.</p>
+    <p class="note">An order is executed only if all seven checks pass: verified envelope, authorised origin, not revoked, not expired, sensor-state lock favourable, within limits, not already executed. The decision is a pure function with three Kani proofs: it acts only if every condition holds, never acts when the sensor-state lock is unfavourable, and is total and deterministic.</p>
   </section>
 
   <section aria-labelledby="s2">

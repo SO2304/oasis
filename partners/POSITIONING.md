@@ -16,6 +16,24 @@ ou dangereux, même si un nœud de la flotte a été capturé.
 
 ## 2. Ce qu'on ne prétend plus
 
+> ### ⚠️ OASIS n'est pas une fonction de sûreté
+>
+> OASIS **n'est pas une fonction de sûreté certifiée** : ni PL au sens
+> d'ISO 13849-1, ni SIL au sens d'IEC 62061, et il n'est couvert par aucune
+> certification de sûreté de fonctionnement. Il ne réduit aucun risque machine.
+>
+> Ce qu'il fait : décider si un ordre reçu est **authentique, habilité, frais et dans
+> les limites configurées**. La réduction du risque reste assurée par le système de
+> commande relatif à la sécurité du fabricant, indépendamment d'OASIS — et l'**arrêt
+> d'urgence reste un circuit dédié qu'OASIS ne peut pas atteindre** (ISO 13850:2015
+> 4.1.1.3).
+>
+> ISO 13849-1:2023 exclut explicitement la cybersécurité de son périmètre tout en
+> reconnaissant qu'elle peut affecter les fonctions de sûreté, et renvoie à
+> IEC TS 63074 pour ce sujet. C'est cette brèche désignée qu'OASIS occupe : **sous** le
+> système de commande relatif à la sécurité, jamais à sa place. Détail et citations :
+> [`docs/compliance/IEC_TS_63074.md`](../docs/compliance/IEC_TS_63074.md).
+
 - **Pas un mesh LoRa généraliste.** Reticulum (TRL 7) et microReticulum (TRL 6-7)
   ont la radio, le routage, l'écosystème et l'anonymat. On ne les affronte pas.
 - **Pas « meilleur que » un système plus mature.** OASIS est à **TRL 4** : modèle
@@ -47,7 +65,7 @@ irréversibles**.
 | 2 | **Intégrité, vérifiée à chaque relais** : un ordre forgé ou modifié meurt au premier saut | Origine, contenu (SHA-256), compteur et réseau dans la signature v0B ; mode strict sans déclassement | Silicium : 0/150 inversions de bit acceptées, 150/150 tracées ; contenu remplacé rejeté ; v0A refusé en mode strict (`…/followup/`) |
 | 3 | **Fraîcheur** : un ordre rejoué ou périmé n'est jamais exécuté, même après une coupure de courant | Compteur signé, fenêtre persistée en flash, réserve de compteurs côté émetteur ; échéance de 10 s liée au `boot_id` de l'actionneur | Silicium : rejeu à l'octet près refusé après coupure du relais ; émetteur redémarré accepté ; ordre d'un ancien `boot_id` refusé |
 | 4 | **Révocation de toute la flotte** sans renouveler les autres clés | Liste signée par l'opérateur (k-sur-n possible), époque croissante, persistée avant application, appliquée par chaque relais | Silicium : origine révoquée rejetée au premier saut, y compris après coupure ; ancienne liste refusée `Rollback`. k-sur-n : PC seulement |
-| 5 | **Sûreté d'action** : même un ordre valide n'est pas exécuté si la machine n'est pas en état d'agir | Porte R14 (incertitude des capteurs), limites physiques, refus des valeurs NaN ou infinies | Silicium : capteur perdu → `R14Unsafe` ; 1000 N → `OutOfLimits` ; NaN → refusé. 3 preuves Kani de la porte |
+| 5 | **Verrou d'état** : même un ordre valide n'est pas exécuté si la machine n'est pas en état d'agir | **Verrou d'état des capteurs** (seuil sur l'incertitude mesurée), limites physiques, refus des valeurs NaN ou infinies. ⚠️ **Ce n'est pas une fonction de sûreté certifiée** | Silicium : capteur perdu → refus ; 1000 N → `OutOfLimits` ; NaN → refusé. 3 preuves Kani de la porte |
 
 Une sixième garantie, ajoutée le 2026-10-07 : **6 — Disponibilité face à un extérieur**.
 Un pré-filtre à clé de lien (dérivée des identités, jamais distribuée) refuse une trame
@@ -57,8 +75,10 @@ livre **60 messages légitimes sur 60** à 19 % de charge, contre 39/60 à 110 %
 lue dans la flash d'un RP2040), le budget par liaison borne le calcul du relais mais
 **affame le trafic légitime** (4/60) : c'est un plafond de calcul, pas de l'équité.
 
-Et sur le logiciel : Rust `no_std`, **608 tests**, **130 des 152 harnais Kani vérifiés**
-sans aucun contre-exemple (22 restent inconnus faute de mémoire locale), 1,5 × 10⁹
+Et sur le logiciel : Rust `no_std`, **646 tests**, **173 harnais Kani** dont 130 vérifiés
+en suite complète et 21 vérifiés séparément, **sans aucun contre-exemple** (22 restent
+inconnus faute de mémoire locale, et une suite complète sur les 173 n'a pas été relancée),
+1,5 × 10⁹
 exécutions de fuzzing pour un seul défaut trouvé et corrigé, SBOM CycloneDX et
 **0 vulnérabilité connue** sur les 6 arbres de dépendances ; preuves brutes avec SHA-256
 vérifiées dans un clone frais. Tourne sur un Cortex-M0+ à 1 $ (RP2040).

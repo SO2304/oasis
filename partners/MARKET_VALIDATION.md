@@ -5,6 +5,12 @@ peu fiables : à lire comme des ordres de grandeur. Aucune donnée client direct
 n'existe encore (zéro entretien) : ce document dit où chercher, pas ce que les
 clients pensent.
 
+> Rappel, puisque ce document parle de marchés où le mot « sûreté » a un sens précis :
+> **OASIS n'est pas une fonction de sûreté certifiée** (ni PL au sens d'ISO 13849-1, ni SIL
+> au sens d'IEC 62061) et **ne réduit aucun risque machine**. Il décide si un ordre est
+> authentique, habilité, frais et dans les limites. Voir
+> [`docs/compliance/IEC_TS_63074.md`](../docs/compliance/IEC_TS_63074.md).
+
 ## 1. Verdict
 
 | Question | Réponse courte |

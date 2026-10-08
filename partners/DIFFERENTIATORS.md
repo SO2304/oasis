@@ -5,6 +5,12 @@ avec ce que chaque concurrent **documente publiquement**. « Non documenté » n
 pas dire « absent » : un produit fermé peut le faire sans le publier. OASIS est à
 TRL 4 ; ses concurrents commerciaux sont déployés.
 
+> ⚠️ **Rien de ce qui suit n'est une fonction de sûreté certifiée.** OASIS n'est ni un PL
+> (ISO 13849-1) ni un SIL (IEC 62061), et ne réduit aucun risque machine : il décide si un
+> ordre est authentique, habilité, frais et dans les limites. L'arrêt d'urgence reste un
+> circuit dédié qu'OASIS ne peut pas atteindre. Voir
+> [`docs/compliance/IEC_TS_63074.md`](../docs/compliance/IEC_TS_63074.md).
+
 ## 1. Concurrents retenus
 
 | Concurrent | Ce que c'est | Où il tourne |
@@ -33,7 +39,7 @@ TRL 4 ; ses concurrents commerciaux sont déployés.
 |---|---|---|---|
 | M1 | **Primitives standard uniquement** (Ed25519, X25519, ChaCha20-Poly1305, SHA-256) | Veridify utilise WalnutDSA, un algorithme propriétaire **cassé publiquement en 2018** (falsification universelle en environ deux minutes, puis attaque de la version corrigée) ; il propose aussi ML-DSA | Aucun algorithme maison : c'est ce qu'un auditeur vérifie en premier |
 | M2 | **Révocation signée par l'opérateur, k-sur-n possible, propagée et appliquée par chaque relais, sans renouveler les autres clés** | Bluetooth Mesh et Thread : renouvellement de clé pour tous. Reticulum : listes « blackhole » locales. Veridify, Xage : registre de propriété ou de politique en chaîne de blocs | Révoquer un nœud ne touche pas les autres ; k-sur-n prouvé sur PC seulement |
-| M3 | **Code sûr en mémoire et vérifié** : Rust, 608 tests, 130 des 152 harnais Kani vérifiés (aucun contre-exemple), 1,5 × 10⁹ exécutions de fuzzing, SBOM et 0 vulnérabilité connue | Les autres : C/C++ ou fermé | Moins de classes de failles mémoire ; preuves publiées |
+| M3 | **Code sûr en mémoire et vérifié** : Rust, 646 tests, 173 harnais Kani — 130 vérifiés en suite complète et 21 séparément, aucun contre-exemple, 1,5 × 10⁹ exécutions de fuzzing, SBOM et 0 vulnérabilité connue | Les autres : C/C++ ou fermé | Moins de classes de failles mémoire ; preuves publiées |
 | M4 | **Preuves brutes publiques** : logs, firmware, SHA-256 vérifiés dans un clone frais, défauts publiés | Produits fermés | Confiance vérifiable par un tiers ; aussi une limite pour la monétisation |
 | M5 | **Tourne sur Cortex-M0+ sans FPU ni accélérateur crypto** | Veridify revendique aussi les petits STM32 sans accélérateur | **Égalité probable** avec Veridify ; avantage sur seL4, Xage, Mobilicom |
 | M6 | **Résistance mesurée au déni de service par vérification forcée** : un pré-filtre à clé de lien ramène le coût d'une trame forgée de 179,4 ms à 0,70 ms sur RP2040, et sous un flot de 8 trames/s le relais livre 60 messages légitimes sur 60 à 19 % de charge (contre 39/60 à 110 % sans lui) | Personne parmi les concurrents cités ne documente ce risque ni sa parade. Bluetooth Mesh et Thread filtrent avec une clé **partagée** ; nos clés de lien sont dérivées des identités et ne sont jamais distribuées | Le chiffre est mesuré, pas estimé (`evidence/silicon/2026-10-07/prefilter/`). ⚠️ Contre un **initié**, le budget borne le calcul mais affame le trafic légitime (4/60) : plafond de calcul, pas équité |

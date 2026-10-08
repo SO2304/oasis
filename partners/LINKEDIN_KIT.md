@@ -18,7 +18,7 @@ renforce la crédibilité du projet.
 > autonome et sûre, et de communiquer sans cloud.
 >
 > Ce que fait OASIS :
-> • Bloque toute action physique quand l'incertitude des capteurs dépasse un seuil (règle R14 : 1000 fautes sur 1000 bloquées, décision en 331 ns)
+> • Bloque toute action physique quand l'incertitude des capteurs dépasse un seuil — un verrou d'état des capteurs, pas une fonction de sûreté certifiée (1000 fautes sur 1000 bloquées, décision en 331 ns)
 > • Fait circuler les messages sur un réseau maillé chiffré (ChaCha20-Poly1305) et signé (Ed25519), résistant au rejeu et à un nœud compromis
 > • Pilote PX4 via MAVLink v2 : armement, décollage et mission à 4 waypoints démontrés en simulation PX4 SITL (altitude tenue à ±6 cm)
 > • Compile pour microcontrôleur Cortex-M (RP2040, STM32)

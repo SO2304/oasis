@@ -1,5 +1,10 @@
 # OASIS face aux concurrents, axe par axe (2026-10-06)
 
+> ⚠️ **OASIS n'est pas une fonction de sûreté certifiée** : ni PL (ISO 13849-1) ni SIL
+> (IEC 62061). Il ne réduit aucun risque machine — il décide si un ordre est authentique,
+> habilité, frais et dans les limites. L'arrêt d'urgence reste un circuit dédié qu'OASIS ne
+> peut pas atteindre. Voir [`docs/compliance/IEC_TS_63074.md`](../docs/compliance/IEC_TS_63074.md).
+
 > **Maturité d'abord.** Reticulum ≈ TRL 7, microReticulum ≈ TRL 6-7, OASIS **TRL 4**
 > (modèle de sécurité prouvé en labo sur silicium, sans radio ni terrain). Les tableaux
 > ci-dessous comparent des **propriétés de conception**, pas des produits au même stade.
@@ -31,7 +36,7 @@ Légende : ✅ fait · ⚠️ partiel ou avec une faiblesse · ❌ absent · —
 | **C. Anti-rejeu qui survit à un redémarrage** | ❌ Cache de doublons en RAM uniquement : un vieux message signé est réaccepté après redémarrage ou remise à zéro du Bloom | ✅ Compteur signé + fenêtre par origine, persistés | ✅ Numéro de séquence et liste anti-rejeu persistés. ⚠️ Mais un détenteur de la clé réseau peut **saturer la liste anti-rejeu** avec de fausses entrées et bloquer les messages légitimes | ✅ Compteurs de trame (persistance : à vérifier) | ⚠️ Identifiant de paquet de 32 bits et anti-doublon ; persistance non documentée | ⚠️ Liste d'empreintes de paquets **sauvegardée sur disque** et rechargée au démarrage (`Transport.py` l.339-343, 3745-3769), mais non signée : un relais ne peut pas vérifier la fraîcheur | ✅ Compteurs de trame persistés |
 | **D. Un nœud compromis ne peut pas bloquer les messages des autres** | ❌ Remplacement du contenu → le vrai message est écarté comme doublon | ✅ Un message n'entre dans l'état du relais qu'après vérification complète | ❌ Saturation de la liste anti-rejeu possible avec la clé réseau | ❌ Clé partagée | ❌ | ⚠️ Rien n'est vérifié en transit ; seule la destination filtre | — |
 | **E. Révoquer un seul nœud sans recléfier tout le réseau** | ❌ Révocation signée (v6) côté `spore`, **`std` seulement**, et **non appliquée par les relais mesh** | ✅ **Fait, prouvé sur silicium** : liste signée par l'opérateur (k-sur-n possible), époque strictement croissante, persistée avant application, appliquée dès le premier relais, relue en flash après coupure. ⚠️ Un nœud révoqué peut encore relayer le trafic des autres ; k-sur-n et rattrapage testés sur PC seulement | ⚠️ « Key Refresh » : on renouvelle la clé de tous les nœuds sauf l'exclu. Lourd mais standard | ⚠️ Changement de clé réseau pour tous | ❌ Changement manuel de la clé de canal | ⚠️ Listes « blackhole » locales ou par abonnement, sans révocation globale (choix assumé) | ✅ Désactivation côté serveur (centralisé) |
-| **F. Sûreté des actionneurs liée aux communications** (aucune action si capteurs peu fiables, MAVLink/PX4) | ✅ Porte R14, pont MAVLink | ✅ **Fait, prouvé sur silicium** : porte à 7 conditions (v0B, origine autorisée, non révoquée, non expirée dans l'horloge de l'actionneur, R14, limites physiques y compris NaN, numéro d'ordre croissant). Aucun ordre refusé n'a fait monter la broche ; LED non confirmée visuellement | ❌ | ❌ | ❌ | ❌ | ❌ |
+| **F. Autorisation d'actionnement liée aux communications** (aucune action si capteurs peu fiables, MAVLink/PX4) | ✅ Verrou d'état des capteurs, pont MAVLink | ✅ **Fait, prouvé sur silicium** : porte à 7 conditions (v0B, origine autorisée, non révoquée, non expirée dans l'horloge de l'actionneur, verrou d'état des capteurs, limites physiques y compris NaN, numéro d'ordre croissant). Aucun ordre refusé n'a fait monter la broche ; LED non confirmée visuellement | ❌ | ❌ | ❌ | ❌ | ❌ |
 | **G. Langage sûr en mémoire + preuves formelles** | ✅ Rust, 113 harnais Kani | ✅ | ⚠️ Implémentations en C (ex. Zephyr), fuzzées et qualifiées SIG | ⚠️ OpenThread en C++, fuzzé et certifié | ❌ C++ | ⚠️ Python ; microReticulum en C++ | ⚠️ C, certifié |
 | **H. Preuves brutes publiées sur silicium** | ✅ Logs, empreintes SHA-256, firmware | ✅ | Certification à la place | Certification | ❌ | ❌ | Certification |
 
@@ -57,9 +62,9 @@ Meshtastic). C'est la place à prendre. Dans l'ordre :
    opérateur, propagée dans le mesh, appliquée par chaque relais avant la
    vérification de signature, persistée. Ferme E sans recléfier le réseau, ce
    qu'aucun concurrent en mesh ne fait.
-3. **Lier R14 aux ordres authentifiés** : un actionneur ne bouge que si l'ordre
-   est signé, frais, émis par une origine autorisée et non révoquée, **et** si
-   R14 l'autorise. Avec une preuve Kani de cette règle. Ça rend F unique et
+3. **Lier le verrou d'état aux ordres authentifiés** : un actionneur ne bouge que si
+   l'ordre est signé, frais, émis par une origine autorisée et non révoquée, **et** si
+   le verrou d'état des capteurs l'autorise. Avec une preuve Kani de cette règle. Ça rend F unique et
    difficile à copier, parce que les concurrents sont des réseaux, pas des
    systèmes d'actionnement.
 4. **Une suite de tests d'attaque publique et rejouable** (rejeu après
@@ -92,7 +97,7 @@ avec lui (tests d'interopérabilité avec Python dans `test_interop/`).
 | Vérification des données par chaque relais | ❌ Le relais vérifie qu'il est le prochain saut, puis « Just increase hop count and transmit », sans aucun contrôle cryptographique (`Transport.cpp` l.1980-2000, identique à Reticulum) | ✅ Origine, contenu, fraîcheur et réseau vérifiés à chaque saut (v0B) | 0/150 inversions acceptées sur silicium |
 | Anti-rejeu | Liste d'empreintes de paquets persistée (`_packet_hashlist`, `PersistedBytesList`), bornée, non signée | Compteur signé par l'origine, fenêtre persistée, vérifiable par chaque relais ; réserve de compteurs côté émetteur | Rejeu à l'octet près refusé après une coupure, émetteur redémarré accepté |
 | Exclure un nœud compromis | Listes « blackhole » locales ou par abonnement | Révocation signée par l'opérateur (k-sur-n possible), à époque croissante, propagée, persistée, appliquée par chaque relais | Silicium : origine révoquée rejetée au premier saut, y compris après coupure |
-| Lien avec les actionneurs | Aucun | Porte d'actionnement à 7 conditions (ordre signé, autorité, non révoqué, non expiré, R14, limites, non rejoué) | 3 preuves Kani + LED sur silicium |
+| Lien avec les actionneurs | Aucun | Porte d'autorisation d'actionnement à 7 conditions (ordre signé, autorité, non révoqué, non expiré, **verrou d'état des capteurs**, limites, non rejoué) | 3 preuves Kani + LED sur silicium |
 | Langage et preuves | C++ ; tests unitaires et d'interopérabilité ; pas de vérification formelle | Rust, 133 harnais Kani, 16 nouveaux exécutés et vérifiés | `evidence/kani/2026-10-06/` |
 | Preuves publiées | Pas de logs sur silicium publiés | Logs bruts, firmware et SHA-256 vérifiés dans un clone frais | `evidence/silicon/` |
 | Cible | ESP32, nRF52840 (Cortex-M4F) ; un fichier de carte RP2040 (RAK11300) existe, mais aucune cible RP2040 dans `platformio.ini` | Cortex-M0+ sans FPU (RP2040), validé sur 3 cartes | `evidence/silicon/` |
