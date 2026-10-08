@@ -187,8 +187,8 @@ footer { font-size: 0.8rem; color: var(--muted); border-top: 1px solid var(--lin
           <tr><th>Verify, per hop</th><td class="n">≈ 179 ms</td><td>Each relay pays it once per signed message</td></tr>
           <tr><th>v0B over v0A</th><td class="n">+1 %</td><td>Binding payload, counter and network costs one SHA-256</td></tr>
           <tr><th>Hybrid check (ML-DSA-44 + Ed25519)</th><td class="n">≈ 377 ms, 48.7 KB stack</td><td>Rare authority messages only; 14 fragments of 300 B per message</td></tr>
-          <tr><th>Firmware flash</th><td class="n">≈ 265–288 KB</td><td>Full node with hybrid authority, enrollment and update; ≈ 136–158 KB without them</td></tr>
-          <tr><th>RAM</th><td class="n">not measured</td><td>160 KB heap reserved; about 34 KB per router</td></tr>
+          <tr><th>Firmware flash</th><td class="n">336 KB</td><td>Measured with <code>size -A</code> on the thumbv6m ELF: the full node, with v0B/v0C mesh, authority, enrolment, update, journal and the Modbus gateway. The test suite is 131 KB, the brownfield device 17 KB. RP2040 has 2 MB</td></tr>
+          <tr><th>RAM</th><td class="n">100 KB</td><td>Measured, <code>.data</code> + <code>.bss</code> of the same ELF, out of the RP2040's 264 KB. This row said &laquo;&nbsp;not measured&nbsp;&raquo; until 2026-10-08</td></tr>
           <tr><th>Energy</th><td class="n">not measured</td><td>Estimate: one signature ≈ one LoRa SF7 transmission</td></tr>
         </tbody>
       </table>

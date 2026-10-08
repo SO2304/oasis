@@ -28,7 +28,7 @@ because per-phase deltas cannot be re-derived without a worktree and a test run 
 phase commit, and a chain nobody can check is worse than no chain),
 **182 Kani proof harnesses** (`grep -rE 'kani::proof' oasis-rt/src | wc -l`;
 53 mesh incl. v0A/v0B, 3 pre-filter v0C, 15 actuation gate + parts G/H/J, 5 part I journal, 4 part K TimeView, 5 C9 quorum, 4 B1 MAVLink carrier, 7 authority + fragment, 7 enrollment + ownership, 3 firmware, 3 Modbus gateway, 6 revocation + sender lease, and 67 across the 19 older mechanism and rclcpp-primitive modules; **counted per file, not by addition** — the incremental list this line used to carry summed to 179 and the per-module list below to 115, both against a measured 182). **First full-suite run 2026-10-07** (`evidence/kani/2026-10-07/full/`): **130 verified, 10 undetermined (`CBMC failed`, out of memory — NOT refutations), 12 never reached** before the OOM killer stopped the run on a 3.3 GB WSL. No counterexample **in that run**; the remaining 22 are **unknown, not verified**, and need ≥ 16 GB or the CI job. ⚠️ **« aucun contre-exemple » n'est plus vrai de l'historique** : `main` a réfuté deux harnais mesh — `proof_ad_reset_count_predictable` (le disjoint `|| actual_resets == 0` admettait un écart > 1) et `proof_af_combined_pattern_no_dashboard_alert` (seuil non borné, `threshold * 1000` débordait) — et cinq autres expiraient à 600 s. Les correctifs sont entrés par la fusion de `main` le 2026-10-08 (`a3e4111`, `8572913`, `68efc66`). ⚠️ That run covered the **152** harnesses that existed then; the **26** added by Phase 2 parts G/H/I/J/K and by C9 were verified separately — 14/14 (`…/2026-10-07/hardening/`), 7/7 (`…/2026-10-08/jk/`) and 12/12 (`…/2026-10-08/c9/`, which re-ran the 7 J/K harnesses because `REASON_COUNT` changed) and 4/4 (`…/2026-10-08/b1/`) — so no full-suite pass over all 182 exists yet. **CI-sharded by `oasis-rt/kani_shards.sh`** (merged from `main` 2026-10-08): `--check` passes over all **182**, each in exactly one shard, so the full suite is runnable on CI even though it is not runnable on this 3.3 GB WSL. On `main`'s 149 harnesses the CI run of 2026-10-06 gave **123 of the first 129 verified, 6 not verified**, the other 20 verified individually. **The 182 of this branch have never been run as one suite, on CI or locally.** **43 modules**,
-**20 `[[bin]]`**, **46 `src/*.rs`** files (35 before Phase 1.1; this file said 32, stale) (largest module now `spore_crypto.rs`
+**21 `[[bin]]`**, **46 `src/*.rs`** files (35 before Phase 1.1; this file said 32, stale) (largest module now `spore_crypto.rs`
 2512 L; `mesh.rs` was split 2026-06-02 — its tests + Kani proofs moved to
 `src/mesh/{tests,kani_proofs}.rs`; the protocol core is **1509 L** after mesh v0B
 was added 2026-10-06). ⚠️ The per-file line counts in the tree
@@ -96,7 +96,11 @@ oasis/
 │   │   ├── nerve.rs   450L   24 afferent + 8 efferent dims
 │   │   ├── spinal.rs  495L   5-platform auto-discovery (LOGGED ONLY)
 │   │   ├── vitality.rs 202L  Graceful degradation states
-│   │   └── transport.rs 298L Transport trait + LoRa frame stub
+│   │   └── transport.rs 298L Transport trait + LoRa frame builder
+│   (the real radio lives in the oasis-lora-transport crate: 6 files, incl. a
+│    434-line SX1262 embedded-hal 1.0 driver, airtime + enforced duty cycle,
+│    and a simulated radio. Driver datasheet-verified and mock-tested,
+│    **never run against a radio**.)
 │   └── src/bin/              18 production binaries (see below)
 ├── kernel/                   TS reference spec (ARCHIVED — 27k LOC, unmaintained)
 ├── webots/                   Current shadow audit docs (8 files)
@@ -107,7 +111,9 @@ oasis/
 
 ---
 
-## Production binaries (18, post-hygiene-round)
+## Production binaries (21 `[[bin]]` in `Cargo.toml`)
+
+⚠️ The table below lists the 18 of the hygiene round plus the ones added since; `tools/check_claims.sh` compares its count against `Cargo.toml` so the header cannot drift again.
 
 | Binary | Role |
 |---|---|
@@ -359,10 +365,11 @@ payload size via function-call dispatch; rclcpp's cost is executor
 
 ---
 
-## Cargo features (4)
+## Cargo features (5)
 
 | Feature | Default | Purpose |
 |---|---|---|
+| `mesh_v10` | **on** | Ed25519 per-node mesh signing — `SPORE\x0A`, and with it v0B and v0C, the actuation gate's `v0b_ok`, revocation and the whole authority layer. **Off ⇒ no signed mesh at all.** Deliberately uses only `ed25519-compact`'s baseline API so it stays `thumbv6m` clean. ⚠️ This row was **missing** from this table until 2026-10-08: a default-on feature that gates the main guarantee went undocumented, and `tools/check_claims.sh` now counts the features so it cannot happen again. |
 | `std` | on | Enables std-dependent modules (spore, federation, nerve, spinal, transport, mavlink_min, hal::KillSwitch). Off ⇒ no_std build for MCU. |
 | `std_env` | on | env var config helpers (disable on no_std / sandbox) |
 | `os_random` | on | OS RNG (getrandom). Off ⇒ MCU; caller supplies nonce via `*_with_material` / `*_with_nonce` AEAD APIs |
@@ -372,8 +379,22 @@ MCU build:
 ```
 cargo build --target thumbv7em-none-eabi --lib --no-default-features --features mesh_bloom_mcu --release
 ```
-Zero errors as of 2026-04-22. Binary flash/RAM size NOT measured (requires
-linking against `cortex-m-rt` runtime).
+Zero errors as of 2026-04-22.
+
+**Flash and RAM, measured** (`size -A` on the `thumbv6m-none-eabi` release ELFs,
+2026-10-08; flash = `.text` + `.rodata`, RAM = `.data` + `.bss`). RP2040 has 2 MiB of
+flash and 264 KiB of RAM, so none of these is close to a limit:
+
+| Firmware | Flash | RAM | What it is |
+|---|---:|---:|---|
+| `uart_mesh` | **336 KiB** | **100 KiB** | everything: v0B/v0C mesh, authority, enrolment, firmware update, journal, Modbus gateway |
+| `oasis-silicon-test` | 131 KiB | 160 KiB | the T0–T8 crypto/R14/mesh suite |
+| `pq_bench` | 66 KiB | 16 KiB | the ML-DSA bake-off |
+| `modbus_device` | 17 KiB | < 1 KiB | the brownfield device, `rmodbus` only, **no OASIS code** |
+
+⚠️ This line said "NOT measured (requires linking against `cortex-m-rt`)" until 2026-10-08,
+long after four firmwares had been linked and flashed. Re-derived by
+`tools/check_claims.sh`.
 
 ---
 

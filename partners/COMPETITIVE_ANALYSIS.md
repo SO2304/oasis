@@ -135,9 +135,18 @@ avec lui (tests d'interopérabilité avec Python dans `test_interop/`).
 | Anonymat de l'émetteur | ✅ Par conception | ❌ Incompatible avec le filtrage au relais |
 | Coût par saut | Quasi nul (pas de vérification) | ≈ 178 ms de vérification Ed25519 sur Cortex-M0+ |
 
+### Mesuré d'un seul côté
+
+- **RAM et flash d'OASIS : mesurées** le 2026-10-08 par `size -A` sur les ELF
+  `thumbv6m-none-eabi` (flash = `.text` + `.rodata`, RAM = `.data` + `.bss`) —
+  `uart_mesh`, le nœud complet, fait **336 Kio de flash et 100 Kio de RAM** ; la suite de
+  tests 131/160 Kio ; l'équipement Modbus 17 Kio. Le RP2040 offre 2 Mio de flash et
+  264 Kio de RAM : aucune marge n'est entamée. Reproduit par `tools/check_claims.sh`.
+  ⚠️ Cette ligne annonçait « OASIS ne connaît que des réservations » jusqu'au 2026-10-08,
+  bien après que quatre firmwares aient été liés et flashés.
+- **microReticulum ne publie pas de chiffres** : la comparaison reste impossible, et c'est
+  son absence de publication, pas la nôtre.
+
 ### Non mesuré des deux côtés
 
-- RAM et flash réellement utilisées : microReticulum ne publie pas de chiffres ;
-  OASIS ne connaît que des réservations (tas de 160 Ko) et la taille du firmware
-  (≈ 136 Ko de flash).
 - Consommation d'énergie.
