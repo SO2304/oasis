@@ -4,10 +4,21 @@
 //!   ef_payloads pub                         -> operator public key (hex)
 //!   ef_payloads orv1 <epoch> <fp_hex>...    -> signed ORV1 content (hex)
 //!   ef_payloads oac1 <actuator_id> <seq> <boot_id> <deadline_ms> <force> <torque> <velocity> <x> <y> <z>
-//!                                           -> OAC1 command content (hex)
+//!                                           -> OAC1 command content (hex), class = Act
+//!   ef_payloads stop <actuator_id> <seq> <boot_id> <deadline_ms>
+//!                                           -> OAC1 content (hex), class = **Stop** (part G)
+//!   ef_payloads osb1 <supervisor_fp_hex> <actuator_boot_id> <beacon_seq> <validity_ms>
+//!                                           -> OSB1 supervision beacon (hex, part H)
+//!
+//! A stop order carries the same `ActCommand` fields as an act order, but the gate ignores
+//! all of them except the class: `stop_decision` keeps only authenticity, the `STOP`
+//! permission and non-revocation. The setpoints are left at zero to make that visible —
+//! a stop has no magnitude.
 
 use oasis_operator_key::sign_with_seed;
-use oasis_rt::actuation::{encode_oac1, ActCommand};
+use oasis_rt::actuation::{
+    encode_oac1, encode_oac1_with_class, encode_osb1, ActCommand, OrderClass, SupervisionBeacon,
+};
 use oasis_rt::mesh_revocation::{encode_orv1, signed_message_parts, Fp};
 
 /// Simulated operator seed (test only; never compiled into firmware).
@@ -62,6 +73,34 @@ fn main() {
             };
             println!("{}", hex(&encode_oac1(&c)));
         }
-        _ => eprintln!("usage: ef_payloads pub | orv1 <epoch> <fp_hex>... | oac1 <aid> <seq> <boot_id> <deadline_ms> <f> <t> <v> <x> <y> <z>"),
+        Some("stop") => {
+            let c = ActCommand {
+                actuator_id: a[1].parse().unwrap(),
+                cmd_seq: a[2].parse().unwrap(),
+                boot_id: a[3].parse().unwrap(),
+                deadline_ms: a[4].parse().unwrap(),
+                force: 0.0,
+                torque: 0.0,
+                velocity: 0.0,
+                pos: [0.0, 0.0, 0.0],
+            };
+            println!("{}", hex(&encode_oac1_with_class(&c, OrderClass::Stop)));
+        }
+        Some("osb1") => {
+            let mut fp = [0u8; 8];
+            let raw = parse_fp(&a[1]);
+            fp.copy_from_slice(&raw[..8]);
+            let b = SupervisionBeacon {
+                supervisor_fp: fp,
+                actuator_boot_id: a[2].parse().unwrap(),
+                beacon_seq: a[3].parse().unwrap(),
+                validity_ms: a[4].parse().unwrap(),
+            };
+            println!("{}", hex(&encode_osb1(&b)));
+        }
+        _ => eprintln!(
+            "usage: ef_payloads pub | orv1 <epoch> <fp_hex>... | oac1 <aid> <seq> <boot_id> <deadline_ms> <f> <t> <v> <x> <y> <z> \
+             | stop <aid> <seq> <boot_id> <deadline_ms> | osb1 <sup_fp_hex> <actuator_boot_id> <beacon_seq> <validity_ms>"
+        ),
     }
 }

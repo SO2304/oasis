@@ -44,7 +44,9 @@ use usb_device::device::{StringDescriptors, UsbDevice};
 use usb_device::prelude::{UsbDeviceBuilder, UsbVidPid};
 use usbd_serial::SerialPort;
 
-use oasis_rt::actuation::parse_oac1;
+use oasis_rt::actuation::{parse_oac1, parse_oac1_any, parse_osb1, OrderClass};
+use oasis_rt::enrollment::perm;
+use ef::now_ms64;
 use oasis_rt::mesh::inner_slice;
 use oasis_rt::mesh::prefilter::{
     link_tag, LinkBudget, LinkKeys, LINK_TAG_LEN, MESH_V0C_HEADER_LEN,
@@ -60,6 +62,8 @@ use oasis_rt::spore_crypto::CounterTracker;
 mod ef;
 #[path = "../enroll.rs"]
 mod enroll;
+#[path = "../jstore.rs"]
+mod jstore;
 #[path = "../pq.rs"]
 mod pq;
 #[cfg(feature = "bootloaded")]
@@ -675,6 +679,21 @@ fn main() -> ! {
     let _led = pins.gpio25.into_push_pull_output();
     ef::led_set(false);
     let mut efs = ef::Ef::new(boot_id);
+    // Part I: read the journal head back. A head from an earlier boot starts a fresh
+    // chain for THIS boot (the chain is boot-bound by `genesis`), while the stored
+    // entries stay readable, so a power cut can be inspected afterwards.
+    let (jrn_restored, jrn_prev_boot) = efs.open_journal();
+    io.log(
+        "JRN_OPEN",
+        format_args!(
+            "restored={},prev_boot={:?},boot_id={},seq={:?},capacity={}",
+            jrn_restored,
+            jrn_prev_boot,
+            boot_id,
+            efs.journal.as_ref().and_then(|j| j.head.seq),
+            jstore::CAPACITY
+        ),
+    );
     // Phase 1.4: the Modbus gateway's own gate state (not the LED actuator's).
     let mut gw = mbg::Gateway::new();
     let mut gws = GwStats::default();
@@ -895,11 +914,12 @@ fn main() -> ! {
                 io.log(
                     "MB_GW_STATUS",
                     format_args!(
-                        "boot_id={},now_ms={},executed={},rejects={}/{}/{}/{}/{}/{}/{},sent={},ack={},exception={},timeout={},bad={},rx_errors={},last_seq={:?}",
+                        "boot_id={},now_ms={},executed={},rejects={}/{}/{}/{}/{}/{}/{}/{}/{},sent={},ack={},exception={},timeout={},bad={},rx_errors={},last_seq={:?}",
                         efs.boot_id,
                         ef::now_ms64(),
                         gw.act.executed,
-                        r[0], r[1], r[2], r[3], r[4], r[5], r[6],
+                        // 9 reasons since part G: the last two are Stopped and SupervisionLost.
+                        r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[7], r[8],
                         gws.sent, gws.ack, gws.exception, gws.timeout, gws.bad, gws.rx_errors,
                         gw.act.last_executed_seq
                     ),
@@ -1329,6 +1349,82 @@ fn main() -> ! {
                     ),
                 );
             }
+            // --- Phase 2 parts G/H/I test-harness commands --------------------
+            // Every letter A..Y is already a command and the dispatch is a chain of
+            // independent `if`s, not a match: reusing one would fire TWO branches. So
+            // these are subcommands of `Z`, the only free letter.
+            //
+            //   @Zc            clear the stop latch (part G, LOCAL action only)
+            //   @Zs1 / @Zs0    require / stop requiring live supervision (part H)
+            //   @Zd            dump the journal for `oasis_journal_verify` (part I)
+            //   @Zt<ss>,<bb>   flip one bit of stored entry <ss> at byte <bb>
+            //   @Zw            wipe the journal sectors and reopen a fresh chain
+            if line_done && line_len >= 2 && line[0] == b'Z' {
+                match line[1] {
+                    // ISO 13850:2015 4.1.1.2 requires a stop to be "reset by intentional
+                    // human action", so this is the local interface and there is
+                    // deliberately NO mesh message that clears the latch.
+                    b'c' => {
+                        let was = efs.act.stopped;
+                        efs.act.clear_stop();
+                        io.log("STOP_CLEAR", format_args!("was_stopped={},now={}", was, efs.act.stopped));
+                    }
+                    // Part H applies to autonomous mobile machinery. This board is a
+                    // fixed actuator, so the requirement is OFF by default and switched
+                    // on for the part H tests.
+                    b's' if line_len >= 3 => {
+                        efs.act.supervision_required = line[2] == b'1';
+                        io.log(
+                            "SUP_MODE",
+                            format_args!(
+                                "required={},until={:?},boot_id={}",
+                                efs.act.supervision_required, efs.act.supervision_until_ms, efs.boot_id
+                            ),
+                        );
+                    }
+                    b'd' => match (&efs.journal, &efs.jstore) {
+                        (Some(j), Some(st)) => {
+                            io.log("JRN_BOOT", format_args!("boot_id={}", j.head.boot_id));
+                            let seqtxt: alloc::string::String = match j.head.seq {
+                                Some(x) => alloc::format!("{}", x),
+                                None => alloc::string::String::from("none"),
+                            };
+                            io.log(
+                                "JRN_HEAD",
+                                format_args!(
+                                    "seq={} hash={} overwritten={}",
+                                    seqtxt,
+                                    Hx(&j.head.hash),
+                                    j.head.overwritten
+                                ),
+                            );
+                            let mut n = 0u32;
+                            for (slot, e) in st.iter_entries() {
+                                io.log("JRN_E", format_args!("{} slot={}", Hx(&e), slot));
+                                n += 1;
+                            }
+                            io.log("JRN_END", format_args!("entries={},capacity={}", n, jstore::CAPACITY));
+                        }
+                        _ => io.log("JRN_END", format_args!("entries=0,capacity=0,no_journal")),
+                    },
+                    // Defensive: targets this board's own flash, nothing else.
+                    b't' if line_len >= 7 => {
+                        let mut sl = [0u8; 1];
+                        let mut by = [0u8; 1];
+                        let ok = ef::hex_decode(&line[2..4], &mut sl) == Some(1)
+                            && line[4] == b','
+                            && ef::hex_decode(&line[5..7], &mut by) == Some(1);
+                        let done = ok && jstore::JStore::tamper(sl[0] as u32, by[0] as usize);
+                        io.log("JRN_TAMPER", format_args!("ok={},slot={},byte={}", done, sl[0], by[0]));
+                    }
+                    b'w' => {
+                        jstore::JStore::wipe();
+                        let (restored, prev) = efs.open_journal();
+                        io.log("JRN_WIPE", format_args!("restored={},prev_boot={:?}", restored, prev));
+                    }
+                    other => io.log("Z_UNKNOWN", format_args!("sub={}", other as char)),
+                }
+            }
             // Read-only flash dump (diagnostics): `@X<offset 8 hex>` prints 64 bytes.
             if line_done && line_len == 9 && line[0] == b'X' {
                 let mut o = [0u8; 4];
@@ -1388,7 +1484,7 @@ fn main() -> ! {
                 io.log(
                     "EF_STATUS",
                     format_args!(
-                        "boot_id={},now_ms={},epoch={},revoked={},sensor_lost={},pin25={},executed={},rejects={}/{}/{}/{}/{}/{}/{}",
+                        "boot_id={},now_ms={},epoch={},revoked={},sensor_lost={},pin25={},executed={},stopped={},stops={},sup_required={},sup_until={:?},jseq={:?},rejects={}/{}/{}/{}/{}/{}/{}/{}/{}",
                         efs.boot_id,
                         ef::now_ms64(),
                         efs.rev.epoch,
@@ -1396,7 +1492,13 @@ fn main() -> ! {
                         efs.sensor_lost,
                         ef::led_pin_level(),
                         efs.act.executed,
-                        r[0], r[1], r[2], r[3], r[4], r[5], r[6]
+                        efs.act.stopped,
+                        efs.act.stops,
+                        efs.act.supervision_required,
+                        efs.act.supervision_until_ms,
+                        efs.journal.as_ref().and_then(|j| j.head.seq),
+                        // 9 reasons since part G: the last two are Stopped and SupervisionLost.
+                        r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[7], r[8]
                     ),
                 );
             }
@@ -1910,23 +2012,80 @@ fn main() -> ! {
                                 relay =
                                     forward && d == oasis_rt::mesh_revocation::RevDecision::Applied;
                             }
-                            // Actuation command for the actuator this board hosts (C).
+                            // Actuation order for the actuator this board hosts (C).
+                            // Part G: the signed class byte routes it to the 9-condition
+                            // gate or to the 3-condition stop rule.
                             "OAC1" if BOARD_ID == "C" => {
-                                if let Some(cmd) = parse_oac1(inner) {
-                                    let d = efs.decide(&router, &pqs.registry, &origin, true, &cmd);
+                                if let Some((cmd, class)) = parse_oac1_any(inner) {
+                                    match class {
+                                        OrderClass::Act => {
+                                            let d = efs.decide(&router, &pqs.registry, &origin, true, &cmd);
+                                            let flags = efs.flags_now(
+                                                efs.last_entropy < ef::R14_THRESHOLD,
+                                                true,
+                                                now_ms64(),
+                                            );
+                                            let jseq =
+                                                efs.log_decision(&origin, cmd.cmd_seq, class, d.into(), flags);
+                                            io.log(
+                                                "ACT",
+                                                format_args!(
+                                                    "decision={:?},seq={},origin={:02x},entropy={:.3},pin25={},jseq={:?}",
+                                                    d,
+                                                    cmd.cmd_seq,
+                                                    origin[0],
+                                                    efs.last_entropy,
+                                                    ef::led_pin_level(),
+                                                    jseq
+                                                ),
+                                            );
+                                        }
+                                        OrderClass::Stop => {
+                                            let d = efs.decide_stop(&router, &pqs.registry, &origin, true);
+                                            let flags = efs.flags_now(true, true, now_ms64());
+                                            let jseq =
+                                                efs.log_decision(&origin, cmd.cmd_seq, class, d.into(), flags);
+                                            io.log(
+                                                "STOP",
+                                                format_args!(
+                                                    "decision={:?},seq={},origin={:02x},stopped={},pin25={},jseq={:?}",
+                                                    d,
+                                                    cmd.cmd_seq,
+                                                    origin[0],
+                                                    efs.act.stopped,
+                                                    ef::led_pin_level(),
+                                                    jseq
+                                                ),
+                                            );
+                                        }
+                                    }
+                                }
+                                relay = false; // consumed by the actuator
+                            }
+                            // Part H: supervision beacon. Authenticity comes from the v0B
+                            // envelope; the SUPERVISE permission and the boot binding are
+                            // checked here.
+                            "OSB1" if BOARD_ID == "C" => {
+                                if let Some(b) = parse_osb1(inner) {
+                                    let allowed = pqs.registry.allows(&origin, perm::SUPERVISE);
+                                    let revoked = router.is_revoked(&origin);
+                                    let applied =
+                                        allowed && !revoked && efs.apply_beacon(&b, now_ms64());
                                     io.log(
-                                        "ACT",
+                                        "SUP",
                                         format_args!(
-                                            "decision={:?},seq={},origin={:02x},entropy={:.3},pin25={}",
-                                            d,
-                                            cmd.cmd_seq,
-                                            origin[0],
-                                            efs.last_entropy,
-                                            ef::led_pin_level()
+                                            "applied={},allowed={},revoked={},beacon_seq={},validity_ms={},boot_match={},until={:?}",
+                                            applied,
+                                            allowed,
+                                            revoked,
+                                            b.beacon_seq,
+                                            b.validity_ms,
+                                            b.actuator_boot_id == efs.boot_id,
+                                            efs.act.supervision_until_ms
                                         ),
                                     );
                                 }
-                                relay = false; // consumed by the actuator
+                                relay = false;
                             }
                             // Phase 1.4: a Modbus write order for the device behind this gateway.
                             "OMB1" if BOARD_ID == "C" => {

@@ -26,11 +26,23 @@ fn enr_parse_roundtrip_and_rejects() {
         x[33] = r;
         assert_eq!(parse_attestation(&x), Err(EnrollReject::UnknownRole), "role {}", r);
     }
-    for b in 1..32 {
+    // Derived from `perm::KNOWN` rather than hardcoded, so adding a permission cannot
+    // make this test wrong without making it fail loudly. Part G added STOP (bit 1) and
+    // part H SUPERVISE (bit 2); the hardcoded `1..32` loop asserted those were reserved.
+    for b in 0..32 {
+        let bit = 1u32 << b;
         let mut x = c;
-        x[34..38].copy_from_slice(&(perm::ACTUATE | (1u32 << b)).to_le_bytes());
-        assert_eq!(parse_attestation(&x), Err(EnrollReject::ReservedPermission), "bit {}", b);
+        x[34..38].copy_from_slice(&(perm::ACTUATE | bit).to_le_bytes());
+        if perm::KNOWN & bit != 0 {
+            assert!(parse_attestation(&x).is_ok(), "bit {} is in perm::KNOWN", b);
+        } else {
+            assert_eq!(parse_attestation(&x), Err(EnrollReject::ReservedPermission), "bit {}", b);
+        }
     }
+    // And the three known bits are distinct, so a node cannot get STOP by holding ACTUATE.
+    assert_eq!(perm::KNOWN, perm::ACTUATE | perm::STOP | perm::SUPERVISE);
+    assert_ne!(perm::ACTUATE, perm::STOP);
+    assert_ne!(perm::STOP, perm::SUPERVISE);
 }
 
 #[test]

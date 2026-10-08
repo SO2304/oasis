@@ -30,7 +30,14 @@ pub mod role {
 /// Permissions: `ACTUATE` is enforced by the actuation gate; other bits are reserved.
 pub mod perm {
     pub const ACTUATE: u32 = 1 << 0;
-    pub const KNOWN: u32 = ACTUATE;
+    /// Part G: may send a **stop** order. Deliberately distinct from [`ACTUATE`] — a
+    /// supervisor may be allowed to stop a machine without being allowed to move it, and
+    /// conversely a node that can act must not get the stop (and therefore the latch,
+    /// and therefore a denial of service) for free.
+    pub const STOP: u32 = 1 << 1;
+    /// Part H: may issue a supervision beacon.
+    pub const SUPERVISE: u32 = 1 << 2;
+    pub const KNOWN: u32 = ACTUATE | STOP | SUPERVISE;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

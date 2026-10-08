@@ -4,7 +4,12 @@
 
 use alloc::vec::Vec;
 use oasis_operator_key::OperatorAuthority;
-use oasis_rt::actuation::{command_within_limits, ActCommand, Actuator, Decision, GateInput};
+use crate::jstore::JStore;
+use oasis_rt::actuation::{
+    command_within_limits, ActCommand, Actuator, Decision, GateInput, OrderClass, StopDecision, StopInput,
+    SupervisionBeacon,
+};
+use oasis_rt::journal::{Journal, LoggedDecision, FLAG_R14_SAFE, FLAG_STOPPED, FLAG_SUPERVISION_LIVE, FLAG_WITHIN_LIMITS};
 use oasis_rt::authority::{kind, verify_authority, AuthPolicy};
 use oasis_rt::enrollment::{perm, Registry};
 use oasis_rt::ownership::{OwnerKeys, OwnerState};
@@ -138,18 +143,118 @@ pub struct Ef {
     pub sensor_lost: bool,
     pub boot_id: u64,
     pub last_entropy: f64,
+    /// Part I: the hash chain. `None` until [`Ef::open_journal`] has read flash back.
+    pub journal: Option<Journal>,
+    pub jstore: Option<JStore>,
+    /// Entries written but whose head commit has not been attempted (power-cut window).
+    pub j_pending: u32,
 }
 
 impl Ef {
     pub fn new(boot_id: u64) -> Self {
         Ef {
             rev: RevState::default(),
+            // Part H: this actuator is a FIXED one (an LED, and the Modbus device on A),
+            // so supervision is NOT required — `Actuator::new()`, not `new_supervised()`.
+            // `@A1` switches it on at run time for the part H tests. Annex III part 3
+            // applies to autonomous mobile machinery, which this board is not pretending
+            // to be.
             act: Actuator::new(),
             agent: agent_new(3),
             sensor_lost: false,
             boot_id,
             last_entropy: 0.0,
+            journal: None,
+            jstore: None,
+            j_pending: 0,
         }
+    }
+
+    /// Read the journal head back from flash. A head from an **earlier boot** starts a
+    /// fresh chain for this boot (the chain is boot-bound by `genesis`), but the stored
+    /// entries are left in place so the previous boot's journal can still be read out.
+    pub fn open_journal(&mut self) -> (bool, Option<u64>) {
+        let (store, head) = JStore::open();
+        let prev_boot = head.as_ref().map(|h| h.boot_id);
+        let restored = match head {
+            Some(h) if h.boot_id == self.boot_id => {
+                self.journal = Some(Journal { head: h });
+                true
+            }
+            _ => {
+                let j = Journal::new(self.boot_id);
+                self.journal = Some(j);
+                false
+            }
+        };
+        self.jstore = Some(store);
+        (restored, prev_boot)
+    }
+
+    /// Append one decision and persist it: entry page first, then the head. A power cut
+    /// between the two leaves exactly one unconfirmed entry, which `verify` reports.
+    pub fn log_decision(
+        &mut self,
+        origin: &Fp,
+        cmd_seq: u32,
+        class: OrderClass,
+        decision: LoggedDecision,
+        flags: u8,
+    ) -> Option<u32> {
+        let j = self.journal.as_mut()?;
+        let store = self.jstore.as_mut()?;
+        let bytes = j.append(*origin, cmd_seq, class, decision, flags);
+        let seq = j.head.seq;
+        let discarded = store.append_entry(&bytes);
+        j.head.overwritten = j.head.overwritten.saturating_add(discarded);
+        self.j_pending += 1;
+        store.commit_head(&j.head);
+        self.j_pending -= 1;
+        seq
+    }
+
+    /// Flags recorded with a decision, so a reader can see the context the gate saw.
+    pub fn flags_now(&self, r14_safe: bool, within_limits: bool, now_ms: u64) -> u8 {
+        let ctx = self.act.context(now_ms);
+        let mut f = 0;
+        if r14_safe {
+            f |= FLAG_R14_SAFE;
+        }
+        if within_limits {
+            f |= FLAG_WITHIN_LIMITS;
+        }
+        if !ctx.supervision_expired {
+            f |= FLAG_SUPERVISION_LIVE;
+        }
+        if ctx.stopped {
+            f |= FLAG_STOPPED;
+        }
+        f
+    }
+
+    /// Part G: decide on a **stop** order. Three conditions only — see
+    /// `oasis_rt::actuation::stop_decision`. On `Stop` the LED is driven to its safe
+    /// state (off) and the latch is set.
+    pub fn decide_stop(&mut self, router: &MeshRouter, registry: &Registry, origin: &Fp, v0b_ok: bool) -> StopDecision {
+        let d = self.act.decide_stop(&StopInput {
+            v0b_ok,
+            // `STOP` is a permission of its own. No board has it until an owner-signed
+            // attestation grants it, exactly like `ACTUATE`.
+            stop_authorized: registry.allows(origin, perm::STOP),
+            revoked: router.is_revoked(origin),
+        });
+        if d == StopDecision::Stop {
+            led_set(false);
+        }
+        d
+    }
+
+    /// Part H: apply a supervision beacon the caller has already authenticated.
+    pub fn apply_beacon(&mut self, b: &SupervisionBeacon, now_ms: u64) -> bool {
+        if b.actuator_boot_id != self.boot_id {
+            return false;
+        }
+        self.act.apply_beacon(b, now_ms)
     }
 
     /// Verify a revocation blob (ORV1 or OAU1) against one owner's keys.
