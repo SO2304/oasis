@@ -66,6 +66,33 @@ property that does not hold.
 Pre-1.0: only the latest commit of the default branch receives security fixes. No
 release has been published yet. Pin a commit.
 
+## Support period
+
+The Cyber Resilience Act sets, for a product with digital elements placed on the market,
+a **support period** during which vulnerabilities are handled — at least **5 years** of
+assistance, with security updates remaining **available for 10 years** after the last
+update is issued (Regulation (EU) 2024/2847; see
+[`docs/compliance/CRA.md`](docs/compliance/CRA.md) for the verbatim articles and dates).
+
+**Today this project owes no support period, and says so rather than implying one.**
+Verified at the source during phase 0: a free and open-source component that is **not
+monetised** is outside the CRA's scope (recitals 18 and 20), and Article 13(5) places the
+due-diligence duty on the integrator who ships it in a product. OASIS is MIT-licensed,
+pre-1.0, unreleased, and sold to nobody.
+
+What changes the day it is monetised, stated now so that no buyer discovers it later:
+
+| | Obligation | Can a single maintainer meet it? |
+|---|---|---|
+| Assistance | 5 years minimum | **Not alone.** This is the honest answer to `POSITIONING_GAPS.md` **D5** and **D9** |
+| Update availability | 10 years after the last update | Needs an organisation, not a person |
+| Vulnerability reporting | 24 h early warning, 72 h notification to ENISA and the CSIRT | Process exists above; the legal entity does not |
+
+So the position is: **the evidence and the code are available under MIT; a support
+commitment is not, and will not be until there is an entity able to carry it.** An
+integrator who needs a supported component needs a supplier, and that is a commercial
+question before it is a technical one.
+
 ## Supply chain
 
 | What | How | Where |
@@ -73,7 +100,7 @@ release has been published yet. Pin a commit.
 | SBOM | CycloneDX 1.5 JSON, one per crate, firmware SBOMs for their real targets (`cargo cyclonedx --format json --spec-version 1.5`) | `evidence/supply-chain/<date>/sbom/` |
 | Known vulnerabilities | `cargo audit` on the workspace and on each firmware lockfile | `evidence/supply-chain/<date>/` |
 | Licences, sources, bans, advisories | `cargo deny check` with `deny.toml` (permissive licences only, crates.io only, no wildcard versions; every advisory exception documented with its reason) | `deny.toml` |
-| Parser robustness | fuzzing with `cargo-fuzz` (planned, Phase 2) | — |
+| Parser robustness | `cargo-fuzz` over 9 parsers (v0B, ORV1, OAC1, MAVLink, authority, fragment, enrollment, firmware, Modbus), ~1.5 × 10⁹ executions, one real finding: a non-canonical `OAC1` encoding, fixed | `evidence/fuzz/2026-10-07/` |
 | Formal proofs | Kani harnesses in `oasis-rt` (CI job `kani-proofs`) | `evidence/kani/` |
 
 Dependencies with security weight are pinned exactly and justified in their

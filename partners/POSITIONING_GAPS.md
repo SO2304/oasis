@@ -238,7 +238,7 @@ Trois statuts, et un seul donne le droit d'une affirmation publique :
 | **D6** financement | **ouvert** | Passe par des consortiums, donc par un partenaire industriel. Rien fait |
 | **D7** contrôle des exportations | **remplacé par D8** | Sévérité relevée en phase 0 |
 | **D8** angles morts du contrôle des exportations | **ouvert** | Identifié en phase 0 (règlement (UE) 2021/821). À vérifier **avant** tout prospect hors UE |
-| **D9** durée de support | **ouvert** | Le CRA impose, dès monétisation, **5 ans** d'assistance et **10 ans** de disponibilité des mises à jour. Pour une personne seule, c'est un engagement, pas une tâche technique |
+| **D9** durée de support | **partiellement fermé** | Écrit dans [`SECURITY.md`](../SECURITY.md) § *Support period* : **aujourd'hui aucune période de support n'est due** — un composant libre **non monétisé** est hors du champ du CRA (considérants 18 et 20, vérifié en phase 0) et l'art. 13(5) met la diligence sur l'intégrateur. Le document dit aussi ce qui change **le jour de la monétisation** (5 ans d'assistance, 10 ans de disponibilité) et répond « non, pas seul ». ⚠️ **L'engagement reste impossible à prendre** tant qu'il n'y a pas d'entité pour le porter : c'est une question commerciale avant d'être technique (voir aussi D5) |
 
 ### Compte
 
@@ -246,8 +246,8 @@ Trois statuts, et un seul donne le droit d'une affirmation publique :
 |---|---:|---:|---:|---:|---:|
 | Fermé avec preuve | 1 | 1 | 7 | 0 | **9** |
 | Fermé (documentaire) | 1 | 0 | 1 | 2 | **4** |
-| Partiellement fermé | 5 | 2 | 3 | 1 | **11** |
-| Ouvert | 4 | 3 | 3 | 5 | **15** |
+| Partiellement fermé | 5 | 2 | 3 | 2 | **12** |
+| Ouvert | 4 | 3 | 3 | 4 | **14** |
 | Sans objet / information | 1 | 1 | 0 | 1 | **3** |
 | | **12** | **7** | **14** | **9** | **42** |
 

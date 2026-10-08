@@ -31,8 +31,8 @@ Il n'est pas recopié ici : une seule source de vérité.
 |---|---:|---:|---:|---:|---:|
 | Fermé avec preuve | 1 | 1 | 7 | 0 | **9** |
 | Fermé (documentaire) | 1 | 0 | 1 | 2 | **4** |
-| Partiellement fermé | 5 | 2 | 3 | 1 | **11** |
-| Ouvert | 4 | 3 | 3 | 5 | **15** |
+| Partiellement fermé | 5 | 2 | 3 | 2 | **12** |
+| Ouvert | 4 | 3 | 3 | 4 | **14** |
 | Sans objet / information | 1 | 1 | 0 | 1 | **3** |
 | | **12** | **7** | **14** | **9** | **42** |
 
@@ -227,7 +227,7 @@ couverture des shards verte, et `origin/main` est **ancêtre de HEAD** — donc 
 | **C14** stockage sécurisé | **Ne se ferme pas en logiciel.** Clé lisible par BOOTSEL ou SWD. Réponse honnête : il faut un autre silicium |
 | **C11** radio réelle | **Aucune radio n'a jamais émis.** Le pilote SX1262 n'est testé que contre un mock, tous les budgets sont calculés |
 | **C13** confidentialité mesh | Les ordres circulent en clair. Aucun travail fait |
-| **D5, D9** une personne, 5 à 10 ans de support | Un engagement, pas une tâche technique |
+| **D5** une seule personne | Un engagement, pas une tâche technique. **D9** est désormais écrit dans `SECURITY.md` : aucune période de support n'est due aujourd'hui (hors champ du CRA faute de monétisation), et ce qui changerait le jour de la monétisation est dit, avec la réponse « non, pas seul » |
 | **C6** rotation de clé de nœud | Nommé dans `KEY_LIFECYCLE.md` §6. C'est le prérequis qui gouverne toute migration cryptographique |
 | **C3** duty-cycle | **Fermé le 2026-10-08** : appliqué par le transport, qui refuse d'émettre hors budget. Restent la formule non vérifiée à la source et l'absence de radio |
 | **C10** suite Kani complète | 130/152 au seul passage intégral ; **182 harnais existent**. « 182/182 » serait faux |
