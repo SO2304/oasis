@@ -270,6 +270,17 @@ fn pq_policy_two_slots_merge_to_the_strongest() {
     assert_eq!(AuthPolicy::from_slots(&new, &old), raised);
     assert_eq!(AuthPolicy::from_slots(&blank, &blank), AuthPolicy::default());
     assert_eq!(AuthPolicy::from_slots(&[], b"junk"), AuthPolicy::default());
+
+    // A record with the right magic but another length is refused, and the fallback is
+    // the *default* — so widening KIND_COUNT silently drops every raise a fleet made.
+    // `POLICY_RECORD_LEN = 4 + KIND_COUNT + 4`, so this is what a build with one more
+    // kind would write, and what this one makes of it. See `docs/CRYPTO_MIGRATION.md`
+    // §6: the record must gain a version before the suite table gains a slot.
+    let mut wider = [0u8; POLICY_RECORD_LEN + 1];
+    wider[..POLICY_RECORD_LEN].copy_from_slice(&new);
+    assert_eq!(AuthPolicy::from_bytes(&wider), None, "a longer record is unreadable");
+    assert_eq!(AuthPolicy::from_slots(&wider, &wider), AuthPolicy::default());
+    assert_ne!(AuthPolicy::from_slots(&wider, &wider), raised, "the raise is lost");
 }
 
 #[test]
