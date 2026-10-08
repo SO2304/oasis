@@ -1,6 +1,6 @@
 # Rapport final — exécution de `prompts/POSITIONING_ALIGNMENT.md`
 
-**Branche `positioning-alignment`, du 2026-10-07 au 2026-10-08.** Dernier commit au moment d'écrire : `5aee840`, **71 commits** devant `origin/main`. `main` n'a pas été touché : il faut un *fast-forward* ou une *pull
+**Branche `positioning-alignment`, du 2026-10-07 au 2026-10-08.** Dernier commit au moment d'écrire : `7f9558a`, **75 commits** devant `origin/main`, qui est désormais **ancêtre de HEAD** (un *fast-forward* est possible). `main` n'a pas été touché : il faut un *fast-forward* ou une *pull
 request*.
 
 > **OASIS n'est pas une fonction de sûreté certifiée** (ni PL au sens de l'ISO 13849-1, ni
@@ -81,7 +81,7 @@ mémoire, tous faux. Ceux-ci viennent d'un `git worktree` sur le point de branch
 ## 4. Ce que ma propre vérification a trouvé — et qui serait passé sans elle
 
 C'est la partie du rapport qui vaut le plus, parce qu'elle dit ce que les preuves coûtent.
-**Quatre des treize sont des fautes d'arithmétique à moi** (points 6, 8, 9 et 10bis) : c'est
+**Cinq des quatorze sont des fautes de comptabilité ou d'affirmation à moi** (points 6, 8, 9, 10bis et 11bis) : c'est
 un taux, pas un accident, et la règle qui en sort est écrite dans chaque correctif —
 **compter depuis l'arbre, jamais additionner des écarts mémorisés**.
 
@@ -137,6 +137,18 @@ un taux, pas un accident, et la règle qui en sort est écrite dans chaque corre
     loin. Et **le script d'exécution étiquette à tort** tout `FAILED` comme
     « counterexample » : défaut noté dans `evidence/kani/2026-10-08/b1/run1/README.md`, et
     commun aux campagnes précédentes.
+11bis. **Une affirmation fausse, trouvée en fusionnant `main`.** `main` avait **15
+    commits** que la branche n'avait pas, dont trois **correctifs de preuve** : `a3e4111` a
+    **réfuté deux harnais mesh** — `proof_ad_reset_count_predictable` (le disjoint
+    `|| actual_resets == 0` admettait un écart > 1) et
+    `proof_af_combined_pattern_no_dashboard_alert` (seuil non borné, `threshold * 1000`
+    débordait) — et cinq autres expiraient à 600 s. Donc la phrase **« aucun
+    contre-exemple dans la suite »**, que la branche portait dans `CLAUDE.md`,
+    `POSITIONING.md`, `DIFFERENTIATORS.md` et la page partenaires, était **fausse**. Elle
+    est remplacée partout par ce qui est vrai : la suite **a produit deux
+    contre-exemples**, ils étaient réels, ils sont corrigés. Une suite qui n'a jamais
+    rien réfuté est une suite que personne n'a exécutée. `main` a aussi corrigé
+    **« preuves brutes publiques »** — le dépôt est privé.
 
 **Dans la méthode :**
 
@@ -149,6 +161,26 @@ un taux, pas un accident, et la règle qui en sort est écrite dans chaque corre
     dénonce. Le fil déplacé, K est passé 6/6.
 
 ---
+
+### Fusion de `main`, le 2026-10-08
+
+`main` n'était pas en retard : il portait **15 commits** absents de la branche, dont les
+trois correctifs de preuve du §4-11bis et le script **`oasis-rt/kani_shards.sh`**. Ce
+script attribue chaque harnais à exactement un *shard* de CI, et son `--check` **passe
+sur les 182** de cette branche : la suite complète est donc **exécutable en CI**, même
+si elle ne l'est pas sur cette WSL de 3,3 Go. Elle n'a toujours **jamais** tourné d'un
+seul tenant, ni en CI ni en local.
+
+Six conflits, **tous résolus en fusionnant les deux côtés**, jamais en choisissant.
+`main` apportait des faits que la branche n'avait pas : le dépôt est privé donc les
+preuves ne sont **pas** publiques, 17 partenaires Veridify nommés, la taille du firmware
+en flash, une ligne de déploiement passerelle Modbus, une couche d'architecture
+« identité et cycle de vie », et le paragraphe de loyauté sur WalnutDSA. La branche
+apportait les neuf conditions de la porte, les chiffres courants et la phase 5.
+
+Après la fusion : **623 tests de bibliothèque, 662 d'espace de travail, 182 harnais**,
+couverture des shards verte, et `origin/main` est **ancêtre de HEAD** — donc un
+*fast-forward* est possible.
 
 ## 5. Ce qui reste ouvert, et pourquoi
 
