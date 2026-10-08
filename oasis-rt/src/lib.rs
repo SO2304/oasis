@@ -47,6 +47,10 @@ pub mod journal;
 pub mod mesh;
 pub mod mesh_revocation;
 pub mod modbus_gateway;
+// modbus_read: authenticated, address-limited reads through the gateway (pilot phase A.6).
+// Pure and no_std, like the write path: the HMI's FC03 becomes an OMQ1 inside a v0B
+// envelope, and no frame reaches the device unless every register asked for is in the map.
+pub mod modbus_read;
 pub mod modbus_tcp;
 // mbtcp_net: the sockets the Modbus TCP layer was missing (pilot phase A). std only:
 // std::net and blocking threads.

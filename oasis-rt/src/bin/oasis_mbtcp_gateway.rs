@@ -90,6 +90,7 @@ fn main() {
                         Served::Clock { boot_id } => println!("GATEWAY {peer} CLOCK boot_id={boot_id}"),
                         Served::MeshDrop(why) => println!("GATEWAY {peer} MESH_DROP why={why:?} -> no PLC write"),
                         Served::NotAnOrder => println!("GATEWAY {peer} NOT_AN_ORDER -> no PLC write"),
+                        Served::Read { check, served } => println!("GATEWAY {peer} READ {check:?} served={served} (never writes)"),
                         Served::Decided { cmd_seq, decision, outcome, plc_written } => {
                             println!("GATEWAY {peer} seq={cmd_seq} {decision:?} outcome={outcome:?} plc_written={plc_written}")
                         }

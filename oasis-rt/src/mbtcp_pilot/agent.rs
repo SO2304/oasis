@@ -12,7 +12,8 @@ use crate::mbtcp_conf::Config;
 use crate::mbtcp_net::{connect_timeout, read_frame, write_frame};
 use crate::mesh::MeshRouter;
 use crate::modbus_gateway::encode_omb1;
-use crate::modbus_tcp::{hmi_response, parse_tcp_write, Outcome, TcpWrite, EXC_GATEWAY_PATH_UNAVAILABLE};
+use crate::modbus_read::{encode_omq1, hmi_read_response, parse_omv1, parse_tcp_read, MbQuery};
+use crate::modbus_tcp::{hmi_response, parse_tcp_write, Outcome, TcpWrite, EXC_GATEWAY_PATH_UNAVAILABLE, EXC_GATEWAY_TARGET_FAILED};
 
 /// How long the agent reuses its view of the gateway's clock before asking again.
 ///
@@ -210,19 +211,90 @@ pub fn serve_hmi(hmi: &mut TcpStream, agent: &Mutex<AgentState>, conf: &Config) 
 
     loop {
         let req = crate::mbtcp_net::modbus_read_request(hmi)?;
-        match parse_tcp_write(&req) {
-            // Not a write this agent handles — a read, or malformed. ⚠️ Reads are refused
-            // rather than relayed, so the gateway stays the PLC's only path; see the
-            // binary's header for the decision.
-            None => {
-                let exc = exception_for(&req, EXC_GATEWAY_PATH_UNAVAILABLE);
-                write_all_flush(hmi, &exc)?;
+        if let Some(w) = parse_tcp_write(&req) {
+            let outcome = agent_forward(&mut link, agent, conf, &w);
+            let (resp, n) = hmi_response(&w, outcome);
+            write_all_flush(hmi, &resp[..n])?;
+            continue;
+        }
+        // A read goes **through** the gateway, signed like an order and bounded by the
+        // same register map. It used to be refused outright, which left the HMI
+        // write-only and pushed every real deployment towards a side channel to the PLC —
+        // the exact thing the gateway exists to prevent.
+        if let Some(q) = parse_tcp_read(&req, conf.gateway_id) {
+            let tid = u16::from_be_bytes([req[0], req[1]]);
+            match agent_read(&mut link, agent, conf, &q) {
+                Ok(values) => match hmi_read_response(&q, tid, &values) {
+                    Some((resp, n)) => write_all_flush(hmi, &resp[..n])?,
+                    None => write_all_flush(hmi, &exception_for(&req, EXC_GATEWAY_TARGET_FAILED))?,
+                },
+                Err(code) => write_all_flush(hmi, &exception_for(&req, code))?,
             }
-            Some(w) => {
-                let outcome = agent_forward(&mut link, agent, conf, &w);
-                let (resp, n) = hmi_response(&w, outcome);
-                write_all_flush(hmi, &resp[..n])?;
+            continue;
+        }
+        // Neither a write nor a read this agent understands. Answer, never stay silent.
+        let exc = exception_for(&req, EXC_GATEWAY_PATH_UNAVAILABLE);
+        write_all_flush(hmi, &exc)?;
+    }
+}
+
+/// One HMI read: sign the query, send it, and return the values the gateway reported.
+///
+/// `Err(code)` is the Modbus exception to give the HMI. There is no silent path: an
+/// unreachable gateway becomes 0x0B, a refused span the code the gateway's rule chose.
+pub fn agent_read(link: &mut GatewayLink, agent: &Mutex<AgentState>, conf: &Config, q: &MbQuery) -> Result<Vec<u16>, u8> {
+    match agent_read_try(link, agent, conf, q) {
+        Ok(v) => Ok(v),
+        Err(ReadFail::Exception(c)) => Err(c),
+        Err(ReadFail::Transport) => Err(EXC_GATEWAY_TARGET_FAILED),
+    }
+}
+
+enum ReadFail {
+    /// The gateway (or the device) refused, with this Modbus exception code.
+    Exception(u8),
+    /// Nothing usable came back.
+    Transport,
+}
+
+fn agent_read_try(link: &mut GatewayLink, agent: &Mutex<AgentState>, conf: &Config, q: &MbQuery) -> Result<Vec<u16>, ReadFail> {
+    // A read carries no `cmd_seq`, no `boot_id` and no deadline: it authorises nothing, so
+    // there is nothing for a gate to judge. Its authenticity and its freshness come from
+    // the v0B envelope — whose counter window and Bloom filter are what refuse a replayed
+    // query — and not from fields this payload would otherwise have to carry.
+    let env = {
+        let mut st = agent.lock().map_err(|_| ReadFail::Transport)?;
+        let payload = encode_omq1(q);
+        st.origin.origin_wrap_v0b(&payload).ok_or(ReadFail::Transport)?
+    };
+
+    let reply = {
+        let sock = link.connect(conf).map_err(|_| ReadFail::Transport)?;
+        let r = (|| -> io::Result<Vec<u8>> {
+            write_frame(sock, &env)?;
+            read_frame(sock)
+        })();
+        match r {
+            Ok(r) => r,
+            Err(_) => {
+                link.reset();
+                return Err(ReadFail::Transport);
             }
+        }
+    };
+
+    if let Some((values, n)) = parse_omv1(&reply) {
+        return Ok(values[..n as usize].to_vec());
+    }
+    // Not values: the gateway refused, and its `OMR1` carries the code it chose. Rendering
+    // that code rather than one computed here is the lesson the write path already paid
+    // for — an unlisted register must reach the HMI as 0x02, not as 0x0A.
+    match decode_reply(&reply) {
+        Some((_, Outcome::PlcException(c))) => Err(ReadFail::Exception(c)),
+        Some((_, Outcome::Refused(r, rules))) => Err(ReadFail::Exception(crate::modbus_tcp::refusal_code(r, rules))),
+        _ => {
+            link.reset();
+            Err(ReadFail::Transport)
         }
     }
 }

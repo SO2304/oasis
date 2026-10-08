@@ -81,12 +81,19 @@ fn conf(listen: &str, peer: &str) -> Config {
 /// only the RTU tests had it. Now the frame really has to satisfy `rmodbus`'s parser in
 /// `ModbusProto::TcpUdp`, and the value read back comes out of its storage.
 fn spawn_plc(writes: Arc<AtomicU32>, store: Arc<Mutex<ModbusStorageSmall>>) -> String {
+    spawn_plc_counting(writes, Arc::new(AtomicU32::new(0)), store)
+}
+
+/// Same, with the **read** requests counted too: a refused read must not reach the device
+/// any more than a refused write must, and only a counter at the device can show that.
+fn spawn_plc_counting(writes: Arc<AtomicU32>, reads: Arc<AtomicU32>, store: Arc<Mutex<ModbusStorageSmall>>) -> String {
     let srv = TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = srv.local_addr().unwrap().to_string();
     thread::spawn(move || {
         for s in srv.incoming() {
             let Ok(mut s) = s else { continue };
             let writes = Arc::clone(&writes);
+            let reads = Arc::clone(&reads);
             let store = Arc::clone(&store);
             thread::spawn(move || {
                 s.set_read_timeout(Some(Duration::from_millis(1500))).ok();
@@ -107,7 +114,9 @@ fn spawn_plc(writes: Arc<AtomicU32>, store: Arc<Mutex<ModbusStorageSmall>>) -> S
                         if r.is_err() {
                             return;
                         }
-                        if !f.readonly {
+                        if f.readonly {
+                            reads.fetch_add(1, Ordering::SeqCst);
+                        } else {
                             writes.fetch_add(1, Ordering::SeqCst);
                         }
                     }
@@ -400,24 +409,130 @@ fn a_dead_gateway_still_answers_the_hmi() {
     assert!(t0.elapsed() < Duration::from_secs(5), "and it must not hang");
 }
 
-/// A read (FC03) is refused rather than relayed: the default must leave one device
-/// talking to the PLC. The decision is in the agent's module doc; this pins it.
+/// Reads go **through** the gateway: authenticated, bounded by the same register map, and
+/// never around it. This replaces a test that pinned the opposite — reads were refused
+/// outright, which left the HMI write-only and pushed a real deployment towards a side
+/// channel straight to the PLC, the exact thing the gateway exists to prevent.
+///
+/// Three things are checked here, and the device's own counters are the ground truth:
+/// a listed read returns what `rmodbus` holds, an unlisted one is refused **without the
+/// device being asked**, and a forged query dies at the mesh layer.
 #[test]
-fn a_read_is_refused_not_relayed() {
+fn reads_are_served_through_the_gateway_and_bounded_by_the_map() {
     let writes = Arc::new(AtomicU32::new(0));
-    let plc = spawn_plc(Arc::clone(&writes), Arc::new(Mutex::new(ModbusStorageSmall::new())));
+    let reads = Arc::new(AtomicU32::new(0));
+    let store = Arc::new(Mutex::new(ModbusStorageSmall::new()));
+    let plc = spawn_plc_counting(Arc::clone(&writes), Arc::clone(&reads), Arc::clone(&store));
     let log = Arc::new(Mutex::new(Vec::new()));
-    let gw = spawn_gateway(conf("127.0.0.1:0", &plc), log);
+    let gw = spawn_gateway(conf("127.0.0.1:0", &plc), Arc::clone(&log));
     let agent = spawn_agent(conf("127.0.0.1:0", &gw));
     thread::sleep(Duration::from_millis(120));
 
-    let mut c = connect_timeout(&agent, Duration::from_millis(2000)).unwrap();
-    let req = [0x00, 0x07, 0x00, 0x00, 0x00, 0x06, UNIT, 0x03, 0x00, 0x0A, 0x00, 0x01];
+    // Put a known value in the register through the authorised write path, so the read
+    // has something to find that the test did not write into the store behind the PLC.
+    let (fc, _) = hmi_write(&agent, 1, REG_OK, 437);
+    assert_eq!(fc, 0x06, "the write must be acknowledged first");
+    assert_eq!(writes.load(Ordering::SeqCst), 1);
+
+    // 1. A listed register: the HMI gets an FC03 answer carrying what rmodbus holds.
+    let (fc, code, values) = hmi_read(&agent, 0x5101, REG_OK, 1);
+    assert_eq!(fc, 0x03, "a listed read must be answered, not excepted (code {code:#04x})");
+    assert_eq!(values, vec![437], "and carry the value the device actually holds");
+    assert_eq!(store.lock().unwrap().get_holding(REG_OK).unwrap(), 437, "cross-checked in rmodbus");
+    assert_eq!(reads.load(Ordering::SeqCst), 1, "exactly one read reached the device");
+    assert_eq!(writes.load(Ordering::SeqCst), 1, "and a read writes nothing");
+
+    // 2. An unlisted register: refused with 0x02, and the device is never asked. This is
+    // what stops FC03 being a scanner.
+    let (fc, code, _) = hmi_read(&agent, 0x5102, REG_OK + 7, 1);
+    assert_eq!(fc, 0x83, "an unlisted read must be excepted");
+    assert_eq!(code, 0x02, "illegal data address");
+    assert_eq!(reads.load(Ordering::SeqCst), 1, "a refused read must not reach the device");
+
+    // 3. A span that starts inside the map and runs out of it is refused whole.
+    let (fc, code, _) = hmi_read(&agent, 0x5103, REG_OK, 4);
+    assert_eq!(fc, 0x83, "a span crossing the map is refused");
+    assert_eq!(code, 0x02);
+    assert_eq!(reads.load(Ordering::SeqCst), 1, "and still nothing reached the device");
+
+    // 4. A forged query — an OMQ1 signed by a key the gateway does not know — dies at the
+    // mesh layer, before the register rules are even consulted.
+    let mut stranger = MeshRouter::new_v0b(fp(0xEE), NET, seed(0xEE), MeshPubRegistry::new());
+    let payload = oasis_rt::modbus_read::encode_omq1(&oasis_rt::modbus_read::MbQuery { gateway_id: 1, unit: UNIT, fc: 0x03, start: REG_OK, count: 1 });
+    let env = stranger.origin_wrap_v0b(&payload).unwrap();
+    let mut g = connect_timeout(&gw, Duration::from_millis(2000)).unwrap();
+    write_frame(&mut g, &env).unwrap();
+    let reply = read_frame(&mut g).unwrap();
+    assert!(oasis_rt::modbus_read::parse_omv1(&reply).is_none(), "a forged query must not be answered with values");
+    assert_eq!(reads.load(Ordering::SeqCst), 1, "a forged query must not reach the device");
+
+    // 5. FC04 is refused by name: the map describes holding registers.
+    let (fc, code, _) = hmi_read_fc(&agent, 0x5105, REG_OK, 1, 0x04);
+    assert_eq!(fc, 0x84, "FC04 is excepted");
+    assert_eq!(code, 0x01, "illegal function, not illegal address");
+    assert_eq!(reads.load(Ordering::SeqCst), 1);
+}
+
+/// A read (FC03) through the agent, returning the function code the agent answered with
+/// (the high bit set means an exception), the exception code, and the values when there
+/// are any.
+fn hmi_read(agent: &str, tid: u16, start: u16, count: u16) -> (u8, u8, Vec<u16>) {
+    hmi_read_fc(agent, tid, start, count, 0x03)
+}
+
+fn hmi_read_fc(agent: &str, tid: u16, start: u16, count: u16, fc: u8) -> (u8, u8, Vec<u16>) {
+    let mut c = connect_timeout(agent, Duration::from_millis(2000)).unwrap();
+    c.set_read_timeout(Some(Duration::from_millis(2000))).unwrap();
+    let req = [(tid >> 8) as u8, tid as u8, 0, 0, 0, 6, UNIT, fc, (start >> 8) as u8, start as u8, (count >> 8) as u8, count as u8];
     c.write_all(&req).unwrap();
     c.flush().unwrap();
     let mut head = [0u8; 8];
-    // The agent closes on a non-write rather than answering a read it will not relay.
-    let closed_or_excepted = c.read_exact(&mut head).is_err() || head[7] & 0x80 != 0;
-    assert!(closed_or_excepted, "a read must not be acknowledged as if relayed");
-    assert_eq!(writes.load(Ordering::SeqCst), 0, "and the PLC saw nothing");
+    c.read_exact(&mut head).unwrap();
+    assert_eq!(&head[0..2], &req[0..2], "the reply must echo the transaction id");
+    let body = (u16::from_be_bytes([head[4], head[5]]) as usize).saturating_sub(2);
+    let mut tail = vec![0u8; body];
+    c.read_exact(&mut tail).unwrap();
+    if head[7] & 0x80 != 0 {
+        return (head[7], tail[0], Vec::new());
+    }
+    // head[7] is the function code; tail[0] is the byte count, then the registers.
+    let n = tail[0] as usize / 2;
+    let vals = (0..n).map(|i| u16::from_be_bytes([tail[1 + 2 * i], tail[2 + 2 * i]])).collect();
+    (head[7], 0, vals)
+}
+
+/// An idle connection must not stop the gateway serving another one.
+///
+/// This pins a defect of mine. `serve_gateway_conn` first took the state lock and *then*
+/// called a function that blocks in `read_frame`, so a peer that opened a connection and
+/// said nothing held the gateway's state for a whole read timeout. There is no attacker in
+/// that scenario — just a connection nobody closed — and it made every other write fail
+/// with 0x0B. The read test above hit it by leaving one connection open, and the suite
+/// went from 0.14 s to 1.64 s while a case starved.
+///
+/// The measurement is the point: a write behind an idle peer must complete in well under
+/// the gateway's own timeout, not just eventually.
+#[test]
+fn an_idle_connection_does_not_block_another() {
+    let writes = Arc::new(AtomicU32::new(0));
+    let store = Arc::new(Mutex::new(ModbusStorageSmall::new()));
+    let plc = spawn_plc(Arc::clone(&writes), store);
+    let log = Arc::new(Mutex::new(Vec::new()));
+    let c = conf("127.0.0.1:0", &plc);
+    let timeout_ms = c.timeout_ms;
+    let gw = spawn_gateway(c, log);
+    let agent = spawn_agent(conf("127.0.0.1:0", &gw));
+    thread::sleep(Duration::from_millis(120));
+
+    // A peer that connects to the gateway and says nothing at all, held open for the rest
+    // of the test.
+    let _idle = connect_timeout(&gw, Duration::from_millis(2000)).unwrap();
+    thread::sleep(Duration::from_millis(50));
+
+    let t0 = Instant::now();
+    let (fc, _) = hmi_write(&agent, 1, REG_OK, 321);
+    let elapsed = t0.elapsed();
+    assert_eq!(fc, 0x06, "a write must succeed with an idle peer connected");
+    assert_eq!(writes.load(Ordering::SeqCst), 1);
+    assert!(elapsed < Duration::from_millis(timeout_ms / 2), "took {elapsed:?}, which is within the gateway's {timeout_ms} ms timeout: the idle peer is holding the lock");
 }
