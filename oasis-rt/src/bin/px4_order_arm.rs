@@ -10,7 +10,7 @@
 //!
 //! ```text
 //! px4_order_arm vehicle   [--listen 127.0.0.1:14560] [--px4 127.0.0.1:18570]
-//!                         [--revoked] [--boot-id N] [--seconds N]
+//!                         [--bind 0.0.0.0:14550] [--revoked] [--boot-id N] [--seconds N]
 //! px4_order_arm commander --case valid|forged|tamper|replay [--to 127.0.0.1:14560]
 //!                         [--boot-id N] [--seq N]
 //! ```
@@ -106,16 +106,24 @@ fn vehicle(args: &[String], boot_id: u64) {
         .expect("--px4");
     let revoked = flag(args, "--revoked");
     let secs: u64 = arg(args, "--seconds").and_then(|v| v.parse().ok()).unwrap_or(30);
+    // PX4 SITL starts mavlink with `-f`, i.e. broadcasting to the remote GCS port rather
+    // than replying to whoever contacted it. Binding an ephemeral port therefore receives
+    // nothing: the first run reported px4_heartbeats=0 and armed=false while PX4's own log
+    // said "Armed by external command". Bind 14550 and the armed bit is observable here.
+    let bind_px4: SocketAddr = arg(args, "--bind")
+        .unwrap_or_else(|| "0.0.0.0:14550".into())
+        .parse()
+        .expect("--bind");
 
     let from_commander = UdpSocket::bind(listen).expect("bind --listen");
     from_commander.set_read_timeout(Some(Duration::from_millis(100))).unwrap();
-    let to_px4 = UdpSocket::bind("0.0.0.0:0").expect("bind px4 socket");
+    let to_px4 = UdpSocket::bind(bind_px4).expect("bind px4 socket");
     to_px4.set_read_timeout(Some(Duration::from_millis(100))).unwrap();
 
     let mut router = MeshRouter::new_v0b(fp(2), NET, ed_seed(2), registry(&[(fp(1), &ed_seed(1))]));
     let mut veh = Vehicle::new(ArmRules { vehicle_id: VEHICLE_ID });
 
-    println!("VEHICLE listen={listen} px4={px4} revoked={revoked} boot_id={boot_id}");
+    println!("VEHICLE listen={listen} px4={px4} bind={bind_px4} revoked={revoked} boot_id={boot_id}");
     println!("VEHICLE fp=0201..  trusts commander fp=0101..  network={:?}", NET);
 
     let start = Instant::now();
