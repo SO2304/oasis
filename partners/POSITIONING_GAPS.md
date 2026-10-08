@@ -16,6 +16,10 @@ Sources en fin de document. « Estimation » signale un calcul de ma part, non m
 > nouveaux** trouvés pendant cette vérification. Les numéros d'origine (A1…D7) n'ont pas été
 > renumérotés, pour que les renvois existants restent valides.
 
+> **Révision du 2026-10-08 (phase 5).** La **section G** porte le **statut de chaque
+> manque** — fermé avec preuve, partiellement fermé, ouvert — avec le chemin de la preuve.
+> C'est la source de vérité : une sévérité 🔴 ci-dessous peut être fermée en G.
+
 ---
 
 ## A. Ce que les réglementations vont exiger (le vrai déclencheur d'achat en Europe)
@@ -155,6 +159,112 @@ Consigné pour ne pas y revenir :
 - **Catégorie 9 du double usage** : 9A012.b ne liste **que** les kits de conversion d'aéronefs
   habités et les moteurs pour vol > 15 240 m — **aucun logiciel, calculateur de vol ni liaison de
   données**. ⚠️ Mais 9D et 9E n'ont pas été recherchés (voir D8).
+
+---
+
+---
+
+## G. Statut de chaque manque (phase 5, 2026-10-08)
+
+Trois statuts, et un seul donne le droit d'une affirmation publique :
+
+- **Fermé avec preuve** — il existe un artefact vérifiable (log silicium, preuve Kani
+  avec contrôle négatif, test, ou document à sources primaires) et le manque ne limite
+  plus le discours. Le chemin de la preuve est cité.
+- **Partiellement fermé** — l'essentiel est fait, **ce qui reste est nommé**. Rien ne
+  peut être affirmé au-delà de la partie prouvée.
+- **Ouvert** — rien ou presque. Aucune affirmation possible.
+
+> Le tableau ci-dessous est la **source de vérité** du statut. Si `POSITIONING.md` ou une
+> page commerciale dit mieux, c'est elle qui a tort.
+
+### A — réglementations
+
+| # | Statut | Ce qui le ferme, ou ce qui manque |
+|---|---|---|
+| **A1** Règlement Machines 1.1.9 / 1.2.1 | **partiellement fermé** | Les deux ❌ d'origine sont levés : **journal infalsifiable** (partie I, silicium + coupure de courant réelle, `evidence/silicon/2026-10-08/hardening/`) et **identité du firmware** (phase 1.3, en-tête `OFWI` + version, plancher anti-retour). Reste **hors de notre main** : la conformité est celle du **fabricant de la machine** (art. 8 et 10), pas d'un composant ; et l'art. 10(3) peut exiger le code source — ce que la licence MIT rend trivial, mais qui demande un dossier, pas une bibliothèque |
+| **A2** CRA | **partiellement fermé** | SBOM CycloneDX, `cargo-audit`, `cargo-deny` et `SECURITY.md` conforme (contact, délais 24 h/72 h, divulgation coordonnée) : `evidence/supply-chain/2026-10-07/`. Mise à jour signée : phase 1.3. ⚠️ **La mise à jour est USB, pas par le réseau** — le CRA attend des mises à jour **distribuables**. Reste **D9** (5 ans d'assistance) qui est contractuel, pas technique |
+| **A3** RED / EN 18031 | **partiellement fermé** | Le mécanisme de mise à jour sécurisé existe (phase 1.3, prouvé sur silicium avec deux coupures de courant). ⚠️ **Aucune évaluation EN 18031 par un laboratoire**, et surtout : **OASIS n'a aucune radio** — la RED s'applique à l'équipement radio, donc l'applicabilité réelle reste à établir sur un produit qui émet |
+| **A4** IEC 62443-4-2 / -4-1 | **partiellement fermé** | CR 1.2 identité ✅ ; **CR 2.8 journal auditable ✅** (partie I) ; **CR 7.1 déni de service ✅ mesuré** (phase 2.1 : 179,4 ms → 0,70 ms, 60/60 messages légitimes sous flot) ; EDR 3.10 mise à jour ✅ ; CR 3.4 / EDR 3.14 intégrité **partielle** (le chargeur d'amorçage n'est ni signé ni mis à jour, pas de secure boot RP2040). ⚠️ **-4-1 (processus de développement documenté) reste ouvert**, et une certification exige d'abord un SDLA d'entreprise |
+| **A5** IEC TS 63074 | **fermé** | [`docs/compliance/IEC_TS_63074.md`](../docs/compliance/IEC_TS_63074.md) : c'est le document qui porte **la frontière**, et il sert à dire ce qu'OASIS **n'est pas**. ⚠️ Norme payante : **non vérifiée à la source**, la provenance de chaque élément est indiquée |
+| **A6** agilité cryptographique | **fermé avec preuve** | La phase 3 demandait « un identifiant d'algorithme **ou** un plan de migration écrit » : [`docs/CRYPTO_MIGRATION.md`](../docs/CRYPTO_MIGRATION.md). L'identifiant existe déjà pour les messages d'autorité (octet de suite signé, minimum par type, déclassement refusé avant vérification) ; la couche par saut migre **par allocation de magic**, et le document dit pourquoi un octet de suite négociable y rouvrirait C1. Tailles ML-KEM vérifiées dans FIPS 203 Table 3 ; chiffres assertés par `docs/lora_budget.py`. ⚠️ Le prérequis **§6-b, l'absence de rotation de clé de nœud**, gouverne le calendrier |
+| **A7** SORA 2.5 | **sans objet (information)** | Corrigé en F.1 : les classes **C2 et C3** de (UE) 2019/945 **exigent bien** une liaison protégée. Mais l'exigence est téléologique, sans moyen prescrit : **non différenciante** |
+| **A8** Blue UAS / Green UAS | **ouvert** | Hors périmètre. Aucun travail fait, aucune affirmation faite |
+| **A9** voie EUCC (art. 20(9)) | **ouvert** | Identifié en phase 0, non instruit |
+| **A10** ISO 10218-1/-2:2025 | **ouvert** | Identifié en phase 0. Normes payantes, **non vérifiées à la source** |
+| **A11** NIS2, fabricant dans le champ | **ouvert** | Identifié en phase 0 (annexe II 5 d), NACE division 28). Conséquence pour un fournisseur : non instruite |
+| **A12** classification « auto-évolutif » | **partiellement fermé** | **C8** a retiré « porte R14 / entropie » et tout le vocabulaire bio-inspiré des documents acheteurs (`5bed8f8`) : le risque de se faire classer machine à apprentissage automatique vient d'abord du vocabulaire. ⚠️ Le **code** garde ses noms (`hyper_state`, `emotion`, `dreams`) et le daemon Face 2 reste décrit comme adaptatif |
+
+### B — ce que l'acheteur a déjà
+
+| # | Statut | Ce qui le ferme, ou ce qui manque |
+|---|---|---|
+| **B1** couche MAVLink | **partiellement fermé** | `mavlink_order` : enveloppe v0B dans un `V2_EXTENSION` (msgid 248), armement construit **seulement** dans la branche `Act`. 7 tests sur un vrai `MeshRouter` couvrant les quatre cas demandés, 4 preuves Kani **4/4** avec contrôle négatif 3/3 (`evidence/kani/2026-10-08/b1/`). ⚠️ **Rien sur PX4 SITL** : PX4 n'est plus installé sur cette machine, donc « l'ordre valide arme le drone » **n'est pas montré**. C'est la moitié manquante, et B1 sert **S3**, pas le segment retenu |
+| **B2** secure boot PX4 | **sans objet (information)** | Sert à se positionner comme complémentaire. Rien à fermer |
+| **B3** ROS 2 / SROS2 | **ouvert** | Aucun pont ROS 2. Les primitives équivalentes existent et sont mesurées (A/B contre rclcpp), ce qui n'est pas un pont |
+| **B4** automates du parc existant | **partiellement fermé** | La **forme passerelle** est prouvée : phase 1.4, équipement `rmodbus` indépendant, **4 décisions « agir » = 4 trames = 4 écritures** octet pour octet, 12 refus + 3 injections brutes = **0 octet** sur le bus. ⚠️ Ce n'est pas un **produit certifié**, et C14 (clé lisible en flash) sera la première objection |
+| **B5** couche par-dessus un transport existant | **partiellement fermé** | B1 est exactement ce mode, et il fonctionne — pour **MAVLink**, en logiciel. Reticulum lui-même n'est toujours pas testé |
+| **B6** ISO 3691-4 exclut les chariots télécommandés | **ouvert** | Information de périmètre pour S1, à vérifier avec le premier prospect. ⚠️ Norme payante, verbatim obtenu par extrait |
+| **B7** U-space | **ouvert** | Identifié en phase 0. L'exigence n'est pas chez l'équipementier |
+
+### C — manques techniques
+
+| # | Statut | Ce qui le ferme, ou ce qui manque |
+|---|---|---|
+| **C1** déni de service par vérification forcée | **fermé avec preuve** | `SPORE\x0C` : MAC de lien dérivé des identités (rien de distribué) + seau à jetons. Silicium : trame forgée **179,4 ms → 0,70 ms (256×)**, et sous 8 trames forgées/s pendant 60 s, v0C livre **60/60** messages légitimes à 19 % de charge contre **39/60** à 110 % en v0B. ⚠️ **Contre un initié, le seau est un plafond CPU, pas de l'équité** : la livraison légitime tombe à 4/60. Jamais présenter C1 comme une protection de disponibilité contre un initié |
+| **C2** arrêt et perte de liaison | **fermé avec preuve** | Partie G (arrêt asymétrique : 3 conditions sur 10, verrou latché, ISO 13850:2015 4.1.1.2) et partie H (vivacité). Silicium 19/20 avec coupure de courant réelle. ⚠️ Un défaut trouvé pendant les essais : l'arrêt latché n'était pas lu par la passerelle Modbus — corrigé (`13a3b5c`), deux tests ajoutés |
+| **C3** budget radio | **partiellement fermé** | Chiffré et sourcé : plafonds LoRaWAN RP002-1.0.3 (51 o en SF10–12), duty-cycle ETSI EN 300 220-2 §4.4.3.2 **par bande**, et `docs/lora_budget.py` qui asserte sa propre formule. Un **arrêt compact `OAS1` de 11 o** a été ajouté (partie J, silicium 6/6). ⚠️ **Le duty-cycle n'est pas appliqué par le code** : c'est une obligation réglementaire aujourd'hui documentée et non tenue. ⚠️ La formule de time on air est **non vérifiée à la source** |
+| **C4** protocole d'émission d'un ordre | **fermé avec preuve** | Partie K : `TimeView`, le commandant construit l'échéance depuis une balise `OTM1` signée, sans jamais lire l'horloge de l'actionneur. Silicium **6/6**, dont un rejeu de balise avec horloge forcée. ⚠️ Pendant l'essai j'ai **refusé** de relayer la balise par le PC, parce que c'est le raccourci de labo que C4 dénonce |
+| **C5** journal infalsifiable | **fermé avec preuve** | Partie I : `h_n = SHA-256(DOMAIN‖h_{n−1}‖entrée)`, persisté en anneau, vérifié par `oasis_journal_verify` recoupé avec un oracle Python indépendant. Silicium avec **coupure de courant réelle** (S8). ⚠️ **Tamper-évident contre un attaquant distant seulement** : qui a la flash réécrit la chaîne |
+| **C6** cycle de vie des clés | **partiellement fermé** | [`docs/KEY_LIFECYCLE.md`](../docs/KEY_LIFECYCLE.md) : les quatre clés, l'injection, l'enrôlement, le stockage, la récupération. ⚠️ **Cinq manques nommés dans le document lui-même**, dont deux graves : **aucune rotation de clé de nœud** (et `MAX_REVOKED = 16` comme plafond dur) et **aucune récupération de la clé propriétaire**. Deux pièges opératoires documentés |
+| **C7** mise à jour signée + identité du firmware | **fermé avec preuve** | Phase 1.3 : manifeste `OAU1` kind 3 hybride, `embassy-boot`, essai de démarrage avec retour arrière, plancher de version. Silicium T1–T7 sur 3 RP2040 dont **deux coupures de courant réelles** (pendant le téléversement, pendant l'échange). ⚠️ **Pas de secure boot** : BOOTSEL, SWD ou le `b` du firmware de test contournent tout, plancher inclus. Le chargeur d'amorçage n'est ni signé ni mis à jour |
+| **C8** vocabulaire | **fermé** | `5bed8f8` : « porte R14 / entropie » → « verrou d'état des capteurs », et la mention « pas une fonction de sûreté certifiée » ajoutée à **10** documents acheteurs. Aucun fichier Rust touché. « R14 » ne survit que dans `POSITIONING_GAPS.md`, où il est le sujet |
+| **C9** ordres à deux signatures | **partiellement fermé** | `quorum` : k parmi n via `oasis_operator_key`, **clés distinctes** exigées, quorum placé **après** l'authenticité et **avant** les neuf conditions. 9 tests, 5 Kani **12/12** avec contrôle négatif 2/2. ⚠️ **Rien sur silicium** : aucune carte ne détient un **jeu** de clés opérateur, donc le chemin k-sur-n reste sur PC, comme pour la révocation. ⚠️ **343 o** contre 255 : un ordre à deux signatures **coûte deux trames** |
+| **C10** assurance logicielle | **partiellement fermé** | `cargo-fuzz` sur 9 parseurs (une anomalie trouvée : encodage non canonique d'`OAC1`, corrigée), `cargo-audit`, `cargo-deny`, SBOM CycloneDX, `SECURITY.md` : `evidence/fuzz/2026-10-07/` et `evidence/supply-chain/2026-10-07/`. ⚠️ **La suite Kani complète n'a toujours jamais passé** : 130/152 au seul passage intégral (2026-10-07), 10 indéterminés par manque de mémoire, 12 jamais atteints — et **182 harnais existent maintenant**. « 182/182 » serait faux |
+| **C11** routage, radio réelle, énergie | **ouvert** | **Aucune radio n'a jamais émis.** Le pilote SX1262 existe et n'est testé que contre un mock. Tous les budgets sont calculés. L'énergie n'est pas mesurée |
+| **C12** vivacité de la supervision | **fermé avec preuve** | Partie H : `OSB1` (kind 4), `MAX_SUPERVISION_MS = 300_000`, et la supervision est un **choix explicite de constructeur** (`new_supervised()`), pas un défaut caché. Silicium. ⚠️ Un défaut trouvé pendant les essais : `content_kind` ne connaissait pas `OSB1`, donc la partie H ne faisait **rien** en journalisant « vérifié » — corrigé (`a09781e`) |
+| **C13** v0B et v0C ne chiffrent pas | **ouvert** | La charge utile d'un ordre circule **en clair**. L'AEAD existe à la couche spore, pas en mesh. Aucun travail fait |
+| **C14** stockage sécurisé | **ouvert** | **Ne se ferme pas en logiciel.** Clé privée lisible en flash par BOOTSEL ou SWD, aucun élément sécurisé, aucun effacement sûr. C'est la première objection d'un RSSI et la réponse honnête est « il faut un autre silicium » |
+
+### D — marché et entreprise
+
+| # | Statut | Ce qui le ferme, ou ce qui manque |
+|---|---|---|
+| **D1** aucune validation client | **ouvert** | [`CUSTOMER_DISCOVERY.md`](CUSTOMER_DISCOVERY.md) est prêt : 5 hypothèses falsifiables avec seuils de réfutation, une grille de 30 min qui ne montre rien avant la minute 25, 20 types d'organisations. **Zéro entretien mené.** La préparation est faite, **le manque reste entier** |
+| **D2** trop de segments | **fermé** | [`SEGMENT_COMPARISON.md`](SEGMENT_COMPARISON.md), trois candidats chiffrés, **S1 retenu** (machines mobiles autonomes), avec l'argument contre la recommandation écrit en clair |
+| **D3** forme du produit | **partiellement fermé** | Tranché pour S1 : **fournisseur de preuve** (campagne d'attaque sur le banc du client + logs + tableaux de correspondance), pas un composant de sécurité au sens de l'art. 3(3). La forme **passerelle** est prouvée pour S2 (phase 1.4). ⚠️ Non validé auprès d'un acheteur réel : c'est **H3** de `CUSTOMER_DISCOVERY.md`, et si elle est réfutée, S1 se ferme |
+| **D4** licence MIT / steward CRA | **fermé** | Vérifié à la source en phase 0 : un composant libre **non monétisé** est hors du champ du CRA (considérants 18 et 20), et l'art. 13 §5 met la diligence sur l'intégrateur |
+| **D5** une seule personne | **ouvert** | Aucune réponse possible par le code. C'est l'objection la plus dure de S1 avec D9 |
+| **D6** financement | **ouvert** | Passe par des consortiums, donc par un partenaire industriel. Rien fait |
+| **D7** contrôle des exportations | **remplacé par D8** | Sévérité relevée en phase 0 |
+| **D8** angles morts du contrôle des exportations | **ouvert** | Identifié en phase 0 (règlement (UE) 2021/821). À vérifier **avant** tout prospect hors UE |
+| **D9** durée de support | **ouvert** | Le CRA impose, dès monétisation, **5 ans** d'assistance et **10 ans** de disponibilité des mises à jour. Pour une personne seule, c'est un engagement, pas une tâche technique |
+
+### Compte
+
+| Statut | A | B | C | D | **Total** |
+|---|---:|---:|---:|---:|---:|
+| Fermé avec preuve | 1 | 0 | 6 | 0 | **7** |
+| Fermé (documentaire) | 1 | 0 | 1 | 2 | **4** |
+| Partiellement fermé | 5 | 3 | 4 | 1 | **13** |
+| Ouvert | 4 | 3 | 3 | 5 | **15** |
+| Sans objet / information | 1 | 1 | 0 | 1 | **3** |
+| | **12** | **7** | **14** | **9** | **42** |
+
+Compté par script depuis le tableau ci-dessus, pas de tête : mon premier total à la main
+donnait 41 au lieu de 42, avec trois cases fausses. D7 est en « sans objet » puisque D8 le
+remplace. Les 🔴 d'origine — A1, B1, C1, C2, C3, C5, C6, D1, D2 — sont **tous** sortis de
+l'état « ouvert » **sauf D1**, qui ne peut être fermé que par des entretiens que je ne
+peux pas mener.
+
+### Les trois phrases qu'on ne peut toujours pas dire
+
+1. **« Résistant au déni de service »** sans la suite : contre un **initié**, le seau à
+   jetons est un plafond CPU qui **affame le trafic légitime** (4/60).
+2. **« Journal infalsifiable »** sans la suite : **contre un attaquant distant
+   seulement** ; qui tient la flash réécrit la chaîne (C14).
+3. **« Prouvé sur le terrain »** : **aucune radio n'a jamais émis**, aucune machine
+   mobile, aucun drone réel. Tout tient sur trois RP2040 reliés par des fils.
 
 ---
 
