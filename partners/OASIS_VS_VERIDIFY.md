@@ -144,7 +144,8 @@ chaque manque :
   plafond dur. C'est le prérequis qui gouverne tout calendrier de migration
   cryptographique.
 - **Une radio réelle** (C11) : aucune radio n'a jamais émis, tous les budgets sont
-  calculés, et le duty-cycle n'est **pas appliqué par le code** (C3).
+  calculés. Le duty-cycle, lui, **est appliqué par le code** depuis le 2026-10-08 (C3 fermé) :
+  le transport refuse d'émettre hors budget.
 - **Un KEM post-quantique** : l'échange de clés reste X25519. C'est l'écart réel
   avec le ML-KEM documenté de Veridify.
 - **La confidentialité des ordres** (C13) : v0B et v0C authentifient, ils ne chiffrent

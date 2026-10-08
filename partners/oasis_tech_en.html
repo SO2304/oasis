@@ -223,7 +223,7 @@ footer { font-size: 0.8rem; color: var(--muted); border-top: 1px solid var(--lin
       <li>Flooding, not routing: every signed message costs one verification per relay.</li>
       <li>No radio on hardware, no power measurement, no certification, no external audit.</li>
       <li>The decision journal is tamper-<i>evident</i> against a remote attacker only: whoever holds the flash can rewrite the chain.</li>
-      <li>The radio duty cycle is computed and documented, <b>not enforced by the code</b>.</li>
+      <li>The radio duty cycle <b>is enforced</b>: the LoRa transport owns its budget and refuses to transmit outside it. But the time-on-air formula is <b>not verified at the source</b>, and <b>no radio has ever transmitted</b>.</li>
       <li><b>No node-key rotation</b>, and at most 16 revoked nodes: this is what governs any cryptographic migration.</li>
       <li>Mesh orders travel <b>in clear</b>: v0B and v0C authenticate, they do not encrypt.</li>
       <li>Against an <b>insider</b>, the per-link budget caps a relay's CPU but starves legitimate traffic (4/60). It is not a fairness mechanism.</li>

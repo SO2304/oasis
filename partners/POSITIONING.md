@@ -136,9 +136,10 @@ il existe pour MAVLink, en logiciel ([`docs/specs/MAVLINK_ORDER_SPEC.md`](../doc
   viennent de lectures de code.
 - **Le journal est tamper-évident contre un attaquant distant seulement** : qui tient
   la flash réécrit la chaîne (C14, et C14 ne se ferme pas en logiciel).
-- **Le duty-cycle radio n'est pas appliqué par le code.** Il est calculé et documenté
-  ([`docs/compliance/PQC.md`](../docs/compliance/PQC.md) §3, `docs/lora_budget.py`), ce qui
-  est une obligation réglementaire documentée et non tenue.
+- **Le duty-cycle radio est appliqué par le code** depuis le 2026-10-08 : le transport
+  LoRa possède son budget et refuse d'émettre hors duty cycle, avec le délai d'attente
+  dans l'erreur. ⚠️ Mais la formule de time on air est **non vérifiée à la source**, et
+  **aucune radio n'a jamais émis** : l'exactitude est celle de la formule, pas d'une mesure.
 - **Aucune rotation de clé de nœud**, et `MAX_REVOKED = 16` est un plafond dur : c'est le
   prérequis qui gouverne le calendrier d'une migration cryptographique
   ([`docs/CRYPTO_MIGRATION.md`](../docs/CRYPTO_MIGRATION.md) §6-b).

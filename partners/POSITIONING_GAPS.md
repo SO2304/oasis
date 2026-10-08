@@ -213,7 +213,7 @@ Trois statuts, et un seul donne le droit d'une affirmation publique :
 |---|---|---|
 | **C1** déni de service par vérification forcée | **fermé avec preuve** | `SPORE\x0C` : MAC de lien dérivé des identités (rien de distribué) + seau à jetons. Silicium : trame forgée **179,4 ms → 0,70 ms (256×)**, et sous 8 trames forgées/s pendant 60 s, v0C livre **60/60** messages légitimes à 19 % de charge contre **39/60** à 110 % en v0B. ⚠️ **Contre un initié, le seau est un plafond CPU, pas de l'équité** : la livraison légitime tombe à 4/60. Jamais présenter C1 comme une protection de disponibilité contre un initié |
 | **C2** arrêt et perte de liaison | **fermé avec preuve** | Partie G (arrêt asymétrique : 3 conditions sur 10, verrou latché, ISO 13850:2015 4.1.1.2) et partie H (vivacité). Silicium 19/20 avec coupure de courant réelle. ⚠️ Un défaut trouvé pendant les essais : l'arrêt latché n'était pas lu par la passerelle Modbus — corrigé (`13a3b5c`), deux tests ajoutés |
-| **C3** budget radio | **partiellement fermé** | Chiffré et sourcé : plafonds LoRaWAN RP002-1.0.3 (51 o en SF10–12), duty-cycle ETSI EN 300 220-2 §4.4.3.2 **par bande**, et `docs/lora_budget.py` qui asserte sa propre formule. Un **arrêt compact `OAS1` de 11 o** a été ajouté (partie J, silicium 6/6). ⚠️ **Le duty-cycle n'est pas appliqué par le code** : c'est une obligation réglementaire aujourd'hui documentée et non tenue. ⚠️ La formule de time on air est **non vérifiée à la source** |
+| **C3** budget radio | **fermé avec preuve** | Chiffré et sourcé : plafonds LoRaWAN RP002-1.0.3 (51 o en SF10–12), duty-cycle ETSI EN 300 220-2 §4.4.3.2 **par bande**, et `docs/lora_budget.py` qui asserte sa propre formule. Un **arrêt compact `OAS1` de 11 o** a été ajouté (partie J, silicium 6/6). ✅ **Appliqué par le code depuis le 2026-10-08** : `LoRaTransport` **possède** son budget (EU868 1 %), `send_envelope` facture le temps d'antenne de la trame et refuse avec `DutyCycleExceeded { needed_us, available_us, retry_in_ms }` ; y échapper demande `new_without_duty_limit`, qui se lit au point d'appel. 4 tests, dont une radio qui ne fait que compter : **50 trames refusées ne l'atteignent pas**. ⚠️ Reste : la formule de time on air est la forme publiée de la datasheet SX1276, **non vérifiée à la source**, donc l'application est exacte vis-à-vis de cette formule et non d'une radio mesurée — et **aucune radio n'a jamais émis**. |
 | **C4** protocole d'émission d'un ordre | **fermé avec preuve** | Partie K : `TimeView`, le commandant construit l'échéance depuis une balise `OTM1` signée, sans jamais lire l'horloge de l'actionneur. Silicium **6/6**, dont un rejeu de balise avec horloge forcée. ⚠️ Pendant l'essai j'ai **refusé** de relayer la balise par le PC, parce que c'est le raccourci de labo que C4 dénonce |
 | **C5** journal infalsifiable | **fermé avec preuve** | Partie I : `h_n = SHA-256(DOMAIN‖h_{n−1}‖entrée)`, persisté en anneau, vérifié par `oasis_journal_verify` recoupé avec un oracle Python indépendant. Silicium avec **coupure de courant réelle** (S8). ⚠️ **Tamper-évident contre un attaquant distant seulement** : qui a la flash réécrit la chaîne |
 | **C6** cycle de vie des clés | **partiellement fermé** | [`docs/KEY_LIFECYCLE.md`](../docs/KEY_LIFECYCLE.md) : les quatre clés, l'injection, l'enrôlement, le stockage, la récupération. ⚠️ **Cinq manques nommés dans le document lui-même**, dont deux graves : **aucune rotation de clé de nœud** (et `MAX_REVOKED = 16` comme plafond dur) et **aucune récupération de la clé propriétaire**. Deux pièges opératoires documentés |
@@ -244,9 +244,9 @@ Trois statuts, et un seul donne le droit d'une affirmation publique :
 
 | Statut | A | B | C | D | **Total** |
 |---|---:|---:|---:|---:|---:|
-| Fermé avec preuve | 1 | 1 | 6 | 0 | **8** |
+| Fermé avec preuve | 1 | 1 | 7 | 0 | **9** |
 | Fermé (documentaire) | 1 | 0 | 1 | 2 | **4** |
-| Partiellement fermé | 5 | 2 | 4 | 1 | **12** |
+| Partiellement fermé | 5 | 2 | 3 | 1 | **11** |
 | Ouvert | 4 | 3 | 3 | 5 | **15** |
 | Sans objet / information | 1 | 1 | 0 | 1 | **3** |
 | | **12** | **7** | **14** | **9** | **42** |

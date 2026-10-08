@@ -29,9 +29,9 @@ Il n'est pas recopié ici : une seule source de vérité.
 
 | Statut | A | B | C | D | **Total** |
 |---|---:|---:|---:|---:|---:|
-| Fermé avec preuve | 1 | 1 | 6 | 0 | **8** |
+| Fermé avec preuve | 1 | 1 | 7 | 0 | **9** |
 | Fermé (documentaire) | 1 | 0 | 1 | 2 | **4** |
-| Partiellement fermé | 5 | 2 | 4 | 1 | **12** |
+| Partiellement fermé | 5 | 2 | 3 | 1 | **11** |
 | Ouvert | 4 | 3 | 3 | 5 | **15** |
 | Sans objet / information | 1 | 1 | 0 | 1 | **3** |
 | | **12** | **7** | **14** | **9** | **42** |
@@ -229,7 +229,7 @@ couverture des shards verte, et `origin/main` est **ancêtre de HEAD** — donc 
 | **C13** confidentialité mesh | Les ordres circulent en clair. Aucun travail fait |
 | **D5, D9** une personne, 5 à 10 ans de support | Un engagement, pas une tâche technique |
 | **C6** rotation de clé de nœud | Nommé dans `KEY_LIFECYCLE.md` §6. C'est le prérequis qui gouverne toute migration cryptographique |
-| **C3** duty-cycle | Calculé et documenté, **non appliqué par le code**. Obligation réglementaire documentée et non tenue |
+| **C3** duty-cycle | **Fermé le 2026-10-08** : appliqué par le transport, qui refuse d'émettre hors budget. Restent la formule non vérifiée à la source et l'absence de radio |
 | **C10** suite Kani complète | 130/152 au seul passage intégral ; **182 harnais existent**. « 182/182 » serait faux |
 
 ---
