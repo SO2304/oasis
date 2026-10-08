@@ -76,7 +76,17 @@ pub const DEC_CHANGE_BASE: u8 = 64;
 /// are the second and third triggers of ¶5, which nothing recorded.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ChangeKind {
-    /// A new image was installed and confirmed. `cmd_seq` carries its version.
+    /// A new image was installed and confirmed. `cmd_seq` carries its version, and
+    /// `origin_fp` the **first 8 bytes of the installed image's SHA-256** rather than an
+    /// authority fingerprint — the only kind where that field means something else.
+    ///
+    /// Why: the authorising owner is recoverable from the authority record and the
+    /// persisted policy, while the digest is recoverable from nowhere else once the image
+    /// is running, and Annex III 1.1.9 ¶4 asks a machine to be able to say which software
+    /// is installed on it. A measured digest answers that; a version number a developer
+    /// bumps by hand does not. ⚠️ It is the digest **verified at install**, not one
+    /// measured from flash now, so it does not detect a later BOOTSEL or SWD rewrite —
+    /// that is ¶2's hardware problem.
     FirmwareInstalled = 0,
     /// A node was enrolled or its permissions changed. `cmd_seq` carries `enroll_seq`.
     Enrollment = 1,

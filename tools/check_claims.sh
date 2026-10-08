@@ -85,6 +85,35 @@ if [ -n "$hs" ]; then
 fi
 
 echo
+echo "== inventaire 1.1.9 al. 3 : chaque chemin cite doit exister =="
+# Annex III 1.1.9 para 3 wants the safety-critical software "identified as such". A list
+# written once drifts into fiction the first time a module is renamed, so every path in
+# docs/compliance/SOFTWARE_INVENTORY.md is checked against the tree. The judgement of what
+# is critical stays human; only its existence is mechanical.
+INV=docs/compliance/SOFTWARE_INVENTORY.md
+if [ -f "$INV" ]; then
+  n=0; miss=0
+  # First table cell of each row, when it is a path in backticks.
+  while IFS= read -r p; do
+    [ -n "$p" ] || continue
+    n=$((n + 1))
+    if [ ! -e "$p" ]; then
+      echo "  MANQUE $p"
+      miss=$((miss + 1))
+    fi
+  done < <(grep -oE '^\| `[A-Za-z0-9_./-]+`' "$INV" | sed 's/^| `//; s/`$//' | sort -u)
+  if [ "$miss" = 0 ]; then
+    printf '  ok    %-34s %s chemins verifies\n' "inventaire 1.1.9 al. 3" "$n"
+  else
+    printf '  DRIFT %-34s %s chemin(s) absent(s) sur %s\n' "inventaire 1.1.9 al. 3" "$miss" "$n"
+    fail=$((fail + 1))
+  fi
+else
+  printf '  ABSENT %-33s %s\n' "inventaire 1.1.9 al. 3" "$INV"
+  fail=$((fail + 1))
+fi
+
+echo
 echo "== affirmations d'absence a reverifier a la main =="
 pat="planned|NOT RUN|not run|jamais exécuté|jamais tourné|NOT measured|non mesuré|est un stub|LoRa frame stub|pas encore testé|non testé"
 hits=$(grep -rnoiE "$pat" CLAUDE.md partners/*.md partners/*.html docs/*.md SECURITY.md 2>/dev/null \

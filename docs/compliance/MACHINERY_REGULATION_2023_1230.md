@@ -226,10 +226,25 @@ configuration** (alinéa 5, 2ᵈ et 3ᵉ déclencheurs).
   tamper-respondent. OASIS fournit la **place** où ce signal devient une preuve
   infalsifiable (`ChangeKind::TamperSignal`, sur la même chaîne de hachages), et c'est la
   moitié « recueillir », pas la moitié « détecter ». Lié à **C14**.
-- **Alinéa 3, l'identification documentaire.** « Identifiés comme tels » suppose une liste
-  des logiciels et données essentiels à la sécurité. Elle n'existe pas.
-- **Alinéa 4, `version` est une constante de compilation**, pas un condensé mesuré de
-  l'image en cours d'exécution, et n'est lisible que par USB.
+- **Alinéa 3, l'identification documentaire : faite le 2026-10-09.**
+  [`SOFTWARE_INVENTORY.md`](SOFTWARE_INVENTORY.md) identifie les logiciels et données
+  essentiels à la conformité — 25 chemins en cinq groupes (la décision d'agir,
+  l'authenticité, la configuration d'autorité, ce qui atteint un équipement, la preuve),
+  les huit données persistantes, **et ce qui est hors périmètre**. Chaque chemin est
+  vérifié par `tools/check_claims.sh`, qui a trouvé une erreur dès son premier passage,
+  donc la liste ne peut pas dériver en silence. ⚠️ « Essentiel à la conformité » reste un
+  jugement : un fabricant doit le refaire pour sa machine, et la colonne « pourquoi »
+  est là pour qu'il puisse le contester ligne à ligne.
+- **Alinéa 4 : amélioré, pas fermé.** Depuis le 2026-10-09, l'entrée de journal d'une
+  installation porte les **8 premiers octets du SHA-256 de l'image installée**, pris du
+  condensé que `update::install` vérifiait déjà et jetait. La machine peut donc dire
+  quels **octets** ont été installés, et plus seulement un numéro de version.
+  ⚠️ Trois limites subsistent : c'est le condensé **vérifié à l'installation**, pas un
+  condensé **mesuré maintenant** sur la flash, donc une réécriture par BOOTSEL ou SWD
+  n'est pas détectée (c'est l'alinéa 2 et son matériel) ; `@V` renvoie toujours une
+  `version` qui est une **constante de compilation** ; et tout cela n'est lisible que
+  par **USB**, pas par le mesh. « À tout moment sous une forme aisément accessible »
+  n'est donc pas satisfait.
 
 **Ce qu'OASIS est, dit en une phrase :** il aide un fabricant à remplir 1.1.9 **sur le
 chemin des commandes et sur les changements de configuration**. Il ne rend pas une machine

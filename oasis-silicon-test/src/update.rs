@@ -324,7 +324,7 @@ pub fn install(
     policy: &AuthPolicy,
     owner: &AuthorityKeys,
     msg: &[u8],
-) -> Result<u32, UpdateReject> {
+) -> Result<(u32, [u8; 32]), UpdateReject> {
     let p = match verify_authority(policy, &crate::NETWORK_ID, owner, msg) {
         Ok(p) if p.kind == kind::FIRMWARE_MANIFEST => p,
         _ => return Err(UpdateReject::NotAuthorized),
@@ -343,5 +343,9 @@ pub fn install(
         running_version: FW_VERSION,
     })?;
     up.mark_updated().map_err(|_| UpdateReject::Malformed)?;
-    Ok(m.version)
+    // The digest travels back with the version. It is already computed and compared
+    // above; returning it lets the caller record **which bytes** were installed, which
+    // is what Annex III 1.1.9 para 4 asks a machine to be able to say about the software
+    // on it — a measured digest rather than a compile-time constant.
+    Ok((m.version, digest))
 }

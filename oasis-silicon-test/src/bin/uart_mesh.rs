@@ -1310,12 +1310,22 @@ fn main() -> ! {
                 let keys = pqs.owner.current.keys();
                 let t0 = now_us();
                 match update::install(&mut fw_up, &pqs.policy, &keys, &msg) {
-                    Ok(v) => {
+                    Ok((v, digest)) => {
                         // "a modification of the software installed" — para 5's second
                         // trigger, and the one case where the record MUST be written
                         // before the code that follows: this branch resets the board to
                         // swap images, so a journal write after it never happens.
-                        efs.log_change(&[0u8; 8], v, oasis_rt::journal::ChangeKind::FirmwareInstalled, true);
+                        //
+                        // On a FirmwareInstalled entry the 8-byte field holds the first 8
+                        // bytes of the installed image's **SHA-256**, not an authority
+                        // fingerprint. The authority is recoverable from the AUTH record
+                        // and the policy; the digest is recoverable from nowhere else, so
+                        // the field is spent on the information that would otherwise be
+                        // lost. `cmd_seq` is already kind-dependent on a change entry, so
+                        // this follows the same documented rule.
+                        let mut id8 = [0u8; 8];
+                        id8.copy_from_slice(&digest[..8]);
+                        efs.log_change(&id8, v, oasis_rt::journal::ChangeKind::FirmwareInstalled, true);
                         io.log(
                             "FW_INSTALL",
                             format_args!(

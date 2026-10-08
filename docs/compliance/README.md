@@ -22,6 +22,7 @@ tableau **exigence → ce qu'OASIS couvre → preuve → ce qui manque**.
 | [`IEC_TS_63074.md`](IEC_TS_63074.md) | IEC TS 63074:2023 | volontaire | **La frontière sûreté / sécurité.** La règle de bascule d'ISO 13849-1 qui rend C2 bloquant ; le vocabulaire à employer devant un ingénieur sûreté |
 | [`MAVLINK_SIGNING_GAP.md`](MAVLINK_SIGNING_GAP.md) | Signature MAVLink 2 (spec, PX4, ArduPilot) | — | **9 limites documentées, 9 réponses prouvées** — et la 10ᵉ démonstration, l'intégration PX4, qui manque et sans laquelle rien ne se vend côté drones |
 | [`PQC.md`](PQC.md) | Feuille de route PQC de l'UE, FIPS 204/205, RFC 8554/8391, LoRa EU868 | **31/12/2030** | Les tailles réelles contre 36 s d'émission par heure : une signature ML-DSA-65 à SF12 coûte **5 h** de budget légal. Options réalistes classées |
+| [`SOFTWARE_INVENTORY.md`](SOFTWARE_INVENTORY.md) | Règlement Machines, annexe III 1.1.9 **alinéa 3** | **20/01/2027** | La moitié « **identifiés comme tels** » : les logiciels et données d'OASIS dont dépend la conformité, **et ce qui est hors périmètre**. Chaque chemin vérifié par `tools/check_claims.sh`. Ce n'est **pas** un SBOM : celui-là liste les dépendances, celui-ci les parties d'OASIS lui-même |
 
 ## Ce qui ressort de l'ensemble
 
