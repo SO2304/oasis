@@ -1,6 +1,6 @@
 # Ce PC comme automate de test — HMI → agent → passerelle → appareil, en vrais processus
 
-**2026-10-09.** Trois exécutions, **42 cas sur 42** chacune. Reproduire :
+**2026-10-09.** Trois exécutions, **47 cas sur 47** chacune. Reproduire :
 
 ```bash
 cargo build --release -p oasis-rt -p oasis-test-plc
@@ -9,7 +9,7 @@ bash tools/pilot_campaign.sh /tmp/camp
 
 | | |
 |---|---|
-| Résultat | **42/42**, trois fois ([`run1.log`](run1.log), [`run2.log`](run2.log), [`run3.log`](run3.log)) |
+| Résultat | **47/47**, trois fois ([`run1.log`](run1.log), [`run2.log`](run2.log), [`run3.log`](run3.log)) |
 | Écritures appliquées par l'appareil | 208 par exécution, comptées **par l'appareil** |
 | Latence bout en bout | **1 017 / 1 159 / 1 248 µs** médiane, ±8–15 % (K=10 × 20, une socket tenue) |
 | Journal | **intact, exit 0**, et un refus réécrit en acceptation → **exit 1** |
@@ -35,7 +35,7 @@ hmi_client.py  --Modbus TCP-->  oasis_mbtcp_agent  --v0B-->  oasis_mbtcp_gateway
 Python sans aucun import. Quand l'appareil applique une trame, OASIS ne se donne pas raison
 à lui-même — la même propriété que la carte A sous `rmodbus` en phase 1.4.
 
-## 2. Les 42 cas
+## 2. Les 47 cas
 
 | # | Ce qui est vérifié | Vérité de terrain |
 |---|---|---|
@@ -53,6 +53,7 @@ Python sans aucun import. Quand l'appareil applique une trame, OASIS ne se donne
 | C15 | un `ORV1` **signé** arrive sur le lien, est appliqué, et **le changement est journalisé** | `Change(Revocation)`, `flags=0x10`, `origin=bb00` |
 | C16 | une époque non supérieure est refusée, **et le refus est journalisé aussi** | `Change(Revocation)`, `flags=0x00` |
 | C17 | une liste signée par un opérateur non approuvé est refusée et journalisée | `Reject(BadOperatorSig)`, `flags=0x00` |
+| C18 | un pair **sans la permission `ACTUATE`** ne peut pas commander, **bien que sa clé soit connue** | `Reject(NotAuthorized)`, `origin=bb00`, compteur inchangé |
 | C12 | un ordre adressé à **un autre `gateway_id`** est refusé | 0x0A, journal `Reject(NotAuthorized)`, compteur inchangé |
 | C13 | une origine **révoquée** est refusée — **au niveau mesh, au-dessus du portail** | `MESH_DROP why="origin revoked"`, journal `Reject(NotVerified)` |
 | C14 | le journal **attribue** la décision à une origine | `origin=aa00` sur une décision vérifiée |
@@ -159,9 +160,23 @@ Deux des quatre constantes restent, en commentaires et non en code : `v0b_ok` es
 construction (la couche mesh a vérifié l'enveloppe au-dessus) et `r14_safe` n'a **aucun
 capteur à lire** sur un hôte — une passerelle colocée avec de la mesure devra l'alimenter.
 
-⚠️ Reste plus faible que le firmware : la config TCP porte des **clés**, pas des
-**permissions**, donc une clé qui y figure peut commander tout ce que la carte de registres
-autorise. Le modèle d'enrôlement (`ACTUATE`) n'est pas sur cette voie.
+**Les permissions sont arrivées le 2026-10-09**, avec le modèle du firmware et non un
+schéma parallèle : `enrollment::Registry`, `Entry` et `allows` sont publics, donc la voie
+TCP consulte **le même type et la même règle**. Un troisième champ sur la ligne `peer`
+les porte (`peer = <fp>,<seed>,ACTUATE|STOP`), et c'est **fail closed** : une ligne sans
+troisième champ n'accorde rien et ses ordres sont refusés. C'est une rupture pour toute
+config écrite avant, délibérément — le défaut inverse accorderait l'actionnement à chaque
+clé du fichier. La passerelle imprime la table au démarrage pour qu'un opérateur lise
+`permissions=none` tout de suite au lieu de le déduire d'un refus.
+
+**C18** est le test honnête de la permission et non de la clé : la clé du nœud opérateur
+**est** dans le registre de la passerelle — elle doit l'être, sinon ses listes de
+révocation seraient jetées comme venant d'un inconnu — et elle n'a pas `ACTUATE`. Son
+ordre est refusé `Reject(NotAuthorized)`, attribué à `bb00`, l'appareil intact.
+
+⚠️ Toujours **config-time** : une attestation `OAU1` signée par le propriétaire sur ce
+lien reste à faire, comme pour la révocation avant C15. Un opérateur édite le fichier et
+redémarre.
 
 ## 4. Sept défauts de la campagne elle-même
 

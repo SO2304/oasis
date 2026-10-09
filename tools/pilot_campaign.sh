@@ -90,8 +90,10 @@ our_fp = $GW_FP
 our_seed_file = $WOUT/gw.seed
 peer_fp = $AGENT_FP
 gateway_id = 1
-peer = $AGENT_FP,$WOUT/agent.seed
+peer = $AGENT_FP,$WOUT/agent.seed,ACTUATE
 peer = $GW_FP,$WOUT/gw.seed
+# the operator node publishes revocation lists; it is deliberately NOT granted ACTUATE,
+# which case C18 relies on
 peer = $OPNODE_FP,$WOUT/opnode.seed
 register = $REG_OK,0,1000
 operator = $OP_PUB
@@ -518,6 +520,29 @@ case "$ORIG" in
   origin=[0-9a-f]*) say "  PASS  C14 the decision is attributed to $ORIG"; PASS=$((PASS+1));;
   *) say "  FAIL  C14 no origin field found at all (got '$ORIG')"; FAIL=$((FAIL+1));;
 esac
+
+note "C18 a peer WITHOUT the ACTUATE permission cannot command, though its key is known"
+# Until 2026-10-09 the gate was fed `authorized: true`, so holding any key in the registry
+# was enough to command anything in the register map, where the firmware requires
+# `registry.allows(origin, ACTUATE)`. The operator node's key IS in the gateway's registry
+# — it has to be, or its revocation lists would be dropped as an unknown sender — and it is
+# deliberately not granted ACTUATE. So it is the honest test of the permission, not of the
+# key.
+check "C18 the gateway printed the operator node with no permission" "fp=$OPNODE_FP permissions=none" "$(cat "$OUT/gateway.log" "$OUT/gateway_rev.log" 2>/dev/null)"
+W18=$(plc_writes)
+# Send an ORDER (not a revocation) from the operator node's identity.
+OUT18=$("$BIN/oasis_mbtcp_order" --config "$(winpath "$OUT/revoke.conf")" --reg $REG_OK --value 700 2>&1); RC18=$?
+say "  tool: $OUT18 (rc=$RC18)"
+if [ "$RC18" = "0" ]; then say "  FAIL  C18 an order from a peer without ACTUATE was executed"; FAIL=$((FAIL+1));
+else say "  PASS  C18 refused (rc=$RC18)"; PASS=$((PASS+1)); fi
+sleep 0.4
+check_eq "C18 the device was not touched" "$W18" "$(plc_writes)"
+# The gateway was restarted in C13, so the live journal is jrnrev — reading jrn would
+# assert against the previous process's chain, which is how this case first failed.
+cat "$OUT/jrnrev.head" "$OUT/jrnrev.entries" > "$OUT/jrn18.txt"
+LAST18=$("$BIN/oasis_journal_verify" "$(winpath "$OUT/jrn18.txt")" 2>&1 | grep -E '^  \[' | tail -1)
+check "C18 journalled as NotAuthorized, attributed to the operator node" "origin=bb00" "$LAST18"
+check "C18 and named as a permission refusal" "Reject(NotAuthorized)" "$LAST18"
 
 note "summary"
 say "  PLC: $(plc_writes) applied writes, $(plc_frames) frames received"

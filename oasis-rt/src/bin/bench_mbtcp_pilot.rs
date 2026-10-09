@@ -78,6 +78,18 @@ fn conf(listen: &str, peer: &str, our: u8) -> Config {
         map: vec![RegRule { addr: REG, min: 0, max: 60000 }],
         revoked: Vec::new(),
         operator: None,
+        // The gate requires `ACTUATE` now, not merely a key in the registry.
+        perms: {
+            let mut r = oasis_rt::enrollment::Registry::default();
+            r.entries.push(oasis_rt::enrollment::Entry {
+                fp: fp(0xAA),
+                pk: mesh_v10_pubkey_from_seed(&seed(0xAA)).unwrap().0,
+                role: 0,
+                permissions: oasis_rt::enrollment::perm::ACTUATE,
+                seq: 0,
+            });
+            r
+        },
     }
 }
 

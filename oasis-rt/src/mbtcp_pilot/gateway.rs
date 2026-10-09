@@ -380,7 +380,12 @@ pub fn handle_frame(sock: &mut TcpStream, st: &mut GatewayState, conf: &Config, 
         // gateway. ⚠️ Weaker than the firmware, which also requires the `ACTUATE`
         // permission from an enrolment attestation; the TCP config has keys, not
         // permissions, so a key in it can command anything in the register map.
-        authorized: order.gateway_id == conf.gateway_id,
+        // Addressed to THIS gateway, **and** from an origin the config granted
+        // `ACTUATE`. The second half used to be missing entirely: holding any key in the
+        // registry was enough to command anything in the register map, where the firmware
+        // requires `registry.allows(origin, ACTUATE)`. Same `Registry` type and same rule
+        // on both paths now, so they cannot drift apart.
+        authorized: order.gateway_id == conf.gateway_id && conf.perms.allows(&origin_fp, crate::enrollment::perm::ACTUATE),
         // Defence in depth, not the primary check: a revoked origin is dropped by the
         // **mesh layer** above, before the gate and before its signature is even verified
         // (v0B enforces revocation at the first hop, proved on silicon). So this can only

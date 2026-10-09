@@ -55,6 +55,22 @@ fn registry(entries: &[u8]) -> MeshPubRegistry {
     r
 }
 
+/// The permissions the gateway grants, as an `enrollment::Registry` — the same type and
+/// the same `allows()` rule the firmware uses.
+fn perm_registry(entries: &[u8]) -> oasis_rt::enrollment::Registry {
+    let mut r = oasis_rt::enrollment::Registry::default();
+    for &i in entries {
+        r.entries.push(oasis_rt::enrollment::Entry {
+            fp: fp(i),
+            pk: mesh_v10_pubkey_from_seed(&seed(i)).unwrap().0,
+            role: 0,
+            permissions: oasis_rt::enrollment::perm::ACTUATE,
+            seq: 0,
+        });
+    }
+    r
+}
+
 fn conf(listen: &str, peer: &str) -> Config {
     Config {
         listen: listen.to_string(),
@@ -70,6 +86,10 @@ fn conf(listen: &str, peer: &str) -> Config {
         map: vec![RegRule { addr: REG_OK, min: 0, max: 1000 }],
         revoked: Vec::new(),
         operator: None,
+        // The two origins this test commands with, granted `ACTUATE`. The gate now
+        // requires the permission and not merely a key in the registry, so without this
+        // every order would be refused `NotAuthorized` — which is the point of the change.
+        perms: perm_registry(&[0xAA, 0xBB]),
     }
 }
 

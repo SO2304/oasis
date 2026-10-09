@@ -70,6 +70,18 @@ fn main() {
     // Revocation now has an effect on this path: the gate reads `router.is_revoked`, which
     // was hard-coded false until 2026-10-09. The list comes from the config, because this
     // gateway does not handle a signed ORV1 over its link yet — that is the real gap.
+    // Printed at startup because this fails CLOSED: a `peer` line with no permission
+    // field grants nothing, and an operator must see that here rather than deduce it from
+    // a refusal later.
+    for e in &conf.perms.entries {
+        let names = [(oasis_rt::enrollment::perm::ACTUATE, "ACTUATE"), (oasis_rt::enrollment::perm::STOP, "STOP"), (oasis_rt::enrollment::perm::SUPERVISE, "SUPERVISE")]
+            .iter()
+            .filter(|(b, _)| e.permissions & b == *b)
+            .map(|(_, n)| *n)
+            .collect::<Vec<_>>()
+            .join("|");
+        println!("GATEWAY peer fp={} permissions={}", e.fp.iter().map(|b| format!("{b:02x}")).collect::<String>(), if names.is_empty() { "none".to_string() } else { names });
+    }
     for fp in &conf.revoked {
         router.revoke(*fp);
         println!("GATEWAY revoked fp={}", fp.iter().map(|b| format!("{b:02x}")).collect::<String>());

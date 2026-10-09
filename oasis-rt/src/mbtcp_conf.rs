@@ -14,6 +14,7 @@
 use std::collections::BTreeMap;
 use std::fs;
 
+use crate::enrollment::{perm, Entry, Registry};
 use crate::mesh::{mesh_v10_pubkey_from_seed, MeshEdSeed, MeshPubRegistry, FP_LEN, MESH_V0B_NETWORK_LEN};
 use crate::modbus_gateway::RegRule;
 
@@ -54,6 +55,17 @@ pub struct Config {
     /// of this crate, so a list carrying several signatures is refused by name rather
     /// than accepted on the strength of one of them.
     pub operator: Option<[u8; 32]>,
+    /// Per-origin permissions, from the third field of a `peer` line
+    /// (`peer = <fp>,<seedfile>,ACTUATE|STOP`).
+    ///
+    /// The **same** `enrollment::Registry` the firmware consults, so `allows()` means the
+    /// same thing on both paths. **Fail closed**: a peer with no third field has no
+    /// permissions and its orders are refused, because the alternative default would grant
+    /// actuation to every key in the file.
+    ///
+    /// ⚠️ Config-time, not an owner-signed attestation. `OAU1` enrolment over the link is
+    /// the remaining step; until then an operator edits the file and restarts.
+    pub perms: Registry,
 }
 
 fn parse_hex(s: &str, out: &mut [u8]) -> Result<(), String> {
@@ -72,7 +84,7 @@ impl Config {
         let text = fs::read_to_string(path).map_err(|e| format!("{path}: {e}"))?;
         let mut kv: BTreeMap<String, String> = BTreeMap::new();
         let mut regs: Vec<RegRule> = Vec::new();
-        let mut peers: Vec<(String, String)> = Vec::new();
+        let mut peers: Vec<(String, String, String)> = Vec::new();
         let mut revoked_hex: Vec<String> = Vec::new();
         let mut operator_hex: Option<String> = None;
 
@@ -103,9 +115,13 @@ impl Config {
                 "revoked" => revoked_hex.push(v.to_string()),
                 "operator" => operator_hex = Some(v.to_string()),
                 // peer = <fp hex 16>,<seed file>   (the seed file yields the public key)
+                // peer = <fp hex 16>,<seed file>[,<PERM|PERM…>]
                 "peer" => {
-                    let (fp, seed) = v.split_once(',').ok_or_else(|| format!("{path}:{}: peer wants fp,seedfile", n + 1))?;
-                    peers.push((fp.trim().to_string(), seed.trim().to_string()));
+                    let mut it = v.splitn(3, ',');
+                    let fp = it.next().ok_or_else(|| format!("{path}:{}: peer wants fp,seedfile", n + 1))?;
+                    let seed = it.next().ok_or_else(|| format!("{path}:{}: peer wants fp,seedfile", n + 1))?;
+                    let perms = it.next().unwrap_or("").trim().to_string();
+                    peers.push((fp.trim().to_string(), seed.trim().to_string(), perms));
                 }
                 _ => {
                     kv.insert(k.to_string(), v.to_string());
@@ -128,12 +144,15 @@ impl Config {
         let our_seed = read_seed(&seed_path)?;
 
         let mut registry = MeshPubRegistry::new();
-        for (fp_hex, seed_file) in peers {
+        let mut perms = Registry::default();
+        for (fp_hex, seed_file, perm_spec) in peers {
             let mut fp = [0u8; FP_LEN];
             parse_hex(&fp_hex, &mut fp).map_err(|e| format!("peer fp: {e}"))?;
             let s = read_seed(&seed_file)?;
             let pk = mesh_v10_pubkey_from_seed(&s).map_err(|e| format!("peer key: {e}"))?;
             registry.insert(fp, pk);
+            let bits = parse_perms(&perm_spec).map_err(|e| format!("peer {fp_hex}: {e}"))?;
+            perms.entries.push(Entry { fp, pk: pk.0, role: 0, permissions: bits, seq: 0 });
         }
 
         Ok(Config {
@@ -148,6 +167,7 @@ impl Config {
             peer_fp,
             gateway_id: need("gateway_id").unwrap_or_else(|_| "1".into()).parse().unwrap_or(1),
             map: regs,
+            perms,
             operator: match operator_hex {
                 Some(h) => {
                     let mut k = [0u8; 32];
@@ -167,6 +187,23 @@ impl Config {
             },
         })
     }
+}
+
+/// `ACTUATE|STOP|SUPERVISE`, or empty for none. An unknown name is an error rather than
+/// zero bits: a typo in a permission must not silently deny, because the operator would
+/// then debug a refusal instead of a spelling mistake.
+fn parse_perms(spec: &str) -> Result<u32, String> {
+    let mut bits = 0u32;
+    for name in spec.split('|') {
+        match name.trim() {
+            "" => {}
+            "ACTUATE" => bits |= perm::ACTUATE,
+            "STOP" => bits |= perm::STOP,
+            "SUPERVISE" => bits |= perm::SUPERVISE,
+            other => return Err(format!("unknown permission {other:?} (want ACTUATE, STOP or SUPERVISE)")),
+        }
+    }
+    Ok(bits)
 }
 
 /// A seed file holds 64 hex chars. Reading it rather than compiling it is the point.
