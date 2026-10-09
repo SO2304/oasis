@@ -16,6 +16,25 @@ use crate::modbus_gateway::{parse_omb1, Gateway, OrderContext, Response};
 use crate::modbus_read::{check_read_response, decide_read, encode_omv1, parse_omq1, MbQuery, ReadCheck};
 use crate::modbus_tcp::{check_tcp_response, decide_tcp_for_origin, Outcome, TcpFrame};
 
+/// R14 — the entropy gate — is **not applicable on a Linux host**, and this constant says
+/// so where the gate is fed, rather than leaving a bare `true` in a struct literal.
+///
+/// R14 refuses a physical action when the sensor-entropy signal is above threshold. A host
+/// running `oasis_mbtcp_gateway` has no sensor to read: there is no signal, so there is
+/// nothing the condition can judge. Passing `true` is therefore *not applicable*, not
+/// *verified safe*, and the difference matters to anyone reading a journal entry whose
+/// `FLAG_R14_SAFE` is set.
+///
+/// Part H's supervision state is **not** a substitute here: no `OSB1` beacon reaches this
+/// link, so wiring it would be inventing a source. A gateway co-located with sensing must
+/// feed the real signal, and the nine conditions stay untouched either way (rule 1 of the
+/// hardening prompt) — only this input changes.
+///
+/// Stated in `docs/specs/MODBUS_TCP_SPEC.md`, `README.md`, `CLAUDE.md` and section G of
+/// `partners/POSITIONING_GAPS.md`, because a limit that lives only in a code comment is
+/// the silent constant this was written to stop being.
+pub const R14_NOT_APPLICABLE_ON_HOST: bool = true;
+
 /// Where the gateway writes its journal so it survives the process.
 ///
 /// Until this existed the TCP gateway called `Journal::append`, **threw the returned bytes
@@ -405,9 +424,7 @@ pub fn handle_frame(sock: &mut TcpStream, st: &mut GatewayState, conf: &Config, 
         revoked: st.router.is_revoked(&origin_fp),
         actuator_boot_id: st.boot_id,
         now_ms: now_ms(),
-        // No sensor on a host: there is no entropy signal to read, so this is honest
-        // rather than lenient. A gateway co-located with sensing must feed it.
-        r14_safe: true,
+        r14_safe: R14_NOT_APPLICABLE_ON_HOST,
     };
     let tid = (order.cmd_seq & 0xFFFF) as u16;
     // "Within limits" consults **this origin's** map when it has one, and the shared map

@@ -411,8 +411,30 @@ pub fn agent_try(link: &mut GatewayLink, agent: &Mutex<AgentState>, conf: &Confi
     let local_now = super::now_ms();
     let (boot_id, deadline_ms) = link.stamp(conf, local_now)?;
 
-    // 2. Sign under the lock, and only that: the round trip below must not hold it.
-    let (env, seq) = {
+    // 2 and 3 in ONE critical section: sign **and** send.
+    //
+    // This lock used to be released after signing, so the round trip did not hold it.
+    // That was faster and wrong. Every HMI connection shares this agent's identity, so
+    // they share one `cmd_seq` space, and the gateway requires strictly increasing **per
+    // origin**. With the round trip outside the lock, two HMIs could reserve 5 and 6 and
+    // have 6 arrive first, after which 5 is `Reject(StaleOrReplayed)` — a legitimate
+    // write refused, and the HMI shown 0x0A, which an operator reads as "not authorised".
+    // `bench_mbtcp_concurrency` measured **16 such refusals against 1784 acts** at N=5
+    // and N=10 (2026-10-09), read from the gateway's own decision record rather than
+    // inferred from the exception code.
+    //
+    // The cost is throughput: 3065 → ~1500 ack/s at N=10 on loopback. Paid willingly,
+    // because the gateway serialises behind its own state lock anyway — so most of that
+    // 3065 was writes queueing with a ~0.9 % chance of being refused for it. An HMI
+    // issues a handful of writes per second.
+    //
+    // Real parallelism comes from **distinct origins** — one enrolled identity per HMI —
+    // which the per-origin register map and per-origin sequence (A.1) make possible. Not
+    // from racing one identity's counter.
+    //
+    // An idle HMI still holds nothing: it blocks in `modbus_read_request` before ever
+    // reaching here, so `an_idle_connection_does_not_block_another` is unaffected.
+    let (seq, reply) = {
         let mut st = agent.lock().map_err(|_| "agent state poisoned".to_string())?;
         // The v0B counter this envelope will use must be claimed on disk first, or a
         // restart would reuse it and the gateway would refuse everything that follows.
@@ -426,18 +448,16 @@ pub fn agent_try(link: &mut GatewayLink, agent: &Mutex<AgentState>, conf: &Confi
         let order = w.to_order(conf.gateway_id, seq, boot_id, deadline_ms);
         let (buf, n) = encode_omb1(&order).ok_or("order: unsupported write")?;
         let env = st.origin.origin_wrap_v0b(&buf[..n]).ok_or("sign failed")?;
-        (env, seq)
-    };
 
-    // 3. Send on the kept connection, and wait for the outcome.
-    let reply = {
+        // Send on the kept connection and wait for the outcome, still holding the lock so
+        // that orders leave and are answered in the order their numbers were handed out.
         let sock = link.connect(conf)?;
         let r = (|| -> io::Result<Vec<u8>> {
             write_frame(sock, &env)?;
             read_frame(sock)
         })();
         match r {
-            Ok(r) => r,
+            Ok(r) => (seq, r),
             Err(e) => {
                 link.reset();
                 return Err(format!("gw: {:?}", e.kind()));

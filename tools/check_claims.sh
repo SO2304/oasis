@@ -31,6 +31,27 @@ doc_num() { # doc_num <regex with one capture>
   grep -oE "$1" CLAUDE.md | head -1 | grep -oE '[0-9]+' | head -1
 }
 
+# `claim` judges ONE occurrence, the first. A document that states the same count twice
+# therefore passed with the second one stale — which is exactly what happened: CLAUDE.md
+# said "27 [[bin]]" on line 31 and "23 [[bin]]" on line 129, and the checker read only the
+# first (2026-10-09). This judges EVERY occurrence of a pattern against the tree.
+claim_all() { # claim_all <label> <file> <regex> <actual>
+  local label="$1" file="$2" re="$3" want="$4" seen bad=0 n=0
+  while IFS= read -r m; do
+    n=$((n + 1))
+    seen=$(printf '%s' "$m" | grep -oE '[0-9]+' | head -1)
+    [ "$seen" = "$want" ] || { printf '  DRIFT %-34s %s dit %s, arbre dit %s\n' "$label" "$file" "$seen" "$want"; bad=$((bad + 1)); }
+  done < <(grep -oE "$re" "$file" 2>/dev/null)
+  if [ "$n" = 0 ]; then
+    printf '  ABSENT %-33s aucune occurrence de /%s/ dans %s\n' "$label" "$re" "$file"
+    fail=$((fail + 1))
+  elif [ "$bad" = 0 ]; then
+    printf '  ok    %-34s %s, %s occurrence(s)\n' "$label" "$want" "$n"
+  else
+    fail=$((fail + 1))
+  fi
+}
+
 # Same check, in a named document rather than CLAUDE.md. Added after a count was corrected
 # in CLAUDE.md and left wrong in README.md on a public repository for an hour: the checker
 # only ever read CLAUDE.md, so the one file a visitor sees first was the one file not
@@ -53,8 +74,7 @@ claim "harnais Kani" \
 claim "fichiers src/*.rs" \
   "$(grep -oE '[*][*][0-9]+ .src/[*][.]rs.[*][*]' CLAUDE.md | head -1 | grep -oE '[0-9]+')" \
   "$(ls oasis-rt/src/*.rs | wc -l | tr -d ' ')"
-claim "[[bin]] dans Cargo.toml" \
-  "$(grep -oE '[*][*][0-9]+ .\[\[bin\]\].[*][*]' CLAUDE.md | head -1 | grep -oE '[0-9]+')" \
+claim_all "[[bin]] dans CLAUDE.md" CLAUDE.md '[0-9]+ .\[\[bin\]\].|[0-9]+ production binaries' \
   "$(grep -c '^\[\[bin\]\]' oasis-rt/Cargo.toml | tr -d ' ')"
 claim "modules declares dans lib.rs" \
   "$(grep -oE '\*\*[0-9]+ modules\*\*' CLAUDE.md | head -1 | grep -oE '[0-9]+')" \

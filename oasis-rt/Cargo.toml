@@ -208,3 +208,7 @@ path = "src/bin/oasis_mbtcp_revoke.rs"
 [[bin]]
 name = "bench_mbtcp_pilot"
 path = "src/bin/bench_mbtcp_pilot.rs"
+
+[[bin]]
+name = "bench_mbtcp_concurrency"
+path = "src/bin/bench_mbtcp_concurrency.rs"

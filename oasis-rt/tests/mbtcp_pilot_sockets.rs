@@ -112,6 +112,14 @@ fn spawn_plc(writes: Arc<AtomicU32>, store: Arc<Mutex<ModbusStorageSmall>>) -> S
 /// Same, with the **read** requests counted too: a refused read must not reach the device
 /// any more than a refused write must, and only a counter at the device can show that.
 fn spawn_plc_counting(writes: Arc<AtomicU32>, reads: Arc<AtomicU32>, store: Arc<Mutex<ModbusStorageSmall>>) -> String {
+    spawn_plc_slow(writes, reads, store, 0)
+}
+
+/// Same again, with a response time. A real device has a scan cycle; loopback answers in
+/// tens of microseconds, and that difference is what decides whether a concurrency defect
+/// shows up at all. With `delay_ms` > 0 the window in which two orders can overtake each
+/// other is wide enough to make the failure reliable rather than occasional.
+fn spawn_plc_slow(writes: Arc<AtomicU32>, reads: Arc<AtomicU32>, store: Arc<Mutex<ModbusStorageSmall>>, delay_ms: u64) -> String {
     let srv = TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = srv.local_addr().unwrap().to_string();
     thread::spawn(move || {
@@ -134,6 +142,9 @@ fn spawn_plc_counting(writes: Arc<AtomicU32>, reads: Arc<AtomicU32>, store: Arc<
                         return; // rmodbus rejected the frame: nothing is applied
                     }
                     if f.processing_required {
+                        if delay_ms > 0 {
+                            thread::sleep(Duration::from_millis(delay_ms));
+                        }
                         let mut st = store.lock().unwrap();
                         let r = if f.readonly { f.process_read(&mut *st) } else { f.process_write(&mut *st) };
                         if r.is_err() {
@@ -566,4 +577,129 @@ fn an_idle_connection_does_not_block_another() {
     assert_eq!(fc, 0x06, "a write must succeed with an idle peer connected");
     assert_eq!(writes.load(Ordering::SeqCst), 1);
     assert!(elapsed < Duration::from_millis(timeout_ms / 2), "took {elapsed:?}, which is within the gateway's {timeout_ms} ms timeout: the idle peer is holding the lock");
+}
+
+/// Several HMIs at once must not make the gateway refuse a legitimate write, and the
+/// journal must stay in order (pilot A.4).
+///
+/// Every HMI connection shares the agent's identity, so they share one `cmd_seq` space,
+/// and the gate requires it strictly increasing **per origin**. The agent used to release
+/// its lock after signing and do the round trip outside it, so two HMIs could reserve 5
+/// and 6 and have 6 arrive first — after which 5 is `Reject(StaleOrReplayed)`: a
+/// legitimate write refused, shown to the operator as 0x0A, "not authorised".
+/// `bench_mbtcp_concurrency` measured **16 of those against 1784 acts** at N=5 and N=10
+/// on 2026-10-09, read out of the gateway's own decision record.
+///
+/// What this test pins, over **300 writes from 10 HMIs**:
+///
+/// 1. **no refusal** — every one of the writes is acknowledged with FC06;
+/// 2. **the device executed exactly as many writes as were acknowledged**, its own
+///    counter being the ground truth;
+/// 3. **the journal is ordered** — the gateway appends under its state lock, so the
+///    order it reports is the order on disk, and the `cmd_seq` of consecutive `Act`
+///    decisions must be strictly increasing with no gap other than forward.
+///
+/// The size is not decoration. The defect is probabilistic — about **0.9 %** of writes —
+/// so the arithmetic has to be done before the test is believed. At 6 HMIs x 5 writes the
+/// expected number of refusals is 0.27, and the negative control duly **passed 3/3 with
+/// the defect reinstated**: a test that would have been reported as a regression test
+/// while detecting nothing. At 10 x 30 the control **fails 3/3** (1, 13 and 10 refusals
+/// of 300) and the fixed tree passes 3/3. `scratchpad/neg_conc.py` is the mutation, which
+/// aborts unless it applies.
+///
+/// ⚠️ Still probabilistic, not by construction: a single run could in principle see zero.
+/// The bench, not this test, is the instrument that measures the rate.
+#[test]
+fn concurrent_hmis_are_never_refused_and_the_journal_stays_ordered() {
+    const HMIS: usize = 10;
+    const PER_HMI: usize = 30;
+
+    let writes = Arc::new(AtomicU32::new(0));
+    let store = Arc::new(Mutex::new(ModbusStorageSmall::new()));
+    let plc = spawn_plc_slow(Arc::clone(&writes), Arc::new(AtomicU32::new(0)), Arc::clone(&store), 0);
+    let log: Arc<Mutex<Vec<Served>>> = Arc::new(Mutex::new(Vec::new()));
+    let gw = spawn_gateway(conf("127.0.0.1:0", &plc), Arc::clone(&log));
+    let agent = spawn_agent(conf("127.0.0.1:0", &gw));
+
+    // Connect every HMI first, then release them together: a run where HMI 1 finishes
+    // before HMI 6 starts would test nothing about concurrency.
+    let barrier = Arc::new(std::sync::Barrier::new(HMIS));
+    let mut handles = Vec::with_capacity(HMIS);
+    for h in 0..HMIS {
+        let agent = agent.clone();
+        let barrier = Arc::clone(&barrier);
+        handles.push(thread::spawn(move || {
+            let mut sock = connect_timeout(&agent, Duration::from_millis(5000)).unwrap();
+            sock.set_nodelay(true).ok();
+            sock.set_read_timeout(Some(Duration::from_millis(5000))).ok();
+            barrier.wait();
+            let mut out = Vec::with_capacity(PER_HMI);
+            for i in 0..PER_HMI {
+                let tid = (h * PER_HMI + i + 1) as u16;
+                let value = 100 + (h * PER_HMI + i) as u16;
+                let mut req = Vec::new();
+                req.extend_from_slice(&tid.to_be_bytes());
+                req.extend_from_slice(&0u16.to_be_bytes());
+                req.extend_from_slice(&6u16.to_be_bytes());
+                req.push(UNIT);
+                req.push(0x06);
+                req.extend_from_slice(&REG_OK.to_be_bytes());
+                req.extend_from_slice(&value.to_be_bytes());
+                sock.write_all(&req).unwrap();
+                sock.flush().unwrap();
+                // Drain the WHOLE reply. The MBAP length counts the unit byte and the
+                // PDU, and 2 of those bytes (unit, fc) are already in `head`, so `len - 2`
+                // remain. The file's other helper opens a fresh connection per write and
+                // can get away with leaving them; on a **held** socket they desynchronise
+                // the stream, and the next write reads an address byte as a function code.
+                // That is how this test first "found" 5 missing device writes that were
+                // its own bug (2026-10-09).
+                let mut head = [0u8; 8];
+                sock.read_exact(&mut head).unwrap();
+                let rest = (u16::from_be_bytes([head[4], head[5]]) as usize).saturating_sub(2);
+                let mut tail = vec![0u8; rest];
+                sock.read_exact(&mut tail).unwrap();
+                let fc = head[7];
+                let code = if fc & 0x80 != 0 { *tail.first().unwrap_or(&0) } else { 0 };
+                out.push((fc, code));
+            }
+            out
+        }));
+    }
+    let results: Vec<(u8, u8)> = handles.into_iter().flat_map(|h| h.join().unwrap()).collect();
+
+    // 1. Not one refusal.
+    let refused: Vec<&(u8, u8)> = results.iter().filter(|(fc, _)| fc & 0x80 != 0).collect();
+    assert!(refused.is_empty(), "{} of {} concurrent writes were refused: {:?} — a legitimate write refused because another HMI's order overtook it", refused.len(), results.len(), refused);
+    assert_eq!(results.len(), HMIS * PER_HMI);
+
+    // 2. The device's own counter, not ours.
+    assert_eq!(writes.load(Ordering::SeqCst), (HMIS * PER_HMI) as u32, "rmodbus executed one write per acknowledged order");
+    // Which HMI writes last is not determined, and must not be asserted: the first
+    // version of this test demanded the globally highest value and failed on 114, the
+    // last write of whichever thread finished last. What IS true is that the register
+    // holds one of the ordered values and nothing else — no partial or garbage write.
+    let held = store.lock().unwrap().get_holding(REG_OK).unwrap();
+    let ordered: Vec<u16> = (0..(HMIS * PER_HMI)).map(|k| 100 + k as u16).collect();
+    assert!(ordered.contains(&held), "the register holds {held}, which is not one of the ordered values");
+
+    // 3. The journal's order. The gateway appends inside the same critical section that
+    // reports here, so this sequence is the sequence on disk.
+    let g = log.lock().unwrap();
+    let seqs: Vec<u32> = g
+        .iter()
+        .filter_map(|s| match s {
+            Served::Decided { cmd_seq, decision, .. } if *decision == oasis_rt::actuation::Decision::Act => Some(*cmd_seq),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(seqs.len(), HMIS * PER_HMI, "every acknowledged write is an Act in the journal");
+    for w in seqs.windows(2) {
+        assert!(w[1] > w[0], "journal out of order: {} then {} — the gate requires strictly increasing per origin, so this would have been refused", w[0], w[1]);
+    }
+    let non_act: Vec<&Served> = g
+        .iter()
+        .filter(|s| !matches!(s, Served::Decided { decision, .. } if *decision == oasis_rt::actuation::Decision::Act) && !matches!(s, Served::Clock { .. }))
+        .collect();
+    assert!(non_act.is_empty(), "the gateway recorded a non-Act decision under pure concurrency: {non_act:?}");
 }

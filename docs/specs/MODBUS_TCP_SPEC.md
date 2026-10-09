@@ -65,19 +65,67 @@ code « non autorisé ». L'IHM voit un refus, pas une coupure silencieuse.
     donc n'explorait pas une FC16 à 9 registres. Harnais élargi, puis contre-épreuve
     (quantité 9 acceptée) → FAILED.
 
-## 4. Ce qui n'est pas fait (prochaines étapes, `prompts/OASIS_PILOT_GATEWAY.md`)
+## 4. Ce que cette section listait comme manquant, et où ça en est
 
-1. **Les binaires réseau.** `oasis_mbtcp_agent` (écoute l'IHM) et
-   `oasis_mbtcp_gateway` (écoute l'agent, parle à l'automate), sur Linux, avec
-   délais d'attente, une seule connexion automate et une configuration de la carte
-   des registres. Ici, tout se fait en mémoire, sans socket.
-2. **Le temps de la passerelle.** L'agent doit connaître le `boot_id` et l'horloge de
-   la passerelle. Le balisage OTM1 existe pour l'actionneur (partie F), mais n'est
-   pas encore câblé en TCP.
-3. **Le journal des interventions** exigé par 1.1.9 : chaque ordre accepté ou refusé,
-   chaîné et signé.
-4. **Les lectures** (FC03/FC04). Elles ne modifient pas l'état de la machine, mais une
-   IHM en fait en permanence. Il faut décider : relais direct par l'agent, ou relais
-   par la passerelle.
-5. Un essai sur du matériel réel : un automate ou un simulateur Modbus TCP sur le
-   réseau.
+Cette section a porté « ce qui n'est pas fait » jusqu'au 2026-10-09 alors que quatre de
+ses cinq points étaient faits. Le constat est gardé plutôt qu'effacé, parce qu'une spec
+qui réclame ce qu'elle a déjà est une spec que personne ne relit.
+
+| Point d'alors | Où ça en est |
+|---|---|
+| 1. Les binaires réseau | **Fait.** `oasis_mbtcp_agent` et `oasis_mbtcp_gateway` (`src/mbtcp_pilot/`), délais d'attente partout, une seule connexion automate, carte des registres en configuration. Un audit avait relevé qu'il n'y avait **aucune socket dans `oasis-rt`** : `mbtcp_net` est le transport |
+| 2. Le temps de la passerelle | **Fait.** L'agent demande `OTQ1` et reçoit `OTM1`, extrapolé par le `TimeView` de la partie K ; il ne lit plus le `boot_id` par un canal latéral |
+| 3. Le journal des interventions | **Fait.** `JournalSink` tient les deux fichiers ouverts, écrit **chaque** décision, refus compris, et `oasis_journal_verify` les relit (`intact`, sortie 0 ; `broken`, sortie 1 sur un refus réécrit en acceptation) |
+| 4. Les lectures (FC03/FC04) | **Fait, par la passerelle** (`modbus_read`, `OMQ1`/`OMV1`) : même enveloppe v0B, même carte des registres, une plage dont un registre sort est refusée **entière** et l'automate n'est pas interrogé. FC04 refusé par son nom. Le relais direct par l'agent a été écarté : il recrée le canal latéral que la passerelle existe pour empêcher |
+| 5. Un essai sur du matériel réel | **Ouvert.** Voir §5 |
+
+## 5. Limites, nommées
+
+- **Aucun automate du commerce.** Tout ce qui est mesuré ici l'a été contre
+  `oasis_test_plc`, un simulateur bâti sur `rmodbus` qui **ne dépend pas d'`oasis-rt`**
+  (vérifiable dans son manifeste), sur un seul hôte en boucle locale. Il répond
+  instantanément là où un automate a un cycle de scrutation, des E/S et des contraintes
+  temps réel. Le protocole et le chemin d'autorisation sont réels ; la machine ne l'est
+  pas, et la latence mesurée est un **plancher**. Partout où ce document écrit
+  « automate », lire **non testé sur automate du commerce**.
+- **R14 est non applicable sur hôte.** R14 refuse une action physique quand l'entropie
+  des capteurs dépasse un seuil. Un hôte Linux n'a pas de capteur à lire : il n'y a pas
+  de signal, donc rien que la condition puisse juger. La passerelle passe
+  `R14_NOT_APPLICABLE_ON_HOST` — une constante **nommée**, pas un `true` anonyme dans
+  une structure — et c'est *non applicable*, pas *vérifié sûr* : la nuance compte pour
+  qui relit une entrée de journal dont `FLAG_R14_SAFE` est levé. L'état de supervision
+  de la partie H n'en est pas un substitut : aucun balisage `OSB1` n'arrive sur ce lien.
+  Une passerelle co-implantée avec des capteurs doit alimenter le vrai signal ; les neuf
+  conditions de la porte sont inchangées dans les deux cas.
+- **Les clés sont dans des fichiers de configuration** — plus de graine compilée, mais un
+  fichier aussi lisible qu'un autre sur l'hôte.
+- **Les ordres sont servis un à la fois**, et c'est désormais **mesuré** et non seulement
+  affirmé (`bench_mbtcp_concurrency`, K=10, 2026-10-09). Avec 1, 2, 5 puis 10 IHM
+  concurrentes sur une boucle locale : débit **1 333 → 2 175 acquittements/s** mais au
+  plafond dès **N=5**, et latence **663 → 4 401 µs**, soit ~6× pour 10 fois plus de
+  clients. En donnant à l'appareil un temps de réponse de **2 ms** — un automate réel a un
+  cycle de scrutation, la boucle locale n'en a pas — le débit est **plat à ~325/s de N=1 à
+  N=10** et la latence croît **exactement** linéairement : 2 885 / 6 275 / 15 049 /
+  30 344 µs. C'est de l'attente, pas du travail.
+
+  ⚠️ **Découper le verrou n'y changerait rien**, et c'est la conclusion honnête contre
+  l'intuition : la ressource sérialisée n'est pas l'état de la passerelle mais **la
+  connexion unique vers l'appareil**. Un appareil, une connexion, une transaction à la
+  fois. Sortir l'échange réseau du verrou laisserait deux ordres atteindre la même socket
+  en même temps, ce qui est faux pour Modbus TCP sur une connexion tenue. La capacité
+  au-delà de ce plafond passe par des **origines distinctes** — une identité enrôlée par
+  IHM — que la carte par origine et la séquence par origine (A.1) rendent possibles.
+
+- **Un défaut trouvé par cette mesure, et corrigé** : toutes les IHM partagent l'identité
+  de l'agent, donc **un seul espace de `cmd_seq`**, et la porte exige qu'il croisse
+  strictement par origine. L'agent relâchait son verrou après la signature et faisait
+  l'aller-retour en dehors : deux IHM pouvaient réserver 5 et 6 et faire arriver 6 en
+  premier, après quoi 5 devenait `Reject(StaleOrReplayed)` — **une écriture légitime
+  refusée**, montrée à l'opérateur en 0x0A, ce qu'un opérateur lit « non autorisé ». Le
+  banc en a compté **16 sur 1 784 acquittements** (~0,9 %) à N=5 et N=10, lues dans le
+  registre de décisions de la passerelle elle-même et non déduites du code d'exception.
+  L'agent signe et émet maintenant dans la même section critique : **0 refus** aux mêmes
+  N, pour un débit qui passe de ~3 065 à ~2 175/s. Prix payé volontiers.
+- **Une injection Modbus brute ne laisse aucune entrée de journal** : elle est refusée par
+  le cadrage avant de devenir une décision. C'est une limite connue de la piste d'audit,
+  pas un oubli.
