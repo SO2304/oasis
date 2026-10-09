@@ -464,6 +464,29 @@ if [ "$FULL" = 1 ]; then
     printf '  DRIFT %-34s %s fichier(s) non liste(s)\n' "completude des manifestes" "$miss"
     fail=$((fail + 1))
   fi
+
+  # And the hole the check above still had: it judges a file only when a manifest exists
+  # ABOVE it, so a brand-new evidence directory with no SHA256SUMS at all was skipped in
+  # silence — which is exactly what `evidence/real/` did on 2026-10-09, the day after the
+  # check was written. A file with no manifest anywhere above it is not "covered", it is
+  # unprotected. Every file under evidence/ must have one.
+  orphan=0
+  while IFS= read -r f; do
+    d=$(dirname "$f"); has=0
+    while [ "$d" != "." ] && [ "$d" != "/" ]; do
+      if [ -f "$d/SHA256SUMS" ]; then has=1; break; fi
+      d=$(dirname "$d")
+    done
+    [ "$has" = 1 ] && continue
+    printf '  ORPHELIN %s (aucun manifeste au-dessus)\n' "$f"
+    orphan=$((orphan + 1))
+  done < <(find evidence -type f ! -name SHA256SUMS 2>/dev/null)
+  if [ "$orphan" = 0 ]; then
+    printf '  ok    %-34s aucun fichier sans manifeste\n' "preuves orphelines"
+  else
+    printf '  DRIFT %-34s %s fichier(s) sans aucun manifeste\n' "preuves orphelines" "$orphan"
+    fail=$((fail + 1))
+  fi
 fi
 
 echo
