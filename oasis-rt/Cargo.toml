@@ -9,6 +9,19 @@ name = "oasis_rt"
 path = "src/lib.rs"
 
 [dependencies]
+# oasis-operator-key: the k-of-n operator quorum verifier.
+#
+# This was a DEV-dependency until 2026-10-09, because `oasis-operator-key` declared a
+# dependency back on `oasis-rt` and the resulting cycle is only tolerated inside a
+# workspace. That had a real cost: a `[[bin]]` cannot use a dev-dependency, so
+# `oasis_mbtcp_gateway` could not verify a multi-signed revocation list and refused every
+# one of them by name. The cycle turned out to be an artefact -- that crate's `src/`
+# mentions `oasis_rt` nowhere, only its tests and examples do -- so it moved to ITS
+# dev-dependencies and this is now an ordinary dependency.
+#
+# Optional, behind `std`: the crate is `no_std` and cross-compiles alone, but a k-of-n list
+# is only ever checked on a host, so the MCU graph does not grow for it.
+oasis-operator-key = { path = "../oasis-operator-key", version = "0.1.0", optional = true }
 ed25519-compact = { version = "2.2.0", default-features = false, features = ["x25519"] }
 # serde: no_std + alloc. `derive` is used only by main.rs (std binary).
 # Library modules use serde_json::Value; both crates ship with `alloc` feature
@@ -46,11 +59,6 @@ hmac = { version = "=0.13.0", default-features = false }
 hkdf = { version = "=0.13.0", default-features = false }
 
 [dev-dependencies]
-# oasis-operator-key, for the C9 quorum tests only. This is a DEV-dependency cycle
-# (operator-key depends on oasis-rt), which Cargo allows: the quorum RULE takes a
-# `quorum_ok: bool` and depends on nothing, exactly as the gate takes `v0b_ok`, so the
-# verifier is needed by the tests and never by the library.
-oasis-operator-key = { path = "../oasis-operator-key", version = "0.1.0" }
 # RustCrypto ml-dsa: independent ML-DSA-44 oracle (NOT independently audited, per its
 # README). Every test signature is checked by both implementations, plus NIST ACVP.
 ml-dsa = { version = "=0.1.1", default-features = false }
@@ -74,7 +82,7 @@ mesh_v10 = []
 # std: enables the standard library. When disabled, oasis-rt becomes
 # a no_std crate using `alloc` for heap types (Vec, String, Box).
 # MCU targets: `cargo build --no-default-features --release`
-std = []
+std = ["dep:oasis-operator-key"]
 # std_env: enables env-var based config helpers (PainConfig::from_env).
 # Disable for no_std/MCU builds: `cargo build --no-default-features --release`
 std_env = []
@@ -184,6 +192,10 @@ path = "src/bin/oasis_mbtcp_gateway.rs"
 [[bin]]
 name = "oasis_mbtcp_agent"
 path = "src/bin/oasis_mbtcp_agent.rs"
+
+[[bin]]
+name = "bench_quorum_cost"
+path = "src/bin/bench_quorum_cost.rs"
 
 [[bin]]
 name = "oasis_mbtcp_order"

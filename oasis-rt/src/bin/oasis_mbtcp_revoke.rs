@@ -5,7 +5,7 @@
 //! with a monotone epoch, persisted before apply. This is the tool that sends one.
 //!
 //! ```text
-//! oasis_mbtcp_revoke --config agent.conf --op-seed op.seed --epoch 1 --revoke <fp hex>[,<fp hex>…]
+//! oasis_mbtcp_revoke --config agent.conf --op-seed op1.seed [--op-seed op2.seed …] --epoch 1 --revoke <fp hex>[,<fp hex>…]
 //! ```
 //!
 //! The list is signed with the operator's Ed25519 key, wrapped in a v0B envelope signed by
@@ -15,10 +15,11 @@
 //! Exit 0 when the gateway applied the list, 1 when it refused it, 2 on a usage or
 //! transport error — a campaign reads the exit code.
 //!
-//! ⚠️ **One signature.** `encode_orv1` carries a vector of them and the gateway refuses any
-//! list that does not carry exactly one, because k-of-n verification needs
-//! `oasis-operator-key`, which is a dev-dependency of `oasis-rt`. Signing k-of-n here while
-//! the gateway can only check one would be worse than not offering it.
+//! **`--op-seed` is repeatable**: each occurrence adds one signature over the same
+//! canonical message, which is what a k-of-n authority counts. It counts **distinct keys**,
+//! so giving the same seed twice produces a list the gateway refuses — and the tool does
+//! **not** deduplicate, because being able to produce that refusal is the point of testing
+//! it.
 //! The send counter is persisted beside the config (`<config>.txc`), because a one-shot
 //! tool otherwise restarts it at 1 and its second run is refused as a replay. The counter
 //! belongs to the identity, not to the process.
@@ -37,7 +38,7 @@ use oasis_rt::mesh_revocation::{encode_orv1, signed_message, ParsedRevocation};
 use oasis_rt::modbus_tcp::Outcome;
 
 fn usage() -> ExitCode {
-    eprintln!("usage: oasis_mbtcp_revoke --config <file> --op-seed <file> --epoch <n> --revoke <fp>[,<fp>…]");
+    eprintln!("usage: oasis_mbtcp_revoke --config <file> --op-seed <file> [--op-seed <file> …] --epoch <n> --revoke <fp>[,<fp>…]");
     ExitCode::from(2)
 }
 
@@ -72,9 +73,14 @@ fn main() -> ExitCode {
         println!("{}", kp.pk.as_ref().iter().map(|b| format!("{b:02x}")).collect::<String>());
         return ExitCode::SUCCESS;
     }
-    let (Some(cfg), Some(seed_path), Some(epoch), Some(list)) = (get("--config"), get("--op-seed"), get("--epoch"), get("--revoke")) else {
+    // Every --op-seed occurrence, in order.
+    let seed_paths: Vec<String> = a.iter().enumerate().filter(|(_, x)| x.as_str() == "--op-seed").filter_map(|(i, _)| a.get(i + 1).cloned()).collect();
+    let (Some(cfg), Some(epoch), Some(list)) = (get("--config"), get("--epoch"), get("--revoke")) else {
         return usage();
     };
+    if seed_paths.is_empty() {
+        return usage();
+    }
     let Ok(epoch) = epoch.parse::<u64>() else { return usage() };
 
     let conf = match Config::load(&cfg) {
@@ -84,15 +90,18 @@ fn main() -> ExitCode {
             return ExitCode::from(2);
         }
     };
-    // The operator seed is read from a file, never compiled — phase 1.2's lesson, and the
+    // The operator seeds are read from files, never compiled — phase 1.2's lesson, and the
     // same reason the node seeds are files.
-    let op_seed = match read_seed(&seed_path) {
-        Ok(s) => s,
-        Err(e) => {
-            eprintln!("operator seed: {e}");
-            return ExitCode::from(2);
+    let mut op_seeds = Vec::with_capacity(seed_paths.len());
+    for p in &seed_paths {
+        match read_seed(p) {
+            Ok(s) => op_seeds.push(s),
+            Err(e) => {
+                eprintln!("operator seed {p}: {e}");
+                return ExitCode::from(2);
+            }
         }
-    };
+    }
     let mut fps: Vec<[u8; 8]> = Vec::new();
     for part in list.split(',') {
         match parse_fp(part) {
@@ -108,16 +117,19 @@ fn main() -> ExitCode {
     fps.sort_unstable();
     fps.dedup();
 
-    let kp = ed25519_compact::KeyPair::from_seed(ed25519_compact::Seed::new(op_seed.0));
-    let op_pub: [u8; 32] = kp.pk.as_ref().try_into().expect("ed25519 public key is 32 bytes");
-
     let issued_at = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
     // Sign the canonical message, which is what the gateway recomputes — not the encoded
     // blob, so a change in framing cannot silently invalidate a signature.
     let unsigned = ParsedRevocation { network_id: conf.network_id, epoch, issued_at, fps: fps.clone(), sigs: Vec::new() };
     let msg = signed_message(&unsigned);
-    let sig: [u8; 64] = kp.sk.sign(&msg, None).as_ref().try_into().expect("ed25519 signature is 64 bytes");
-    let blob = encode_orv1(&conf.network_id, epoch, issued_at, &fps, &[(op_pub, sig)]);
+    let mut sigs: Vec<([u8; 32], [u8; 64])> = Vec::with_capacity(op_seeds.len());
+    for s in &op_seeds {
+        let kp = ed25519_compact::KeyPair::from_seed(ed25519_compact::Seed::new(s.0));
+        let pk: [u8; 32] = kp.pk.as_ref().try_into().expect("ed25519 public key is 32 bytes");
+        let sig: [u8; 64] = kp.sk.sign(&msg, None).as_ref().try_into().expect("ed25519 signature is 64 bytes");
+        sigs.push((pk, sig));
+    }
+    let blob = encode_orv1(&conf.network_id, epoch, issued_at, &fps, &sigs);
 
     let mut origin = MeshRouter::new_v0b(conf.our_fp, conf.network_id, conf.our_seed.clone(), conf.registry.clone());
 
@@ -165,11 +177,11 @@ fn main() -> ExitCode {
     };
     match decode_reply(&reply) {
         Some((_, Outcome::Done)) => {
-            println!("REVOKE applied epoch={epoch} count={}", fps.len());
+            println!("REVOKE applied epoch={epoch} count={} signatures={}", fps.len(), sigs.len());
             ExitCode::SUCCESS
         }
         Some((_, other)) => {
-            println!("REVOKE refused epoch={epoch} outcome={other:?}");
+            println!("REVOKE refused epoch={epoch} signatures={} outcome={other:?}", sigs.len());
             ExitCode::from(1)
         }
         None => {

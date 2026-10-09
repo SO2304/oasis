@@ -118,9 +118,9 @@ pub struct GatewayState {
     /// The revocation list this gateway has applied, with its epoch. Starts from whatever
     /// the config revoked and rises only by a signed `ORV1` with a strictly greater epoch.
     pub rev: RevState,
-    /// The operator key allowed to sign a revocation. `None` refuses every `ORV1`: a
-    /// gateway with no operator configured must not accept a list from anyone.
-    pub operator: Option<[u8; 32]>,
+    /// Who may sign a revocation: one operator, or k of n. `None` refuses every `ORV1` —
+    /// a gateway with no authority configured must not accept a list from anyone.
+    pub authority: Option<oasis_operator_key::OperatorAuthority>,
     /// Where an applied list is written **before** it is applied, so a restart does not
     /// forget a revocation. `None` means it is applied in RAM only, and the binary says so.
     pub rev_path: Option<std::path::PathBuf>,
@@ -147,7 +147,7 @@ impl GatewayState {
             plc: None,
             jsink: None,
             rev: RevState::default(),
-            operator: None,
+            authority: None,
             rev_path: None,
         }
     }
@@ -455,20 +455,19 @@ pub fn handle_frame(sock: &mut TcpStream, st: &mut GatewayState, conf: &Config, 
 /// disk that the next start applies; a crash the other way round would leave a node
 /// enforcing a list it cannot prove it received.
 ///
-/// ⚠️ **Single operator only.** `oasis-operator-key` is a dev-dependency of this crate, so
-/// k-of-n is not reachable from here; a list carrying several signatures is refused by
-/// name rather than accepted on the strength of one of them.
+/// Single **or k-of-n**, delegated to `oasis-operator-key::OperatorAuthority`, which owns
+/// the rule. Until 2026-10-09 that crate was reachable only as a dev-dependency (a cycle),
+/// so this function refused every multi-signed list by name. Delegating also buys the
+/// property the hand-rolled single-key check never had: `verify_authorization` requires **k
+/// distinct keys**, so one operator signing twice is one vote, not two.
 fn serve_revocation(sock: &mut TcpStream, st: &mut GatewayState, conf: &Config, inner: &[u8], origin_fp: [u8; 8]) -> io::Result<Served> {
     let outcome = (|| -> Result<RevDecision, RevReject> {
-        let op = st.operator.ok_or(RevReject::BadOperatorSig)?;
+        let authority = st.authority.as_ref().ok_or(RevReject::BadOperatorSig)?;
         let p = parse_orv1(inner)?;
-        if p.sigs.len() != 1 {
-            // k-of-n needs the operator-key crate. Refusing is the honest answer; taking
-            // the first signature of several would silently turn a quorum into one vote.
-            return Err(RevReject::BadOperatorSig);
-        }
-        let (pk_bytes, sig_bytes) = p.sigs[0];
-        let sig_ok = pk_bytes == op && verify_operator_sig(&op, &signed_message(&p), &sig_bytes);
+        // The authority decides what a quorum is. A `Single` authority still requires
+        // exactly one signature from exactly that key; a `Multisig { k, pub_keys }`
+        // requires k DISTINCT keys drawn from the n.
+        let sig_ok = authority.verify_authorization(&signed_message(&p), &p.sigs).is_ok();
         let (d, new) = revocation_transition(&st.rev, &conf.network_id, &p, sig_ok);
         if let (RevDecision::Applied, Some(new)) = (d, new) {
             // Persisted before applied.
@@ -492,11 +491,4 @@ fn serve_revocation(sock: &mut TcpStream, st: &mut GatewayState, conf: &Config, 
     st.journal_and_persist_change(origin_fp, st.rev.epoch as u32, crate::journal::ChangeKind::Revocation, applied)?;
     write_frame(sock, &encode_reply(0, &if applied { Outcome::Done } else { Outcome::NoAnswer }))?;
     Ok(Served::Revocation { decision, epoch: st.rev.epoch })
-}
-
-/// One Ed25519 verification over the canonical signed message of a revocation list.
-fn verify_operator_sig(pub_key: &[u8; 32], msg: &[u8], sig: &[u8; 64]) -> bool {
-    let Ok(pk) = ed25519_compact::PublicKey::from_slice(pub_key) else { return false };
-    let Ok(s) = ed25519_compact::Signature::from_slice(sig) else { return false };
-    pk.verify(msg, &s).is_ok()
 }

@@ -85,7 +85,7 @@ fn conf(listen: &str, peer: &str) -> Config {
         gateway_id: 1,
         map: vec![RegRule { addr: REG_OK, min: 0, max: 1000 }],
         revoked: Vec::new(),
-        operator: None,
+        authority: None,
         // The two origins this test commands with, granted `ACTUATE`. The gate now
         // requires the permission and not merely a key in the registry, so without this
         // every order would be refused `NotAuthorized` — which is the point of the change.

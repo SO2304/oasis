@@ -77,7 +77,7 @@ fn conf(listen: &str, peer: &str, our: u8) -> Config {
         gateway_id: 1,
         map: vec![RegRule { addr: REG, min: 0, max: 60000 }],
         revoked: Vec::new(),
-        operator: None,
+        authority: None,
         // The gate requires `ACTUATE` now, not merely a key in the registry.
         perms: {
             let mut r = oasis_rt::enrollment::Registry::default();

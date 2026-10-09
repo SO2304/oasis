@@ -68,6 +68,10 @@ seed "$OUT/op.seed" 17       # 0x11, the operator who signs revocation lists
 seed "$OUT/op_bad.seed" 99   # 0x63, an operator the gateway does not trust
 seed "$OUT/opnode.seed" 187  # 0xBB, the operator TOOL's own mesh identity
 OPNODE_FP=bb00000000000000
+seed "$OUT/op2.seed" 33      # 0x21, second operator of the quorum
+seed "$OUT/op3.seed" 49      # 0x31, third operator of the quorum
+OP2_PUB=$("$BIN/oasis_mbtcp_revoke" --print-pub "$(winpath "$OUT/op2.seed")" 2>/dev/null || true)
+OP3_PUB=$("$BIN/oasis_mbtcp_revoke" --print-pub "$(winpath "$OUT/op3.seed")" 2>/dev/null || true)
 # The operator's PUBLIC key goes in the gateway config. Derived with the same crate the
 # gateway verifies with, so the campaign cannot pass by agreeing with its own arithmetic.
 OP_PUB=$("$BIN/oasis_mbtcp_revoke" --print-pub "$OUT/op.seed" 2>/dev/null || true)
@@ -543,6 +547,72 @@ cat "$OUT/jrnrev.head" "$OUT/jrnrev.entries" > "$OUT/jrn18.txt"
 LAST18=$("$BIN/oasis_journal_verify" "$(winpath "$OUT/jrn18.txt")" 2>&1 | grep -E '^  \[' | tail -1)
 check "C18 journalled as NotAuthorized, attributed to the operator node" "origin=bb00" "$LAST18"
 check "C18 and named as a permission refusal" "Reject(NotAuthorized)" "$LAST18"
+
+note "C19-C22 quorum k parmi n sur le lien"
+# Until 2026-10-09 the gateway refused EVERY multi-signed list by name, because
+# `OperatorAuthority` sat behind a dev-dependency cycle and a `[[bin]]` cannot use a
+# dev-dependency. The cycle was an artefact -- `oasis-operator-key/src/` mentions `oasis_rt`
+# nowhere -- so it moved and the quorum rule is now the crate's own.
+#
+# A third gateway, on its own port, configured k=2 of n=3. Separate from the main one so
+# the earlier cases keep their single-operator authority and nothing is re-interpreted.
+QGW_PORT=15031
+{ sed "s|^listen = .*|listen = 127.0.0.1:$QGW_PORT|" "$OUT/gateway.conf" | grep -v '^operator = '
+  echo "operator = $OP_PUB"
+  echo "operator = $OP2_PUB"
+  echo "operator = $OP3_PUB"
+  echo "quorum = 2"
+} > "$OUT/gateway_q.conf"
+"$BIN/oasis_mbtcp_gateway" --config "$(winpath "$OUT/gateway_q.conf")" --journal "$(winpath "$OUT/jrnq")" >> "$OUT/gateway_q.log" 2>&1 &
+QGW_PID=$!; PIDS="$PIDS $QGW_PID"
+for i in $(seq 1 20); do ready $QGW_PORT && break; sleep 0.25; done
+check "C19 the gateway printed the quorum it will enforce" "authority=quorum k=2 of n=3" "$(cat "$OUT/gateway_q.log")"
+
+# The tool points at this gateway, with its own identity and its own stores.
+sed "s|^peer_addr = .*|peer_addr = 127.0.0.1:$QGW_PORT|" "$OUT/revoke.conf" > "$OUT/revoke_q.conf"
+
+Q19=$("$BIN/oasis_mbtcp_revoke" --config "$(winpath "$OUT/revoke_q.conf")" --op-seed "$(winpath "$OUT/op.seed")" --op-seed "$(winpath "$OUT/op2.seed")" --epoch 1 --revoke "$VICTIM" 2>&1); RC19=$?
+say "  tool: $Q19 (rc=$RC19)"
+check_eq "C19 two distinct operators meet k=2" "0" "$RC19"
+check "C19 the gateway applied it" "REVOCATION Applied epoch=1" "$(cat "$OUT/gateway_q.log")"
+
+Q20=$("$BIN/oasis_mbtcp_revoke" --config "$(winpath "$OUT/revoke_q.conf")" --op-seed "$(winpath "$OUT/op.seed")" --epoch 2 --revoke "$VICTIM" 2>&1); RC20=$?
+say "  tool: $Q20 (rc=$RC20)"
+if [ "$RC20" = "0" ]; then say "  FAIL  C20 one signature satisfied k=2"; FAIL=$((FAIL+1));
+else say "  PASS  C20 one signature does not meet k=2 (rc=$RC20)"; PASS=$((PASS+1)); fi
+
+# The property the hand-rolled single-key check never had: k DISTINCT keys.
+Q21=$("$BIN/oasis_mbtcp_revoke" --config "$(winpath "$OUT/revoke_q.conf")" --op-seed "$(winpath "$OUT/op.seed")" --op-seed "$(winpath "$OUT/op.seed")" --epoch 3 --revoke "$VICTIM" 2>&1); RC21=$?
+say "  tool: $Q21 (rc=$RC21)"
+if [ "$RC21" = "0" ]; then say "  FAIL  C21 the same operator signing twice was counted as two votes"; FAIL=$((FAIL+1));
+else say "  PASS  C21 the same operator twice is one vote, not two (rc=$RC21)"; PASS=$((PASS+1)); fi
+
+cat "$OUT/jrnq.head" "$OUT/jrnq.entries" > "$OUT/jrn19.txt"
+JQ=$("$BIN/oasis_journal_verify" "$(winpath "$OUT/jrn19.txt")" 2>&1)
+APPLIED=$(printf '%s' "$JQ" | awk '/Change\(Revocation\)/ && /flags=0x10/{n++} END{print n+0}')
+REFUSED=$(printf '%s' "$JQ" | awk '/Change\(Revocation\)/ && /flags=0x00/{n++} END{print n+0}')
+say "  journal: $APPLIED changement(s) appliqué(s), $REFUSED refusé(s)"
+if [ "$APPLIED" -ge 1 ] && [ "$REFUSED" -ge 2 ]; then
+  say "  PASS  C19-C21 les trois décisions de quorum sont au journal, appliquée et refusées"; PASS=$((PASS+1))
+else
+  say "  FAIL  C19-C21 journal attendu >=1 appliqué et >=2 refusés, obtenu $APPLIED / $REFUSED"; FAIL=$((FAIL+1))
+fi
+check "C19-C21 la chaîne reste intacte" "VERDICT intact" "$JQ"
+
+note "C22 le coût d'un quorum contre une signature unique, K=10"
+# The prompt asks for the cost. Measured on the pure verifier rather than over the link, so
+# the number is the cryptography and not three loopback hops: n Ed25519 verifications plus
+# the distinctness bookkeeping.
+# The whole output. An earlier version took `tail -3`, which caught only the closing
+# commentary and reported "pas de mesure" about a bench that had measured fine — the case
+# was testing where the text happened to end, not whether anything was measured.
+C22=$("$BIN/bench_quorum_cost" 2>&1)
+printf '%s\n' "$C22" | grep 'ns  ' | sed 's/^/  /' | tee -a "$LOG"
+if printf '%s' "$C22" | grep -q 'k=2/n=3'; then
+  say "  PASS  C22 coût mesuré, K=10"; PASS=$((PASS+1))
+else
+  say "  FAIL  C22 pas de mesure: $C22"; FAIL=$((FAIL+1))
+fi
 
 note "summary"
 say "  PLC: $(plc_writes) applied writes, $(plc_frames) frames received"

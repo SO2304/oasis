@@ -97,14 +97,25 @@ fn main() {
         Some(p) => match GatewayState::with_journal(router, boot_id, p) {
             Ok(mut s) => {
                 println!("GATEWAY journal={p}.entries + {p}.head");
-                // A signed ORV1 arriving over the link is applied only if this operator
-                // key signed it, and the list is written here BEFORE being applied so a
-                // restart does not forget a revocation.
-                s.operator = conf.operator;
+                // A signed ORV1 arriving over the link is applied only if the configured
+                // authority accepts its signatures, and the list is written here BEFORE
+                // being applied so a restart does not forget a revocation.
+                s.authority = conf.authority.clone();
                 s.rev_path = Some(format!("{p}.rev").into());
-                match conf.operator {
-                    Some(k) => println!("GATEWAY operator={} rev_store={p}.rev", k[..8].iter().map(|b| format!("{b:02x}")).collect::<String>()),
-                    None => println!("GATEWAY no operator configured: every ORV1 over the link is refused"),
+                // Printed so an operator reads the quorum off the startup log rather than
+                // inferring it from a refusal — the same reason the permission table is
+                // printed below.
+                match &conf.authority {
+                    Some(oasis_rt::mbtcp_pilot::OperatorAuthority::Single { pub_key }) => {
+                        println!("GATEWAY authority=single key={} rev_store={p}.rev", pub_key[..8].iter().map(|b| format!("{b:02x}")).collect::<String>())
+                    }
+                    Some(oasis_rt::mbtcp_pilot::OperatorAuthority::Multisig { pub_keys, k }) => println!(
+                        "GATEWAY authority=quorum k={k} of n={} keys=[{}] rev_store={p}.rev",
+                        pub_keys.len(),
+                        pub_keys.iter().map(|q| q[..4].iter().map(|b| format!("{b:02x}")).collect::<String>()).collect::<Vec<_>>().join(",")
+                    ),
+                    Some(other) => println!("GATEWAY authority={other:?} rev_store={p}.rev"),
+                    None => println!("GATEWAY no authority configured: every ORV1 over the link is refused"),
                 }
                 Arc::new(Mutex::new(s))
             }

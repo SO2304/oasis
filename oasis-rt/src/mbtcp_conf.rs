@@ -47,14 +47,13 @@ pub struct Config {
     /// and a restart, which is slower than a broadcast and auditable in the same way a
     /// config is.
     pub revoked: Vec<[u8; FP_LEN]>,
-    /// `operator = <64 hex>`: the Ed25519 public key allowed to sign an `ORV1`
-    /// revocation list arriving over the link. `None` refuses every one of them — a
-    /// gateway with no operator configured must not take a list from anyone.
+    /// Who may sign an `ORV1` revocation list arriving over the link.
     ///
-    /// ⚠️ **One operator.** k-of-n needs `oasis-operator-key`, which is a dev-dependency
-    /// of this crate, so a list carrying several signatures is refused by name rather
-    /// than accepted on the strength of one of them.
-    pub operator: Option<[u8; 32]>,
+    /// One `operator = <64 hex>` line gives a single-key authority. Several give a k-of-n
+    /// authority, with `quorum = <k>` saying how many **distinct** keys must sign (default:
+    /// all of them, which is the safe reading of an unstated k). `None` refuses every
+    /// list — a gateway with no authority configured must not take one from anyone.
+    pub authority: Option<oasis_operator_key::OperatorAuthority>,
     /// Per-origin permissions, from the third field of a `peer` line
     /// (`peer = <fp>,<seedfile>,ACTUATE|STOP`).
     ///
@@ -86,7 +85,8 @@ impl Config {
         let mut regs: Vec<RegRule> = Vec::new();
         let mut peers: Vec<(String, String, String)> = Vec::new();
         let mut revoked_hex: Vec<String> = Vec::new();
-        let mut operator_hex: Option<String> = None;
+        let mut operator_hex: Vec<String> = Vec::new();
+        let mut quorum: Option<String> = None;
 
         for (n, raw) in text.lines().enumerate() {
             let line = raw.split('#').next().unwrap_or("").trim();
@@ -113,7 +113,8 @@ impl Config {
                 }
                 // revoked = <fp hex 16>
                 "revoked" => revoked_hex.push(v.to_string()),
-                "operator" => operator_hex = Some(v.to_string()),
+                "operator" => operator_hex.push(v.to_string()),
+                "quorum" => quorum = Some(v.trim().to_string()),
                 // peer = <fp hex 16>,<seed file>   (the seed file yields the public key)
                 // peer = <fp hex 16>,<seed file>[,<PERM|PERM…>]
                 "peer" => {
@@ -168,14 +169,7 @@ impl Config {
             gateway_id: need("gateway_id").unwrap_or_else(|_| "1".into()).parse().unwrap_or(1),
             map: regs,
             perms,
-            operator: match operator_hex {
-                Some(h) => {
-                    let mut k = [0u8; 32];
-                    parse_hex(&h, &mut k).map_err(|e| format!("operator: {e}"))?;
-                    Some(k)
-                }
-                None => None,
-            },
+            authority: build_authority(&operator_hex, quorum.as_deref())?,
             revoked: {
                 let mut v = Vec::new();
                 for h in &revoked_hex {
@@ -187,6 +181,42 @@ impl Config {
             },
         })
     }
+}
+
+/// One `operator` line is a single-key authority; several are a k-of-n one.
+///
+/// An unstated `quorum` means **all** the configured keys, not one: the safe reading of an
+/// omission is the strict one, because the lenient reading would turn a list of five
+/// operators into any one of five.
+fn build_authority(keys_hex: &[String], quorum: Option<&str>) -> Result<Option<oasis_operator_key::OperatorAuthority>, String> {
+    use oasis_operator_key::OperatorAuthority;
+    if keys_hex.is_empty() {
+        if quorum.is_some() {
+            return Err("quorum sans operator: aucune cle a compter".into());
+        }
+        return Ok(None);
+    }
+    let mut keys = Vec::with_capacity(keys_hex.len());
+    for h in keys_hex {
+        let mut k = [0u8; 32];
+        parse_hex(h, &mut k).map_err(|e| format!("operator {h}: {e}"))?;
+        if keys.contains(&k) {
+            return Err(format!("operator {h}: cle en double, un quorum de cles identiques n'en est pas un"));
+        }
+        keys.push(k);
+    }
+    let k = match quorum {
+        Some(q) => q.parse::<usize>().map_err(|e| format!("quorum: {e}"))?,
+        None => keys.len(),
+    };
+    if k == 0 || k > keys.len() {
+        return Err(format!("quorum {k} impossible avec {} cle(s)", keys.len()));
+    }
+    Ok(Some(if keys.len() == 1 && k == 1 {
+        OperatorAuthority::Single { pub_key: keys[0] }
+    } else {
+        OperatorAuthority::Multisig { pub_keys: keys, k }
+    }))
 }
 
 /// `ACTUATE|STOP|SUPERVISE`, or empty for none. An unknown name is an error rather than

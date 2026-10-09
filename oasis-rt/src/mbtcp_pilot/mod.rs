@@ -27,6 +27,10 @@ pub mod gateway;
 
 pub use agent::{serve_hmi, AgentState, GatewayLink, SeqStore, TxCounterStore, CLOCK_REFRESH_MS};
 pub use gateway::{handle_gateway_conn, serve_gateway_conn, GatewayState, Served};
+/// Re-exported so a consumer of the gateway does not have to name the crate that
+/// owns the quorum rule. It became reachable from a `[[bin]]` on 2026-10-09, when the
+/// dev-dependency cycle that hid it was removed.
+pub use oasis_operator_key::OperatorAuthority;
 
 /// Reply to the agent: `"OMR1" | cmd_seq u32 | kind u8 | code u8`.
 pub const OMR1_MAGIC: [u8; 4] = *b"OMR1";

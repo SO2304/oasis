@@ -26,10 +26,15 @@ license = "MIT"  # matches the repository LICENSE file
 # matching note in oasis-secure-element/Cargo.toml — feature unification
 # would silently downsize the mesh Bloom on every host consumer of this
 # crate. Forwarded as an opt-in feature below.
-oasis-rt = { path = "../oasis-rt", version = "0.3.0", default-features = false, features = ["mesh_v10"] }
 ed25519-compact = { version = "2.2.0", default-features = false, features = ["x25519"] }
 
 [dev-dependencies]
+# `oasis-rt` is used by this crate's TESTS and EXAMPLES only -- `src/` mentions it nowhere,
+# which `grep -rn oasis_rt src/` shows. It sat in [dependencies] and, because `oasis-rt`
+# needs this crate for the k-of-n quorum, that made a dependency CYCLE: allowed inside a
+# workspace, but it forced `oasis-rt` to take this crate as a dev-dependency too, so
+# `OperatorAuthority` was unreachable from a `[[bin]]` and the TCP gateway could not check
+# a k-of-n revocation at all. Moving it here costs nothing and removes the cycle.
 oasis-rt = { path = "../oasis-rt", version = "0.3.0", features = ["std", "mesh_v10"] }
 # Host-side ML-DSA-44 signing for examples/pq_payloads.rs (Phase 1.1). Same pinned
 # version as oasis-rt, which only verifies on devices.
