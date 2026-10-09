@@ -93,6 +93,18 @@ fn parse_hex(s: &str, out: &mut [u8]) -> Result<(), String> {
 impl Config {
     pub fn load(path: &str) -> Result<Self, String> {
         let text = fs::read_to_string(path).map_err(|e| format!("{path}: {e}"))?;
+        Self::from_text(&text, path)
+    }
+
+    /// Parse a configuration already in memory. `path` only names the file in errors.
+    ///
+    /// Split out of `load` so the parser can be fuzzed without a file: it is reached by
+    /// whoever can write the config rather than by the network, but a malformed line must
+    /// still produce an error and never a panic — an integrator editing `/etc/oasis` by
+    /// hand is the normal case, not the attack. Seed and public-key files named *inside*
+    /// the text are still read from disk, so a fuzzer mostly exercises the line parsing
+    /// and the hex decoding, which is the part that takes untrusted shapes.
+    pub fn from_text(text: &str, path: &str) -> Result<Self, String> {
         let mut kv: BTreeMap<String, String> = BTreeMap::new();
         let mut regs: Vec<RegRule> = Vec::new();
         let mut peers: Vec<(String, String, String)> = Vec::new();

@@ -49,7 +49,7 @@ pub fn write_frame(sock: &mut TcpStream, payload: &[u8]) -> io::Result<()> {
 /// The length is checked **before** any allocation: a declared length over
 /// [`MAX_LINK_FRAME`] is refused without reading the body, so a hostile peer cannot make
 /// this side reserve memory of its choosing.
-pub fn read_frame(sock: &mut TcpStream) -> io::Result<Vec<u8>> {
+pub fn read_frame<R: io::Read>(sock: &mut R) -> io::Result<Vec<u8>> {
     let mut len_buf = [0u8; LEN_PREFIX];
     sock.read_exact(&mut len_buf)?;
     let len = u32::from_be_bytes(len_buf) as usize;
@@ -95,7 +95,7 @@ pub fn modbus_exchange(sock: &mut TcpStream, req: &[u8]) -> io::Result<Vec<u8>> 
 }
 
 /// Read one Modbus TCP request from a connected client, same discipline as above.
-pub fn modbus_read_request(sock: &mut TcpStream) -> io::Result<Vec<u8>> {
+pub fn modbus_read_request<R: io::Read>(sock: &mut R) -> io::Result<Vec<u8>> {
     let mut head = [0u8; 6];
     sock.read_exact(&mut head)?;
     let rest = u16::from_be_bytes([head[4], head[5]]) as usize;

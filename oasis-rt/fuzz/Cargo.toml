@@ -80,3 +80,17 @@ path = "fuzz_targets/modbus_read.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "modbus_tcp"
+path = "fuzz_targets/modbus_tcp.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "link_frames"
+path = "fuzz_targets/link_frames.rs"
+test = false
+doc = false
+bench = false
