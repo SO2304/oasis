@@ -69,6 +69,7 @@ fn conf(listen: &str, peer: &str) -> Config {
         gateway_id: 1,
         map: vec![RegRule { addr: REG_OK, min: 0, max: 1000 }],
         revoked: Vec::new(),
+        operator: None,
     }
 }
 

@@ -1,6 +1,6 @@
 # Ce PC comme automate de test — HMI → agent → passerelle → appareil, en vrais processus
 
-**2026-10-09.** Trois exécutions, **32 cas sur 32** chacune. Reproduire :
+**2026-10-09.** Trois exécutions, **42 cas sur 42** chacune. Reproduire :
 
 ```bash
 cargo build --release -p oasis-rt -p oasis-test-plc
@@ -9,7 +9,7 @@ bash tools/pilot_campaign.sh /tmp/camp
 
 | | |
 |---|---|
-| Résultat | **32/32**, trois fois ([`run1.log`](run1.log), [`run2.log`](run2.log), [`run3.log`](run3.log)) |
+| Résultat | **42/42**, trois fois ([`run1.log`](run1.log), [`run2.log`](run2.log), [`run3.log`](run3.log)) |
 | Écritures appliquées par l'appareil | 208 par exécution, comptées **par l'appareil** |
 | Latence bout en bout | **1 017 / 1 159 / 1 248 µs** médiane, ±8–15 % (K=10 × 20, une socket tenue) |
 | Journal | **intact, exit 0**, et un refus réécrit en acceptation → **exit 1** |
@@ -35,7 +35,7 @@ hmi_client.py  --Modbus TCP-->  oasis_mbtcp_agent  --v0B-->  oasis_mbtcp_gateway
 Python sans aucun import. Quand l'appareil applique une trame, OASIS ne se donne pas raison
 à lui-même — la même propriété que la carte A sous `rmodbus` en phase 1.4.
 
-## 2. Les 32 cas
+## 2. Les 42 cas
 
 | # | Ce qui est vérifié | Vérité de terrain |
 |---|---|---|
@@ -50,6 +50,9 @@ Python sans aucun import. Quand l'appareil applique une trame, OASIS ne se donne
 | C9 | un **refus réécrit en acceptation** est détecté | `exit 1` |
 | C10 | un redémarrage de passerelle change le `boot_id` et ouvre une chaîne neuve, intacte | deux `JRN_BOOT` différents, deux `exit 0` |
 | C11 | la latence à travers les **vrais binaires** | 1 017–1 248 µs |
+| C15 | un `ORV1` **signé** arrive sur le lien, est appliqué, et **le changement est journalisé** | `Change(Revocation)`, `flags=0x10`, `origin=bb00` |
+| C16 | une époque non supérieure est refusée, **et le refus est journalisé aussi** | `Change(Revocation)`, `flags=0x00` |
+| C17 | une liste signée par un opérateur non approuvé est refusée et journalisée | `Reject(BadOperatorSig)`, `flags=0x00` |
 | C12 | un ordre adressé à **un autre `gateway_id`** est refusé | 0x0A, journal `Reject(NotAuthorized)`, compteur inchangé |
 | C13 | une origine **révoquée** est refusée — **au niveau mesh, au-dessus du portail** | `MESH_DROP why="origin revoked"`, journal `Reject(NotVerified)` |
 | C14 | le journal **attribue** la décision à une origine | `origin=aa00` sur une décision vérifiée |
@@ -99,6 +102,30 @@ Reste donc ~770 µs au-dessus du chiffre en processus : les deux `flush` du jour
 frontières de processus. **La preuve coûte de la latence**, et le chiffre honnête est 1,2 ms
 par écriture autorisée, journal persisté compris.
 
+## 3ter. Le journal des changements (1.1.9 al. 5) est enfin **démontré**
+
+Il était implémenté, **vérifié 6/6 par Kani**, et démontré **nulle part** : son câblage
+firmware compile et aucune carte n'a été reflashée. Un `ORV1` signé appliqué sur ce lien
+est un changement de configuration — qui peut commander — donc C15–C17 l'exercent bout en
+bout, par les binaires livrés, **sans carte** :
+
+```text
+[206] seq=206 origin=bb00 cmd_seq=1 decision=Change(Revocation) flags=0x10   <- appliqué
+[207] seq=207 origin=bb00 cmd_seq=1 decision=Change(Revocation) flags=0x00   <- refusé (époque)
+[208] seq=208 origin=bb00 cmd_seq=1 decision=Change(Revocation) flags=0x00   <- refusé (opérateur)
+```
+
+C'est exactement ce que l'alinéa demande : « légitime **ou illégitime** ». Les trois sont sur
+la **même** chaîne que les décisions, attribués à l'opérateur (`bb00`), et la chaîne reste
+`VERDICT intact`. La passerelle nomme chaque verdict distinctement : `Applied`,
+`Duplicate`, `Reject(BadOperatorSig)`.
+
+L'ordre des opérations est celui que la spécification fixe et que le silicium a prouvé :
+vérifier, **persister avant d'appliquer**, puis appliquer. ⚠️ **Un seul opérateur** :
+`oasis-operator-key` est une dépendance de **développement** de `oasis-rt`, donc le k parmi n
+n'est pas atteignable ici et une liste portant plusieurs signatures est **refusée par son
+nom** plutôt qu'acceptée sur la force de l'une d'elles.
+
 ## 3bis. Le portail tournait sur trois entrées constantes
 
 Trouvé en relisant ce que la campagne exerçait réellement. Le portail est bien celui de la
@@ -136,7 +163,7 @@ capteur à lire** sur un hôte — une passerelle colocée avec de la mesure dev
 **permissions**, donc une clé qui y figure peut commander tout ce que la carte de registres
 autorise. Le modèle d'enrôlement (`ACTUATE`) n'est pas sur cette voie.
 
-## 4. Six défauts de la campagne elle-même
+## 4. Sept défauts de la campagne elle-même
 
 Écrits ici parce qu'un harnais qui mentait une fois mentira encore.
 
@@ -169,6 +196,14 @@ autorise. Le modèle d'enrôlement (`ACTUATE`) n'est pas sur cette voie.
 6. **C14 passait sur une chaîne vide.** Il ne testait que l'égalité à `origin=0000`, donc la
    valeur vide laissée par un C13 en échec passait. Un cas qui passe quand son entrée manque
    est pire que pas de cas.
+7. **C15–C17 tournaient sous l'identité de l'agent**, placés après C13 qui venait de la
+   révoquer : la couche mesh jetait l'enveloppe de l'outil et **C16 et C17 étaient verts
+   pour la mauvaise raison** — l'outil échouait par révocation, pas par époque ni par
+   signature. Corrigé en donnant à l'outil **sa propre identité mesh** (`bb00`, ce qu'un
+   opérateur est de toute façon) et en plaçant les trois cas avant C12. Et l'outil
+   persiste désormais son compteur d'émission : trois invocations d'un outil à usage unique
+   repartaient toutes à 1, donc la deuxième était refusée comme un rejeu. Le compteur
+   appartient à l'identité, pas au processus — pour la deuxième fois dans cette campagne.
 
 ## 5. Ce que cette campagne ne prouve pas
 

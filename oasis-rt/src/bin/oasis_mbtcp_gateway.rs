@@ -83,8 +83,17 @@ fn main() {
     let jprefix = args.iter().position(|a| a == "--journal").and_then(|i| args.get(i + 1));
     let state = match jprefix {
         Some(p) => match GatewayState::with_journal(router, boot_id, p) {
-            Ok(s) => {
+            Ok(mut s) => {
                 println!("GATEWAY journal={p}.entries + {p}.head");
+                // A signed ORV1 arriving over the link is applied only if this operator
+                // key signed it, and the list is written here BEFORE being applied so a
+                // restart does not forget a revocation.
+                s.operator = conf.operator;
+                s.rev_path = Some(format!("{p}.rev").into());
+                match conf.operator {
+                    Some(k) => println!("GATEWAY operator={} rev_store={p}.rev", k[..8].iter().map(|b| format!("{b:02x}")).collect::<String>()),
+                    None => println!("GATEWAY no operator configured: every ORV1 over the link is refused"),
+                }
                 Arc::new(Mutex::new(s))
             }
             Err(e) => {
@@ -120,6 +129,10 @@ fn main() {
                         Served::MeshDrop(why) => println!("GATEWAY {peer} MESH_DROP why={why:?} -> no PLC write"),
                         Served::NotAnOrder => println!("GATEWAY {peer} NOT_AN_ORDER -> no PLC write"),
                         Served::Read { check, served } => println!("GATEWAY {peer} READ {check:?} served={served} (never writes)"),
+                        // A configuration change, journalled as one (1.1.9 §5): who may
+                        // command is configuration, so applying or refusing a list is
+                        // itself evidence.
+                        Served::Revocation { decision, epoch } => println!("GATEWAY {peer} REVOCATION {decision:?} epoch={epoch}"),
                         Served::Decided { cmd_seq, decision, outcome, plc_written } => {
                             println!("GATEWAY {peer} seq={cmd_seq} {decision:?} outcome={outcome:?} plc_written={plc_written}")
                         }

@@ -78,7 +78,7 @@ federated resonance.
 
 Source layout:
 ```
-oasis-rt/                # Rust — production runtime (49 modules, 663 lib tests, 24 bins)
+oasis-rt/                # Rust — production runtime (49 modules, 663 lib tests, 25 bins)
   src/vec.rs              # 128D vector algebra, zero-alloc
   src/hyper_state.rs      # Mechanism 2 — continuous state + entropy gate
   src/tension.rs          # Mechanism 1 — tension field, interference

@@ -46,6 +46,14 @@ pub struct Config {
     /// and a restart, which is slower than a broadcast and auditable in the same way a
     /// config is.
     pub revoked: Vec<[u8; FP_LEN]>,
+    /// `operator = <64 hex>`: the Ed25519 public key allowed to sign an `ORV1`
+    /// revocation list arriving over the link. `None` refuses every one of them — a
+    /// gateway with no operator configured must not take a list from anyone.
+    ///
+    /// ⚠️ **One operator.** k-of-n needs `oasis-operator-key`, which is a dev-dependency
+    /// of this crate, so a list carrying several signatures is refused by name rather
+    /// than accepted on the strength of one of them.
+    pub operator: Option<[u8; 32]>,
 }
 
 fn parse_hex(s: &str, out: &mut [u8]) -> Result<(), String> {
@@ -66,6 +74,7 @@ impl Config {
         let mut regs: Vec<RegRule> = Vec::new();
         let mut peers: Vec<(String, String)> = Vec::new();
         let mut revoked_hex: Vec<String> = Vec::new();
+        let mut operator_hex: Option<String> = None;
 
         for (n, raw) in text.lines().enumerate() {
             let line = raw.split('#').next().unwrap_or("").trim();
@@ -92,6 +101,7 @@ impl Config {
                 }
                 // revoked = <fp hex 16>
                 "revoked" => revoked_hex.push(v.to_string()),
+                "operator" => operator_hex = Some(v.to_string()),
                 // peer = <fp hex 16>,<seed file>   (the seed file yields the public key)
                 "peer" => {
                     let (fp, seed) = v.split_once(',').ok_or_else(|| format!("{path}:{}: peer wants fp,seedfile", n + 1))?;
@@ -138,6 +148,14 @@ impl Config {
             peer_fp,
             gateway_id: need("gateway_id").unwrap_or_else(|_| "1".into()).parse().unwrap_or(1),
             map: regs,
+            operator: match operator_hex {
+                Some(h) => {
+                    let mut k = [0u8; 32];
+                    parse_hex(&h, &mut k).map_err(|e| format!("operator: {e}"))?;
+                    Some(k)
+                }
+                None => None,
+            },
             revoked: {
                 let mut v = Vec::new();
                 for h in &revoked_hex {

@@ -186,5 +186,9 @@ name = "oasis_mbtcp_agent"
 path = "src/bin/oasis_mbtcp_agent.rs"
 
 [[bin]]
+name = "oasis_mbtcp_revoke"
+path = "src/bin/oasis_mbtcp_revoke.rs"
+
+[[bin]]
 name = "bench_mbtcp_pilot"
 path = "src/bin/bench_mbtcp_pilot.rs"

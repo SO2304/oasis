@@ -64,6 +64,13 @@ seed() { # seed <file> <byte> — 32 bytes starting at <byte>, ascending, as 64 
 }
 seed "$OUT/agent.seed" 170   # 0xAA
 seed "$OUT/gw.seed" 204      # 0xCC
+seed "$OUT/op.seed" 17       # 0x11, the operator who signs revocation lists
+seed "$OUT/op_bad.seed" 99   # 0x63, an operator the gateway does not trust
+seed "$OUT/opnode.seed" 187  # 0xBB, the operator TOOL's own mesh identity
+OPNODE_FP=bb00000000000000
+# The operator's PUBLIC key goes in the gateway config. Derived with the same crate the
+# gateway verifies with, so the campaign cannot pass by agreeing with its own arithmetic.
+OP_PUB=$("$BIN/oasis_mbtcp_revoke" --print-pub "$OUT/op.seed" 2>/dev/null || true)
 
 PLC_PORT=15020
 GW_PORT=15021
@@ -85,7 +92,9 @@ peer_fp = $AGENT_FP
 gateway_id = 1
 peer = $AGENT_FP,$WOUT/agent.seed
 peer = $GW_FP,$WOUT/gw.seed
+peer = $OPNODE_FP,$WOUT/opnode.seed
 register = $REG_OK,0,1000
+operator = $OP_PUB
 CONF
 
 cat > "$OUT/agent.conf" <<CONF
@@ -100,6 +109,22 @@ our_seed_file = $WOUT/agent.seed
 peer_fp = $GW_FP
 gateway_id = 1
 peer = $AGENT_FP,$WOUT/agent.seed
+peer = $GW_FP,$WOUT/gw.seed
+register = $REG_OK,0,1000
+CONF
+
+cat > "$OUT/revoke.conf" <<CONF
+# the operator tool: its OWN mesh identity, so it neither shares the agent's send counter
+# nor stops working when the agent's fingerprint is revoked later in the campaign
+listen = 127.0.0.1:0
+peer_addr = 127.0.0.1:$GW_PORT
+unit = $UNIT
+timeout_ms = 2000
+network_id = 4f415349536e6574
+our_fp = $OPNODE_FP
+our_seed_file = $WOUT/opnode.seed
+peer_fp = $GW_FP
+gateway_id = 1
 peer = $GW_FP,$WOUT/gw.seed
 register = $REG_OK,0,1000
 CONF
@@ -371,6 +396,47 @@ case "$MEDOUT" in
      say "        in-process equivalent for comparison: ~460 us (evidence/bench/2026-10-08/mbtcp/)"
      PASS=$((PASS+1));;
 esac
+
+note "C15 a signed ORV1 over the link is applied, and the CHANGE is journalled"
+# The change journal of Annex III 1.1.9 para 5 (triggers 2 and 3) was implemented and
+# Kani-verified 6/6 but demonstrated NOWHERE: its firmware wiring compiles and no board has
+# been reflashed. A revocation applied over this link is a configuration change, so this is
+# that journal exercised end to end by the shipped binaries, with no board.
+#
+# A third fingerprint is revoked, not the agent's, so the agent keeps working and the case
+# measures the change record rather than a refusal.
+VICTIM=dd00000000000000
+R15=$("$BIN/oasis_mbtcp_revoke" --config "$(winpath "$OUT/revoke.conf")" --op-seed "$(winpath "$OUT/op.seed")" --epoch 1 --revoke "$VICTIM" 2>&1); RC15=$?
+say "  tool: $R15 (rc=$RC15)"
+check_eq "C15 the gateway applied the list" "0" "$RC15"
+check "C15 the gateway logged it" "REVOCATION Applied epoch=1" "$(cat "$OUT/gateway.log")"
+cat "$OUT/jrn.head" "$OUT/jrn.entries" > "$OUT/jrn15.txt"
+J15=$("$BIN/oasis_journal_verify" "$(winpath "$OUT/jrn15.txt")" 2>&1)
+LAST15=$(printf '%s' "$J15" | grep -E '^  \[' | tail -1)
+check "C15 journalled as a Revocation change" "Change(Revocation)" "$LAST15"
+check "C15 recorded as APPLIED (flag bit 4)" "flags=0x10" "$LAST15"
+check "C15 the chain is still intact" "VERDICT intact" "$J15"
+
+note "C16 a lower epoch is refused as a rollback, and the refusal is journalled too"
+# "legitime OU illegitime": an attempt that failed is the evidence an investigator wants,
+# so a refused change must leave a record with the applied bit CLEAR.
+R16=$("$BIN/oasis_mbtcp_revoke" --config "$(winpath "$OUT/revoke.conf")" --op-seed "$(winpath "$OUT/op.seed")" --epoch 1 --revoke "$VICTIM" 2>&1); RC16=$?
+say "  tool: $R16 (rc=$RC16)"
+if [ "$RC16" = "0" ]; then say "  FAIL  C16 a replayed epoch was accepted"; FAIL=$((FAIL+1));
+else say "  PASS  C16 the same epoch is refused (rc=$RC16)"; PASS=$((PASS+1)); fi
+cat "$OUT/jrn.head" "$OUT/jrn.entries" > "$OUT/jrn16.txt"
+LAST16=$("$BIN/oasis_journal_verify" "$(winpath "$OUT/jrn16.txt")" 2>&1 | grep -E '^  \[' | tail -1)
+check "C16 the refused change is journalled" "Change(Revocation)" "$LAST16"
+check "C16 recorded as NOT applied" "flags=0x00" "$LAST16"
+
+note "C17 a list signed by an operator the gateway does not trust is refused"
+R17=$("$BIN/oasis_mbtcp_revoke" --config "$(winpath "$OUT/revoke.conf")" --op-seed "$(winpath "$OUT/op_bad.seed")" --epoch 9 --revoke "$VICTIM" 2>&1); RC17=$?
+say "  tool: $R17 (rc=$RC17)"
+if [ "$RC17" = "0" ]; then say "  FAIL  C17 a list from an untrusted operator was applied"; FAIL=$((FAIL+1));
+else say "  PASS  C17 refused (rc=$RC17)"; PASS=$((PASS+1)); fi
+cat "$OUT/jrn.head" "$OUT/jrn.entries" > "$OUT/jrn17.txt"
+LAST17=$("$BIN/oasis_journal_verify" "$(winpath "$OUT/jrn17.txt")" 2>&1 | grep -E '^  \[' | tail -1)
+check "C17 the attempt is journalled, not applied" "flags=0x00" "$LAST17"
 
 note "C12 an order addressed to ANOTHER gateway_id is refused"
 # Until 2026-10-09 the gate was fed `authorized: true`, so `gateway_id` was never compared

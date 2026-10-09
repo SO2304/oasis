@@ -11,6 +11,7 @@ use crate::journal::{Journal, LoggedDecision};
 use crate::mbtcp_conf::Config;
 use crate::mbtcp_net::{connect_timeout, modbus_exchange, read_frame, write_frame};
 use crate::mesh::{inner_slice, MeshDecision, MeshRouter};
+use crate::mesh_revocation::{parse_orv1, revocation_transition, signed_message, RevDecision, RevReject, RevState};
 use crate::modbus_gateway::{parse_omb1, Gateway, OrderContext, Response};
 use crate::modbus_read::{check_read_response, decide_read, encode_omv1, parse_omq1, MbQuery, ReadCheck};
 use crate::modbus_tcp::{check_tcp_response, decide_tcp, Outcome, TcpFrame};
@@ -114,6 +115,15 @@ pub struct GatewayState {
     /// Where decisions are written. `None` keeps the pre-2026-10-09 behaviour — a chain in
     /// RAM that dies with the process — which is why the binary always sets it.
     pub jsink: Option<JournalSink>,
+    /// The revocation list this gateway has applied, with its epoch. Starts from whatever
+    /// the config revoked and rises only by a signed `ORV1` with a strictly greater epoch.
+    pub rev: RevState,
+    /// The operator key allowed to sign a revocation. `None` refuses every `ORV1`: a
+    /// gateway with no operator configured must not accept a list from anyone.
+    pub operator: Option<[u8; 32]>,
+    /// Where an applied list is written **before** it is applied, so a restart does not
+    /// forget a revocation. `None` means it is applied in RAM only, and the binary says so.
+    pub rev_path: Option<std::path::PathBuf>,
     /// Fresh per process start: that is what makes an order from a previous run
     /// refusable, so reusing one would reopen the replay window the gate exists to close.
     pub boot_id: u64,
@@ -129,7 +139,17 @@ pub struct GatewayState {
 
 impl GatewayState {
     pub fn new(router: MeshRouter, boot_id: u64) -> Self {
-        Self { gw: Gateway::new(), router, journal: Journal::new(boot_id), boot_id, plc: None, jsink: None }
+        Self {
+            gw: Gateway::new(),
+            router,
+            journal: Journal::new(boot_id),
+            boot_id,
+            plc: None,
+            jsink: None,
+            rev: RevState::default(),
+            operator: None,
+            rev_path: None,
+        }
     }
 
     /// Same, writing every decision to `prefix.entries` / `prefix.head`.
@@ -146,6 +166,15 @@ impl GatewayState {
     /// A failed write is not silently swallowed: it returns the error to the caller, who
     /// drops the connection. A gateway that cannot write its journal must not keep
     /// deciding as if it could.
+    /// Record a configuration change on the same chain, and persist it the same way.
+    fn journal_and_persist_change(&mut self, authority_fp: [u8; 8], ident: u32, kind: crate::journal::ChangeKind, applied: bool) -> io::Result<()> {
+        let bytes = self.journal.append_change(authority_fp, ident, kind, applied);
+        if let Some(sink) = self.jsink.as_mut() {
+            sink.persist(&self.journal.head, &bytes)?;
+        }
+        Ok(())
+    }
+
     fn journal_and_persist(&mut self, origin_fp: [u8; 8], cmd_seq: u32, class: OrderClass, decision: LoggedDecision, flags: u8) -> io::Result<()> {
         let bytes = self.journal.append(origin_fp, cmd_seq, class, decision, flags);
         if let Some(sink) = self.jsink.as_mut() {
@@ -190,6 +219,8 @@ pub enum Served {
     /// Verified, and it was an authenticated read. `served` is false for a refusal and
     /// for a device that did not answer; a read never writes.
     Read { check: ReadCheck, served: bool },
+    /// A signed revocation list arrived. `epoch` is this gateway's epoch afterwards.
+    Revocation { decision: RevDecision, epoch: u64 },
     /// Verified but neither an order nor a read.
     NotAnOrder,
 }
@@ -321,6 +352,12 @@ pub fn handle_frame(sock: &mut TcpStream, st: &mut GatewayState, conf: &Config, 
         return serve_read(sock, st, conf, &query);
     }
 
+    // A signed revocation list. Checked before the order branch because a revocation is
+    // not an order and must never be parsed as one.
+    if inner.get(0..4) == Some(&b"ORV1"[..]) {
+        return serve_revocation(sock, st, conf, inner, origin_fp);
+    }
+
     let order = match parse_omb1(inner) {
         Some(o) => o,
         None => {
@@ -400,4 +437,61 @@ pub fn handle_frame(sock: &mut TcpStream, st: &mut GatewayState, conf: &Config, 
 
     write_frame(sock, &encode_reply(order.cmd_seq, &outcome))?;
     Ok(Served::Decided { cmd_seq: order.cmd_seq, decision, outcome, plc_written })
+}
+
+/// Apply a signed `ORV1` revocation list, and **record the change**.
+///
+/// Annex III 1.1.9 ¶5 asks for evidence of "a modification of the software installed …
+/// **or its configuration**", and who may command is configuration. So the decision is
+/// journalled whether the list was applied or refused — "legitimate **or illegitimate**".
+///
+/// The order of operations is the one the spec fixes and silicon proved: verify, **persist
+/// before applying**, then apply. A crash between the write and the apply leaves a list on
+/// disk that the next start applies; a crash the other way round would leave a node
+/// enforcing a list it cannot prove it received.
+///
+/// ⚠️ **Single operator only.** `oasis-operator-key` is a dev-dependency of this crate, so
+/// k-of-n is not reachable from here; a list carrying several signatures is refused by
+/// name rather than accepted on the strength of one of them.
+fn serve_revocation(sock: &mut TcpStream, st: &mut GatewayState, conf: &Config, inner: &[u8], origin_fp: [u8; 8]) -> io::Result<Served> {
+    let outcome = (|| -> Result<RevDecision, RevReject> {
+        let op = st.operator.ok_or(RevReject::BadOperatorSig)?;
+        let p = parse_orv1(inner)?;
+        if p.sigs.len() != 1 {
+            // k-of-n needs the operator-key crate. Refusing is the honest answer; taking
+            // the first signature of several would silently turn a quorum into one vote.
+            return Err(RevReject::BadOperatorSig);
+        }
+        let (pk_bytes, sig_bytes) = p.sigs[0];
+        let sig_ok = pk_bytes == op && verify_operator_sig(&op, &signed_message(&p), &sig_bytes);
+        let (d, new) = revocation_transition(&st.rev, &conf.network_id, &p, sig_ok);
+        if let (RevDecision::Applied, Some(new)) = (d, new) {
+            // Persisted before applied.
+            if let Some(path) = &st.rev_path {
+                std::fs::write(path, inner).map_err(|_| RevReject::PersistFailed)?;
+            }
+            for fp in &new.revoked {
+                st.router.revoke(*fp);
+            }
+            st.rev = new;
+        }
+        Ok(d)
+    })();
+
+    let (decision, applied) = match outcome {
+        Ok(d) => (d, d == RevDecision::Applied),
+        Err(r) => (RevDecision::Reject(r), false),
+    };
+    // The epoch is 32 bits in an entry; a revocation epoch rises by one per published
+    // list, so its low half is the identifier an auditor compares.
+    st.journal_and_persist_change(origin_fp, st.rev.epoch as u32, crate::journal::ChangeKind::Revocation, applied)?;
+    write_frame(sock, &encode_reply(0, &if applied { Outcome::Done } else { Outcome::NoAnswer }))?;
+    Ok(Served::Revocation { decision, epoch: st.rev.epoch })
+}
+
+/// One Ed25519 verification over the canonical signed message of a revocation list.
+fn verify_operator_sig(pub_key: &[u8; 32], msg: &[u8], sig: &[u8; 64]) -> bool {
+    let Ok(pk) = ed25519_compact::PublicKey::from_slice(pub_key) else { return false };
+    let Ok(s) = ed25519_compact::Signature::from_slice(sig) else { return false };
+    pk.verify(msg, &s).is_ok()
 }
