@@ -211,6 +211,17 @@ else
 fi
 
 echo
+echo "== cibles et points d'entree de fuzz =="
+# SECURITY.md's C10 row is a claim about what is fuzzed, and it was wrong twice: it said
+# "13 parsers in 9 targets" while the tree had 11 targets reaching 26 distinct parsing and
+# checking functions, and the TCP path's front door (`parse_tcp_write`) had no target at
+# all. A count nobody re-derives is a count that rots.
+claim_in "cibles de fuzz" SECURITY.md '[0-9]+ targets' \
+  "$(grep -c '^\[\[bin\]\]' oasis-rt/fuzz/Cargo.toml | tr -d ' ')"
+claim_in "points d entree fuzzes" SECURITY.md '[0-9]+ parsing and checking entry points' \
+  "$(grep -ohE 'parse_[a-z_0-9]+|check_[a-z_0-9]+|read_frame|modbus_read_request|from_text' oasis-rt/fuzz/fuzz_targets/*.rs 2>/dev/null | sort -u | wc -l | tr -d ' ')"
+
+echo
 echo "== liens relatifs casses dans les documents =="
 # A document that points at a file which has moved is a document the reader stops
 # trusting. These paths are not checked by any compiler, so nothing notices when a spec
