@@ -113,7 +113,7 @@ threshold = 2.0 resets/day.
 
 | # | Name | Encodes |
 |---|---|---|
-| AD1 | `proof_ad_reset_count_predictable` | R = floor(N / (T+1)), |actual − predicted| ≤ 1 |
+| AD1 | `proof_ad_reset_count_predictable` | R = floor(N / (T+1)), \|actual − predicted\| ≤ 1 |
 | AD2 | `proof_ad_reset_period_bounded_by_threshold` | with 1 insert/tick, next reset ≤ T+1 ticks |
 | AD3 | `proof_ad_threshold_inverse_scaling` | smaller T → more frequent resets (monotonic inverse) |
 | AD4 | `proof_ad_per_call_overhead_constant` | per-call work O(1), reset cost amortizes ≤ 1 word/insert when T ≥ bloom_words |

@@ -191,6 +191,36 @@ else
 fi
 
 echo
+echo "== lignes de tableau dont la largeur ne suit pas leur en-tete =="
+# An unescaped `|` inside a cell adds a column, and every renderer drops what follows
+# it: the text sits in the file and is invisible to the reader. Found 2026-10-09 in
+# four documents, one of them hiding a FALSE claim behind the break — a cell asserting
+# "182 des 189 en CI" that CLAUDE.md contradicts, cut in half by a pipe in a `grep`
+# command. A document nobody can read whole cannot be audited, so this is a drift.
+rowbad=$(find . -name '*.md' -not -path './.kilo/*' -not -path './target/*' \
+  -not -path './node_modules/*' -print0 2>/dev/null | xargs -0 awk '
+    function npipes(s) { gsub(/\\\|/, "\001", s); return gsub(/\|/, "|", s) }
+    FNR == 1       { want = 0; fence = 0 }
+    /^[ \t]*```/   { fence = !fence; next }
+    fence          { next }
+    {
+      if (substr($0, 1, 1) != "|") { want = 0; next }
+      if ($0 ~ /^[ \t|:-]+$/) next          # the ---|--- separator
+      n = npipes($0)
+      if (want == 0) { want = n; next }     # the header sets the width
+      if (n != want) printf "  LARGEUR %s:%d  %d barres, en-tete %d\n", FILENAME, FNR, n, want
+    }')
+if [ -z "$rowbad" ]; then
+  printf '  ok    %-34s %s fichier(s) markdown\n' "largeur des tableaux" \
+    "$(find . -name '*.md' -not -path './.kilo/*' -not -path './target/*' -not -path './node_modules/*' 2>/dev/null | wc -l)"
+else
+  printf '%s\n' "$rowbad"
+  printf '  DRIFT %-34s %s ligne(s) tronquee(s) au rendu\n' "largeur des tableaux" \
+    "$(printf '%s\n' "$rowbad" | grep -c LARGEUR)"
+  fail=$((fail + 1))
+fi
+
+echo
 echo "== affirmations d'absence a reverifier a la main =="
 pat="planned|NOT RUN|not run|jamais exécuté|jamais tourné|NOT measured|non mesuré|est un stub|LoRa frame stub|pas encore testé|non testé"
 hits=$(grep -rnoiE "$pat" CLAUDE.md partners/*.md partners/*.html docs/*.md SECURITY.md 2>/dev/null \
@@ -301,6 +331,39 @@ if [ "$FULL" = 1 ]; then
   if [ "$bad" != 0 ]; then
     echo "  $bad manifeste(s) reellement casse(s)"
     fail=$((fail + bad))
+  fi
+
+  # Completeness. `sha256sum -c` only judges the lines that are there, so a manifest
+  # that lists some of its files passes while the rest are unprotected — and a file
+  # can then vanish from the evidence with every check still green. Found 2026-10-09:
+  # regenerating a manifest with `ls | xargs sha256sum` handed the `neg/` directory to
+  # sha256sum, which dropped it on stderr, and the negative control's log — the one
+  # file rule 4 most requires — went unlisted. Each file under evidence/ must appear
+  # in the nearest manifest above it.
+  miss=0; seen=0
+  while IFS= read -r m; do
+    d=$(dirname "$m")
+    names=$(awk '{ n = $2; sub(/^\*/, "", n); print n }' "$m")
+    while IFS= read -r f; do
+      # A nested directory with its own SHA256SUMS owns its files; skip those.
+      sub=$(dirname "$f"); owned=0
+      while [ "$sub" != "$d" ]; do
+        if [ -f "$sub/SHA256SUMS" ]; then owned=1; break; fi
+        sub=$(dirname "$sub")
+      done
+      [ "$owned" = 1 ] && continue
+      seen=$((seen + 1))
+      rel=${f#"$d/"}
+      printf '%s\n' "$names" | grep -qxF "$rel" || {
+        printf '  ABSENT %s present mais absent de %s\n' "$f" "$m"
+        miss=$((miss + 1))
+      }
+    done < <(find "$d" -type f ! -name SHA256SUMS 2>/dev/null)
+  done < <(find evidence -name SHA256SUMS 2>/dev/null)
+  echo "  ok    $((seen - miss))/$seen fichier(s) de preuve couverts par un manifeste"
+  if [ "$miss" != 0 ]; then
+    printf '  DRIFT %-34s %s fichier(s) non liste(s)\n' "completude des manifestes" "$miss"
+    fail=$((fail + 1))
   fi
 fi
 

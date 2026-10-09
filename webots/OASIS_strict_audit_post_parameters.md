@@ -44,7 +44,7 @@ rclcpp considers its full node-level API surface.
 | Parameter events (`/parameter_events`) | ❌ | `version` counter is a poor-man's version; no pub/sub broadcast |
 | `declare_parameter` from YAML | ❌ | parser absent |
 | Dynamic reconfigure callback | ❌ | no `add_on_set_callback` |
-| Namespaced parameters (`foo.bar.baz`) | ⚠️ string key works but no hierarchy semantics |
+| Namespaced parameters (`foo.bar.baz`) | ⚠️ | string key works but no hierarchy semantics |
 | CLI `ros2 param set` equivalent | ❌ | no CLI shell |
 | Parameter persistence | ❌ | caller's problem, documented |
 

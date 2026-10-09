@@ -29,7 +29,7 @@ IHM / SCADA ──Modbus TCP en clair──▶ agent OASIS ──ordre OMB1 sign
 | Élément | Règle |
 |---|---|
 | Requête vers l'automate | Construite à partir de la trame RTU d'une décision `Act` : même unité, même PDU, en-tête MBAP au lieu du CRC. **Aucune requête TCP sans `Act`.** |
-| En-tête MBAP | `tid u16 | protocole 0 | longueur = 1 + PDU | unité`, big-endian |
+| En-tête MBAP | `tid u16 \| protocole 0 \| longueur = 1 + PDU \| unité`, big-endian |
 | Fonctions | FC06 (1 registre) et FC16 (1 à 8 registres), comme en RTU |
 | Écriture reçue de l'IHM | Longueur exacte, protocole 0, longueur MBAP cohérente, nombre d'octets FC16 = 2 × quantité, quantité 1..=8. Tout le reste est refusé (`None`), lectures comprises |
 | Réponse de l'automate | `Ack` seulement si `tid`, protocole et unité correspondent, la longueur MBAP est cohérente, et l'écho FC06/FC16 est exact. Sinon `Exception(code)`, `Mismatch` ou `Short` |

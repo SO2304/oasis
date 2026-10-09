@@ -30,9 +30,9 @@ ActionStatus: `Succeeded` / `Aborted` / `Canceled`.
 **HAL (5):**
 | Proof | Property | Time |
 |---|---|---|
-| `proof_hal_clamp_force_bounded` | `|force_out| ≤ max_force_n` always | 0.60 s ✅ |
-| `proof_hal_clamp_torque_bounded` | `|torque_out| ≤ max_torque_nm` always | 0.57 s ✅ |
-| `proof_hal_clamp_velocity_bounded` | `|velocity_out| ≤ max_velocity_ms` always | 0.55 s ✅ |
+| `proof_hal_clamp_force_bounded` | `\|force_out\| ≤ max_force_n` always | 0.60 s ✅ |
+| `proof_hal_clamp_torque_bounded` | `\|torque_out\| ≤ max_torque_nm` always | 0.57 s ✅ |
+| `proof_hal_clamp_velocity_bounded` | `\|velocity_out\| ≤ max_velocity_ms` always | 0.55 s ✅ |
 | **`proof_hal_geofence_breach_zeroes_everything`** | **Position hors box → (force, torque, vel) == (0, 0, 0)** | 0.39 s ✅ |
 | `proof_hal_clamp_identity_when_in_bounds` | In-bounds input passes through unchanged | 0.23 s ✅ |
 

@@ -110,7 +110,7 @@ Chaque device trouvé est classé par mot-clé (e.g., "accel" → Accelerometer 
 | `proof_spinal_zones_well_formed` | Every zone has start ≤ end < DIM | ✅ VERIFIED | 0.13 s |
 | `proof_spinal_zones_pairwise_disjoint` | 9 zones don't overlap, any pair | ✅ VERIFIED | 0.15 s |
 | `proof_spinal_classify_empty_is_unknown` | classify_iio("") = Unknown | ✅ VERIFIED | 3.25 s |
-| `proof_spinal_assign_dims_stay_in_zone` | allocated dims ∈ device zone | 🔄 cooking |
+| `proof_spinal_assign_dims_stay_in_zone` | allocated dims ∈ device zone | 🔄 cooking | — |
 
 **Significance**: les invariants de routing sont **mathématiquement prouvés** — aucun device ne peut se retrouver dans la mauvaise zone, aucune zone n'overlaps avec une autre, aucune dim ne sort de son zone assignée. **ROS 2 hardware_interface fait ceci par convention; OASIS le prouve.**
 
