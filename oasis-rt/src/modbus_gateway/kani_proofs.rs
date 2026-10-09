@@ -125,3 +125,60 @@ fn proof_mb_parsers_total() {
     kani::assume(rl <= resp.len());
     let _ = check_response(&req, &resp[..rl]);
 }
+
+fn any_origin_rule(origin: [u8; 8]) -> OriginRule {
+    OriginRule { origin, rule: any_rule() }
+}
+
+/// PROVE: **no order is within limits outside its own origin's map.**
+///
+/// This is the per-origin half of "within limits". With one shared map, any authorised key
+/// could write every register in it; a pilot needs "this HMI may move axis 1, that one may
+/// only reset the counter", which is an authorisation question and not a range check.
+///
+/// Both directions are stated, because the second is what makes the first safe to add:
+/// an origin **with** a map is judged only by its own entries, and an origin **without**
+/// one gets exactly `check_rules` on the shared map -- so configuring a rule for one
+/// origin cannot widen what another may write.
+#[kani::proof]
+#[kani::unwind(26)]
+fn proof_mb_no_frame_outside_the_origin_map() {
+    let o = any_order();
+    let unit: u8 = kani::any();
+    let origin: [u8; 8] = kani::any();
+    let other: [u8; 8] = kani::any();
+    let shared = [any_rule(), any_rule()];
+    // A table holding one rule for this origin and one for a symbolic other origin, so the
+    // harness covers both "mine" and "someone else's" without an unwind on a nested map.
+    let table = [any_origin_rule(origin), any_origin_rule(other)];
+
+    let got = check_rules_for_origin(&o, unit, &origin, &table, &shared);
+
+    if got == RuleCheck::Ok {
+        // The order is within limits, so: the unit matched, and every register it writes
+        // is in THIS origin's entries with its value inside that entry's range.
+        assert!(o.unit == unit);
+        let mut i = 0usize;
+        while i < o.count as usize {
+            let addr = o.start.checked_add(i as u16).expect("Ok implies no wrap");
+            let mut mine = false;
+            let mut j = 0usize;
+            while j < table.len() {
+                let e = table[j];
+                if e.origin == origin && e.rule.addr == addr && o.values[i] >= e.rule.min && o.values[i] <= e.rule.max {
+                    mine = true;
+                }
+                j += 1;
+            }
+            assert!(mine, "a register was allowed that is not in this origin's own map");
+            i += 1;
+        }
+    }
+
+    // The other direction: an origin named nowhere in the table falls back to the shared
+    // map, and to `check_rules` itself rather than to a reimplementation of it.
+    let stranger: [u8; 8] = kani::any();
+    kani::assume(stranger != origin && stranger != other);
+    assert!(!origin_has_own_map(&stranger, &table));
+    assert!(check_rules_for_origin(&o, unit, &stranger, &table, &shared) == check_rules(&o, unit, &shared));
+}

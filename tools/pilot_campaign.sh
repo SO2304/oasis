@@ -72,6 +72,8 @@ seed "$OUT/op2.seed" 33      # 0x21, second operator of the quorum
 seed "$OUT/op3.seed" 49      # 0x31, third operator of the quorum
 OP2_PUB=$("$BIN/oasis_mbtcp_revoke" --print-pub "$(winpath "$OUT/op2.seed")" 2>/dev/null || true)
 OP3_PUB=$("$BIN/oasis_mbtcp_revoke" --print-pub "$(winpath "$OUT/op3.seed")" 2>/dev/null || true)
+seed "$OUT/hmi2.seed" 238    # 0xEE, a SECOND commanding HMI, with its own registers
+HMI2_FP=ee00000000000000
 # The operator's PUBLIC key goes in the gateway config. Derived with the same crate the
 # gateway verifies with, so the campaign cannot pass by agreeing with its own arithmetic.
 OP_PUB=$("$BIN/oasis_mbtcp_revoke" --print-pub "$OUT/op.seed" 2>/dev/null || true)
@@ -613,6 +615,87 @@ if printf '%s' "$C22" | grep -q 'k=2/n=3'; then
 else
   say "  FAIL  C22 pas de mesure: $C22"; FAIL=$((FAIL+1))
 fi
+
+note "C23-C26 une carte de registres par origine"
+# Until 2026-10-09 the register map was shared: any key the config authorised could write
+# every register in it. The firmware requires `registry.allows(origin, ACTUATE)` AND its own
+# map; the TCP path had the permission since C18 and the map only now. A pilot's actual
+# request is "this HMI may move axis 1 between 0 and 100, that one may only reset the
+# counter", which is an authorisation question and not a range check.
+#
+# A fourth gateway, on its own port, with per-origin rules:
+#   agent (aa00) -> register REG_OK, 0..1000
+#   hmi2  (ee00) -> register REG_OK2, 0..5      and REG_OK with a ceiling of 9
+PGW_PORT=15041
+REG_OK2=12
+{ sed "s|^listen = .*|listen = 127.0.0.1:$PGW_PORT|" "$OUT/gateway.conf"
+  echo "peer = $HMI2_FP,$WOUT/hmi2.seed,ACTUATE"
+  echo "register = $REG_OK2,0,1000"
+  echo "origin_register = $AGENT_FP,$REG_OK,0,1000"
+  echo "origin_register = $HMI2_FP,$REG_OK2,0,5"
+  echo "origin_register = $HMI2_FP,$REG_OK,0,9"
+} > "$OUT/gateway_p.conf"
+"$BIN/oasis_mbtcp_gateway" --config "$(winpath "$OUT/gateway_p.conf")" --journal "$(winpath "$OUT/jrnp")" >> "$OUT/gateway_p.log" 2>&1 &
+PGW_PID=$!; PIDS="$PIDS $PGW_PID"
+for i in $(seq 1 20); do ready $PGW_PORT && break; sleep 0.25; done
+
+# Two order tools, one per identity, each with its own stores.
+sed -e "s|^peer_addr = .*|peer_addr = 127.0.0.1:$PGW_PORT|" "$OUT/revoke.conf" \
+    | sed -e "s|^our_fp = .*|our_fp = $AGENT_FP|" -e "s|^our_seed_file = .*|our_seed_file = $WOUT/agent.seed|" > "$OUT/ord_a.conf"
+sed -e "s|^peer_addr = .*|peer_addr = 127.0.0.1:$PGW_PORT|" "$OUT/revoke.conf" \
+    | sed -e "s|^our_fp = .*|our_fp = $HMI2_FP|" -e "s|^our_seed_file = .*|our_seed_file = $WOUT/hmi2.seed|" > "$OUT/ord_e.conf"
+
+W23=$(plc_writes)
+O23=$("$BIN/oasis_mbtcp_order" --config "$(winpath "$OUT/ord_a.conf")" --reg $REG_OK --value 500 2>&1); RC23=$?
+say "  agent sur son registre: $O23 (rc=$RC23)"
+check_eq "C23 l'agent ecrit son propre registre" "0" "$RC23"
+sleep 0.4
+check_eq "C23 l'appareil a bien recu une ecriture" "$((W23+1))" "$(plc_writes)"
+
+W24=$(plc_writes)
+O24=$("$BIN/oasis_mbtcp_order" --config "$(winpath "$OUT/ord_a.conf")" --reg $REG_OK2 --value 3 2>&1); RC24=$?
+say "  agent sur le registre de l'autre: $O24 (rc=$RC24)"
+if [ "$RC24" = "0" ]; then say "  FAIL  C24 l'agent a ecrit dans un registre qui n'est pas dans SA carte"; FAIL=$((FAIL+1));
+else say "  PASS  C24 refuse: le registre est dans la carte de la passerelle mais pas dans celle de l'agent (rc=$RC24)"; PASS=$((PASS+1)); fi
+sleep 0.4
+check_eq "C24 l'appareil n'a rien recu" "$W24" "$(plc_writes)"
+
+# The other identity on the same register the agent may write to 1000, but capped at 9.
+W25=$(plc_writes)
+O25a=$("$BIN/oasis_mbtcp_order" --config "$(winpath "$OUT/ord_e.conf")" --reg $REG_OK --value 5 2>&1); RC25a=$?
+O25b=$("$BIN/oasis_mbtcp_order" --config "$(winpath "$OUT/ord_e.conf")" --reg $REG_OK --value 500 2>&1); RC25b=$?
+say "  hmi2 a 5 (plafond 9): $O25a (rc=$RC25a)"
+say "  hmi2 a 500 (plafond 9): $O25b (rc=$RC25b)"
+check_eq "C25 hmi2 sous son plafond est accepte" "0" "$RC25a"
+if [ "$RC25b" = "0" ]; then say "  FAIL  C25 hmi2 a depasse son plafond de 9 sur un registre que l'agent peut porter a 1000"; FAIL=$((FAIL+1));
+else say "  PASS  C25 la plage est par origine: 500 refuse a hmi2, autorise a l'agent (rc=$RC25b)"; PASS=$((PASS+1)); fi
+sleep 0.4
+check_eq "C25 une seule ecriture a atteint l'appareil" "$((W25+1))" "$(plc_writes)"
+
+cat "$OUT/jrnp.head" "$OUT/jrnp.entries" > "$OUT/jrn23.txt"
+JP=$("$BIN/oasis_journal_verify" "$(winpath "$OUT/jrn23.txt")" 2>&1)
+check "C26 la chaine reste intacte" "VERDICT intact" "$JP"
+check "C26 un refus hors carte est attribue a l'agent" "origin=aa00" "$(printf '%s' "$JP" | grep 'Reject(OutOfLimits)' | head -1)"
+check "C26 un refus de plage est attribue a hmi2" "origin=ee00" "$(printf '%s' "$JP" | grep 'Reject(OutOfLimits)' | tail -1)"
+
+note "C27 compter par origine n'affaiblit pas l'anti-rejeu de cette origine"
+# Per-origin counters were added because one global counter made a second commander's
+# cmd_seq=1 look like a replay. The property that must survive: a replay of an origin's
+# OWN number is still refused. Resetting only the order-sequence file reuses cmd_seq while
+# the v0B send counter keeps advancing, so the envelope is fresh and the GATE's cmd_seq
+# condition is the only thing that can refuse it.
+W27=$(plc_writes)
+echo 0 > "$OUT/ord_e.conf.seq"
+O27=$("$BIN/oasis_mbtcp_order" --config "$(winpath "$OUT/ord_e.conf")" --reg $REG_OK --value 4 2>&1); RC27=$?
+say "  hmi2 rejoue son propre cmd_seq: $O27 (rc=$RC27)"
+if [ "$RC27" = "0" ]; then say "  FAIL  C27 une origine a pu rejouer son propre numero"; FAIL=$((FAIL+1));
+else say "  PASS  C27 le rejeu de son propre numero est refuse (rc=$RC27)"; PASS=$((PASS+1)); fi
+sleep 0.4
+check_eq "C27 l'appareil n'a rien recu" "$W27" "$(plc_writes)"
+cat "$OUT/jrnp.head" "$OUT/jrnp.entries" > "$OUT/jrn27.txt"
+L27=$("$BIN/oasis_journal_verify" "$(winpath "$OUT/jrn27.txt")" 2>&1 | grep -E '^  \[' | tail -1)
+check "C27 journalise comme rejeu, attribue a hmi2" "Reject(StaleOrReplayed)" "$L27"
+check "C27 et bien a hmi2" "origin=ee00" "$L27"
 
 note "summary"
 say "  PLC: $(plc_writes) applied writes, $(plc_frames) frames received"

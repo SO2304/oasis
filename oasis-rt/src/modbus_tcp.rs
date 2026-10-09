@@ -79,6 +79,27 @@ pub fn decide_tcp(gw: &mut Gateway, ctx: &crate::modbus_gateway::OrderContext, o
     (d, rules, rtu.map(|f| from_rtu(&f, tid)))
 }
 
+/// [`decide_tcp`] with a **per-origin** register map.
+///
+/// Same gate, same nine conditions, and the same single site that builds a frame: only
+/// "within limits" differs, consulting the named origin's rules when it has any and the
+/// shared map otherwise. An origin with no rules of its own gets a verdict identical to
+/// `decide_tcp`'s, because `check_rules_for_origin` calls `check_rules` in that case.
+pub fn decide_tcp_for_origin(
+    gw: &mut Gateway,
+    ctx: &crate::modbus_gateway::OrderContext,
+    o: &MbOrder,
+    unit: u8,
+    origin: &[u8; 8],
+    per_origin: &[crate::modbus_gateway::OriginRule],
+    shared: &[RegRule],
+    last_executed_seq: Option<u32>,
+    tid: u16,
+) -> (Decision, RuleCheck, Option<TcpFrame>) {
+    let (d, rules, rtu) = gw.decide_for_origin(ctx, o, unit, origin, per_origin, shared, last_executed_seq);
+    (d, rules, rtu.map(|f| from_rtu(&f, tid)))
+}
+
 /// Check the PLC's answer to `req`. Total: any `resp` is accepted as input.
 pub fn check_tcp_response(req: &TcpFrame, resp: &[u8]) -> Response {
     if req.len < ACK_LEN || req.len > MAX_TCP_FRAME {

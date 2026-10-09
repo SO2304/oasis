@@ -16,7 +16,7 @@ use std::fs;
 
 use crate::enrollment::{perm, Entry, Registry};
 use crate::mesh::{mesh_v10_pubkey_from_seed, MeshEdSeed, MeshPubRegistry, FP_LEN, MESH_V0B_NETWORK_LEN};
-use crate::modbus_gateway::RegRule;
+use crate::modbus_gateway::{OriginRule, RegRule};
 
 #[derive(Clone)]
 pub struct Config {
@@ -38,6 +38,18 @@ pub struct Config {
     pub gateway_id: u16,
     /// Register map: address → allowed range. Ordered, so a dump is reproducible.
     pub map: Vec<RegRule>,
+    /// Per-origin register rules, from `origin_register = <fp>,<addr>,<min>,<max>`.
+    ///
+    /// An origin named here is governed **only** by its own rules; one named nowhere here
+    /// falls back to [`Config::map`]. So adding a line can tighten what one sender may
+    /// write and never widen what another may — the property
+    /// `mb_adding_a_rule_for_one_origin_does_not_widen_another` pins.
+    ///
+    /// Why it exists: with one shared map, every key the config authorises can write every
+    /// register in it. A pilot wants "this HMI may move axis 1 between 0 and 100, that one
+    /// may only reset the counter", which is an authorisation question and not a range
+    /// check.
+    pub origin_map: Vec<OriginRule>,
     /// Fingerprints refused at the gate, from `revoked = <16 hex>` lines.
     ///
     /// ⚠️ This is a **config-time** revocation list: the operator edits the file and
@@ -85,6 +97,7 @@ impl Config {
         let mut regs: Vec<RegRule> = Vec::new();
         let mut peers: Vec<(String, String, String)> = Vec::new();
         let mut revoked_hex: Vec<String> = Vec::new();
+        let mut origin_regs: Vec<(String, String, String, String)> = Vec::new();
         let mut operator_hex: Vec<String> = Vec::new();
         let mut quorum: Option<String> = None;
 
@@ -110,6 +123,14 @@ impl Config {
                         }
                     };
                     regs.push(RegRule { addr: num(p[0])?, min: num(p[1])?, max: num(p[2])? });
+                }
+                // origin_register = <fp hex 16>,<addr>,<min>,<max>
+                "origin_register" => {
+                    let p: Vec<&str> = v.split(',').map(str::trim).collect();
+                    if p.len() != 4 {
+                        return Err(format!("{path}:{}: origin_register wants fp,addr,min,max", n + 1));
+                    }
+                    origin_regs.push((p[0].to_string(), p[1].to_string(), p[2].to_string(), p[3].to_string()));
                 }
                 // revoked = <fp hex 16>
                 "revoked" => revoked_hex.push(v.to_string()),
@@ -169,6 +190,26 @@ impl Config {
             gateway_id: need("gateway_id").unwrap_or_else(|_| "1".into()).parse().unwrap_or(1),
             map: regs,
             perms,
+            origin_map: {
+                let mut v = Vec::with_capacity(origin_regs.len());
+                for (fp_hex, a, lo, hi) in &origin_regs {
+                    let mut fp = [0u8; FP_LEN];
+                    parse_hex(fp_hex, &mut fp).map_err(|e| format!("origin_register {fp_hex}: {e}"))?;
+                    let num = |s: &str| -> Result<u16, String> {
+                        if let Some(h) = s.strip_prefix("0x") {
+                            u16::from_str_radix(h, 16).map_err(|e| e.to_string())
+                        } else {
+                            s.parse::<u16>().map_err(|e| e.to_string())
+                        }
+                    };
+                    let (addr, min, max) = (num(a)?, num(lo)?, num(hi)?);
+                    if min > max {
+                        return Err(format!("origin_register {fp_hex} reg {addr}: min {min} > max {max}"));
+                    }
+                    v.push(OriginRule { origin: fp, rule: RegRule { addr, min, max } });
+                }
+                v
+            },
             authority: build_authority(&operator_hex, quorum.as_deref())?,
             revoked: {
                 let mut v = Vec::new();

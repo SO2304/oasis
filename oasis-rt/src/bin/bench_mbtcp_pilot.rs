@@ -77,6 +77,9 @@ fn conf(listen: &str, peer: &str, our: u8) -> Config {
         gateway_id: 1,
         map: vec![RegRule { addr: REG, min: 0, max: 60000 }],
         revoked: Vec::new(),
+        // No per-origin rules here: every origin falls back to the shared map, which
+        // is the pre-2026-10-09 behaviour and what these cases were written against.
+        origin_map: Vec::new(),
         authority: None,
         // The gate requires `ACTUATE` now, not merely a key in the registry.
         perms: {

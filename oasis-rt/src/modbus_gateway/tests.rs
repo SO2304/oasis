@@ -299,3 +299,77 @@ fn mb_dead_supervision_refuses_and_emits_no_frame() {
     assert_eq!(d, Decision::Reject(Reason::SupervisionLost));
     assert!(frame.is_none());
 }
+
+// --- Phase A.1: a register map per origin ---
+
+const A: [u8; 8] = [0xAA; 8];
+const B: [u8; 8] = [0xBB; 8];
+
+/// Two origins, each with one register. Neither may touch the other's — which is the whole
+/// point: with one shared map, any authorised key could write every register in it.
+#[test]
+fn mb_each_origin_is_confined_to_its_own_registers() {
+    let table = [OriginRule { origin: A, rule: RegRule { addr: 0x0010, min: 0, max: 100 } }, OriginRule { origin: B, rule: RegRule { addr: 0x0020, min: 0, max: 5 } }];
+    let shared: [RegRule; 0] = [];
+
+    // Each on its own register, in range.
+    assert_eq!(check_rules_for_origin(&order(1, 0x0010, &[50]), UNIT, &A, &table, &shared), RuleCheck::Ok);
+    assert_eq!(check_rules_for_origin(&order(1, 0x0020, &[3]), UNIT, &B, &table, &shared), RuleCheck::Ok);
+
+    // Each on the other's register: refused, and named as an address refusal.
+    assert_eq!(check_rules_for_origin(&order(1, 0x0020, &[3]), UNIT, &A, &table, &shared), RuleCheck::RegisterNotAllowed(0x0020), "A must not reach B's register");
+    assert_eq!(check_rules_for_origin(&order(1, 0x0010, &[50]), UNIT, &B, &table, &shared), RuleCheck::RegisterNotAllowed(0x0010), "B must not reach A's register");
+}
+
+/// The ranges are per origin too, not only the addresses: the same register may carry a
+/// different ceiling for a different sender.
+#[test]
+fn mb_the_range_is_per_origin_as_well_as_the_address() {
+    let table = [OriginRule { origin: A, rule: RegRule { addr: 0x0010, min: 0, max: 100 } }, OriginRule { origin: B, rule: RegRule { addr: 0x0010, min: 0, max: 5 } }];
+    let shared: [RegRule; 0] = [];
+    assert_eq!(check_rules_for_origin(&order(1, 0x0010, &[50]), UNIT, &A, &table, &shared), RuleCheck::Ok);
+    assert_eq!(check_rules_for_origin(&order(1, 0x0010, &[50]), UNIT, &B, &table, &shared), RuleCheck::ValueOutOfRange(0x0010, 50), "the same register, a tighter ceiling for B");
+}
+
+/// An origin named nowhere in the table falls back to the shared map, and to `check_rules`
+/// itself. This is what makes adding a per-origin rule safe: it cannot widen anyone else.
+#[test]
+fn mb_an_origin_without_its_own_map_falls_back_to_the_shared_one() {
+    let table = [OriginRule { origin: A, rule: RegRule { addr: 0x0010, min: 0, max: 100 } }];
+    let shared = [RegRule { addr: 0x0012, min: 0, max: 7 }];
+    let stranger = [0xCC; 8];
+    assert!(!origin_has_own_map(&stranger, &table));
+    for o in [order(1, 0x0012, &[7]), order(1, 0x0010, &[50]), order(1, 0x0099, &[1])] {
+        assert_eq!(check_rules_for_origin(&o, UNIT, &stranger, &table, &shared), check_rules(&o, UNIT, &shared), "a stranger must get exactly the shared-map verdict");
+    }
+}
+
+/// Adding a rule for one origin must not change what another may write. Stated as a test
+/// because it is the property an operator relies on when editing a config.
+#[test]
+fn mb_adding_a_rule_for_one_origin_does_not_widen_another() {
+    let shared = [RegRule { addr: 0x0012, min: 0, max: 7 }];
+    let before: [OriginRule; 1] = [OriginRule { origin: A, rule: RegRule { addr: 0x0010, min: 0, max: 100 } }];
+    let after = [before[0], OriginRule { origin: B, rule: RegRule { addr: 0x0099, min: 0, max: 0xFFFF } }];
+    // B gains a register; A's verdicts are unchanged on every order tried.
+    for o in [order(1, 0x0010, &[50]), order(1, 0x0099, &[1]), order(1, 0x0012, &[7])] {
+        assert_eq!(check_rules_for_origin(&o, UNIT, &A, &before, &shared), check_rules_for_origin(&o, UNIT, &A, &after, &shared), "A's verdict changed when B gained a rule");
+    }
+    // And B, which had no map before, was on the shared one and is now confined.
+    assert_eq!(check_rules_for_origin(&order(1, 0x0012, &[7]), UNIT, &B, &before, &shared), RuleCheck::Ok);
+    assert_eq!(
+        check_rules_for_origin(&order(1, 0x0012, &[7]), UNIT, &B, &after, &shared),
+        RuleCheck::RegisterNotAllowed(0x0012),
+        "gaining a map takes the shared one away, which is the narrowing direction"
+    );
+}
+
+/// A multi-register write must have **every** register in the origin's map, not just the
+/// first — the loop is where an off-by-one would let a span run out of the map.
+#[test]
+fn mb_a_span_must_lie_entirely_in_the_origin_map() {
+    let table = [OriginRule { origin: A, rule: RegRule { addr: 0x0010, min: 0, max: 100 } }, OriginRule { origin: A, rule: RegRule { addr: 0x0011, min: 0, max: 100 } }];
+    let shared: [RegRule; 0] = [];
+    assert_eq!(check_rules_for_origin(&order(1, 0x0010, &[10, 20]), UNIT, &A, &table, &shared), RuleCheck::Ok);
+    assert_eq!(check_rules_for_origin(&order(1, 0x0010, &[10, 20, 30]), UNIT, &A, &table, &shared), RuleCheck::RegisterNotAllowed(0x0012), "the third register is outside A's map");
+}

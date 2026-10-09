@@ -152,6 +152,78 @@ pub fn check_rules(o: &MbOrder, unit: u8, map: &[RegRule]) -> RuleCheck {
     RuleCheck::Ok
 }
 
+/// One register rule that applies to **one origin only**.
+///
+/// A flat table of these, rather than a map of maps: this module is `no_std` and allocates
+/// nothing, and a flat slice is also what a Kani harness can quantify over without an
+/// unwind bound on a nested structure.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct OriginRule {
+    /// The v0B origin fingerprint this rule belongs to.
+    pub origin: [u8; 8],
+    pub rule: RegRule,
+}
+
+/// Does `origin` have a register map of its own?
+///
+/// This is what decides whether the shared map still applies to it. An origin named
+/// anywhere in the table is governed **only** by its own entries, so adding a rule for an
+/// origin can never widen what that origin may write.
+pub fn origin_has_own_map(origin: &[u8; 8], per_origin: &[OriginRule]) -> bool {
+    let mut i = 0usize;
+    while i < per_origin.len() {
+        if &per_origin[i].origin == origin {
+            return true;
+        }
+        i += 1;
+    }
+    false
+}
+
+/// "Within limits" for an order from a **named origin**.
+///
+/// Identical to [`check_rules`] for an origin with no map of its own — the same function is
+/// called, not a copy of it — and strictly narrower for one that has. The gate's nine
+/// conditions are untouched: this only decides which register map "within limits" consults,
+/// so configuring a per-origin map can tighten what an origin may write and never widen it.
+///
+/// Why per-origin at all: with one shared map, any key the config authorises can write
+/// every register in it. A pilot wants "this HMI may move axis 1 between 0 and 100, that
+/// one may only reset the counter" — which is an authorisation question, not a range check.
+pub fn check_rules_for_origin(o: &MbOrder, unit: u8, origin: &[u8; 8], per_origin: &[OriginRule], shared: &[RegRule]) -> RuleCheck {
+    if !origin_has_own_map(origin, per_origin) {
+        return check_rules(o, unit, shared);
+    }
+    if o.unit != unit {
+        return RuleCheck::WrongUnit;
+    }
+    let mut i = 0usize;
+    while i < o.count as usize {
+        let addr = match o.start.checked_add(i as u16) {
+            Some(a) => a,
+            // A span that wraps past 0xFFFF is not a span, as in `check_rules`.
+            None => return RuleCheck::RegisterNotAllowed(0xFFFF),
+        };
+        let mut found: Option<RegRule> = None;
+        let mut j = 0usize;
+        while j < per_origin.len() {
+            let e = per_origin[j];
+            if &e.origin == origin && e.rule.addr == addr {
+                found = Some(e.rule);
+                break;
+            }
+            j += 1;
+        }
+        match found {
+            None => return RuleCheck::RegisterNotAllowed(addr),
+            Some(r) if o.values[i] < r.min || o.values[i] > r.max => return RuleCheck::ValueOutOfRange(addr, o.values[i]),
+            Some(_) => {}
+        }
+        i += 1;
+    }
+    RuleCheck::Ok
+}
+
 /// An RTU request frame, built only for a decided order.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Frame {
@@ -231,13 +303,41 @@ pub fn gateway_decision(ctx: &OrderContext, o: &MbOrder, unit: u8, map: &[RegRul
 /// device while the stop latch was set: setting `gw.act.stopped` was not enough, because
 /// the pure rule never read it.
 pub fn gateway_decision_ctx(gctx: &GateContext, ctx: &OrderContext, o: &MbOrder, unit: u8, map: &[RegRule], last_executed_seq: Option<u32>) -> (Decision, RuleCheck, Option<Frame>) {
-    let rules = check_rules(o, unit, map);
+    gateway_decision_with_rules(gctx, ctx, o, check_rules(o, unit, map), last_executed_seq)
+}
+
+/// Same decision, for a caller that has already computed "within limits".
+///
+/// Extracted so the shared map and a per-origin map share **one** site that builds a
+/// frame, which is the property rule 2 of the pilot prompt asks for and what
+/// `proof_mb_no_frame_without_act` proves. The gate still receives "within limits" as a
+/// verdict, exactly as it receives `v0b_ok`: which register map produced it is this
+/// module's business and none of the gate's.
+pub fn gateway_decision_with_rules(gctx: &GateContext, ctx: &OrderContext, o: &MbOrder, rules: RuleCheck, last_executed_seq: Option<u32>) -> (Decision, RuleCheck, Option<Frame>) {
     let d = actuation_decision_ctx(gctx, &gate_input(ctx, o, rules, last_executed_seq));
     let frame = match d {
         Decision::Act => Some(encode_request(o)),
         Decision::Reject(_) => None,
     };
     (d, rules, frame)
+}
+
+/// [`gateway_decision_ctx`] with a **per-origin** register map.
+///
+/// Identical for an origin with no map of its own — [`check_rules_for_origin`] calls
+/// [`check_rules`] on the shared map in that case — and strictly narrower for one that has.
+pub fn gateway_decision_for_origin(
+    gctx: &GateContext,
+    ctx: &OrderContext,
+    o: &MbOrder,
+    unit: u8,
+    origin: &[u8; 8],
+    per_origin: &[OriginRule],
+    shared: &[RegRule],
+    last_executed_seq: Option<u32>,
+) -> (Decision, RuleCheck, Option<Frame>) {
+    let rules = check_rules_for_origin(o, unit, origin, per_origin, shared);
+    gateway_decision_with_rules(gctx, ctx, o, rules, last_executed_seq)
 }
 
 /// Stateful wrapper: the last executed `cmd_seq` and counters live in an
@@ -255,14 +355,49 @@ impl Gateway {
     pub fn decide(&mut self, ctx: &OrderContext, o: &MbOrder, unit: u8, map: &[RegRule]) -> (Decision, RuleCheck, Option<Frame>) {
         let gctx = self.act.context(ctx.now_ms);
         let r = gateway_decision_ctx(&gctx, ctx, o, unit, map, self.act.last_executed_seq);
-        match r.0 {
+        self.record(o, r.0);
+        r
+    }
+
+    /// Same, consulting the named origin's register map **and** that origin's own last
+    /// executed sequence.
+    ///
+    /// `last_executed_seq` is passed in rather than read from `self.act`, because a single
+    /// value for the whole gateway makes the first commander's `cmd_seq=1` turn every other
+    /// commander's `cmd_seq=1` into a replay. Campaign C25 demonstrated it: a legitimate
+    /// order from a second authorised sender was journalled `Reject(StaleOrReplayed)`.
+    ///
+    /// The nine conditions are unchanged and so is "strictly newer than the last executed";
+    /// only *what it is newer than* changes. A replay of an origin's order is still caught
+    /// by that origin's counter, and one sender can no longer consume numbers that block
+    /// another.
+    pub fn decide_for_origin(
+        &mut self,
+        ctx: &OrderContext,
+        o: &MbOrder,
+        unit: u8,
+        origin: &[u8; 8],
+        per_origin: &[OriginRule],
+        shared: &[RegRule],
+        last_executed_seq: Option<u32>,
+    ) -> (Decision, RuleCheck, Option<Frame>) {
+        let gctx = self.act.context(ctx.now_ms);
+        let r = gateway_decision_for_origin(&gctx, ctx, o, unit, origin, per_origin, shared, last_executed_seq);
+        self.record(o, r.0);
+        r
+    }
+
+    /// The bookkeeping both paths share: an executed order advances `last_executed_seq`,
+    /// a refused one increments its reason's counter. Shared rather than copied, because
+    /// a second copy is how the sequence counter stops being monotone on one path only.
+    fn record(&mut self, o: &MbOrder, d: Decision) {
+        match d {
             Decision::Act => {
                 self.act.last_executed_seq = Some(o.cmd_seq);
                 self.act.executed += 1;
             }
             Decision::Reject(reason) => self.act.rejects[reason as usize] += 1,
         }
-        r
     }
 }
 

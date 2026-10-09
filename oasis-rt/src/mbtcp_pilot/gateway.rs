@@ -14,7 +14,7 @@ use crate::mesh::{inner_slice, MeshDecision, MeshRouter};
 use crate::mesh_revocation::{parse_orv1, revocation_transition, signed_message, RevDecision, RevReject, RevState};
 use crate::modbus_gateway::{parse_omb1, Gateway, OrderContext, Response};
 use crate::modbus_read::{check_read_response, decide_read, encode_omv1, parse_omq1, MbQuery, ReadCheck};
-use crate::modbus_tcp::{check_tcp_response, decide_tcp, Outcome, TcpFrame};
+use crate::modbus_tcp::{check_tcp_response, decide_tcp_for_origin, Outcome, TcpFrame};
 
 /// Where the gateway writes its journal so it survives the process.
 ///
@@ -124,6 +124,15 @@ pub struct GatewayState {
     /// Where an applied list is written **before** it is applied, so a restart does not
     /// forget a revocation. `None` means it is applied in RAM only, and the binary says so.
     pub rev_path: Option<std::path::PathBuf>,
+    /// The last executed `cmd_seq` **per origin**.
+    ///
+    /// One value for the whole gateway made the first commander's `cmd_seq=1` turn every
+    /// other commander's into a replay, so two authorised senders could not both command
+    /// one gateway (campaign C25). ⚠️ In RAM: a gateway restart forgets these, and an order
+    /// from before the restart is then refused on its `boot_id` instead, which the gate
+    /// checks first. So the sequence does not need to survive a restart — the boot id is
+    /// what makes a previous run's order refusable.
+    pub last_seq: Vec<([u8; 8], u32)>,
     /// Fresh per process start: that is what makes an order from a previous run
     /// refusable, so reusing one would reopen the replay window the gate exists to close.
     pub boot_id: u64,
@@ -147,6 +156,7 @@ impl GatewayState {
             plc: None,
             jsink: None,
             rev: RevState::default(),
+            last_seq: Vec::new(),
             authority: None,
             rev_path: None,
         }
@@ -400,7 +410,18 @@ pub fn handle_frame(sock: &mut TcpStream, st: &mut GatewayState, conf: &Config, 
         r14_safe: true,
     };
     let tid = (order.cmd_seq & 0xFFFF) as u16;
-    let (decision, rules, frame) = decide_tcp(&mut st.gw, &ctx, &order, conf.unit, &conf.map, tid);
+    // "Within limits" consults **this origin's** map when it has one, and the shared map
+    // otherwise. The gate's nine conditions are untouched: only the register map it reads
+    // narrows, so a per-origin line can tighten one sender and never widen another.
+    // This origin's own last executed order, not the gateway's: see `last_seq`.
+    let last = st.last_seq.iter().find(|(fp, _)| *fp == origin_fp).map(|(_, s)| *s);
+    let (decision, rules, frame) = decide_tcp_for_origin(&mut st.gw, &ctx, &order, conf.unit, &origin_fp, &conf.origin_map, &conf.map, last, tid);
+    if decision == Decision::Act {
+        match st.last_seq.iter_mut().find(|(fp, _)| *fp == origin_fp) {
+            Some(e) => e.1 = order.cmd_seq,
+            None => st.last_seq.push((origin_fp, order.cmd_seq)),
+        }
+    }
 
     st.journal_and_persist(
         // The real origin, not eight zero bytes. Without it the journal records that a
