@@ -95,7 +95,7 @@ clairement à l'utilisateur, en une liste de branchements, avant de commencer.
   route vers l'onduleur.
 - **T2, un hôte, deux interfaces** : un seul PC, agent et passerelle en deux
   processus, l'onduleur sur une interface dédiée (Ethernet) et le réseau domestique
-  sur l'autre. Moins fort : l'IHM et l'onduleur partagent une machine. Si c'est T2,
+  sur l'autre (le **Wi-Fi**, qui reste la route par défaut : phase 0, point 0). Moins fort : l'IHM et l'onduleur partagent une machine. Si c'est T2,
   écris-le comme limite.
 
 Dans les deux cas : l'onduleur reste raccordé au réseau électrique, en production.
@@ -105,6 +105,31 @@ web (oralement ou dans un fichier hors dépôt), et l'heure à laquelle il y a d
 soleil pour que la limitation soit visible.
 
 ## Phase 0 — découverte et activation (aucune écriture)
+
+0. **Le PC garde Internet par le Wi-Fi pendant tout le test.** Le câble Ethernet
+   vers l'onduleur ne doit jamais devenir la route par défaut, sinon le PC perd sa
+   connexion (et la session Claude Code avec). Avant de brancher le câble, fais en
+   sorte que les **métriques d'interface** donnent la priorité au Wi-Fi :
+   - **Linux** (NetworkManager) : sur la connexion Ethernet vers l'onduleur,
+     `ipv4.never-default yes`, `ipv4.route-metric` élevé (par exemple 600), et
+     `ipv4.ignore-auto-dns yes` ; sur le Wi-Fi, métrique basse (par exemple 50).
+     Sans NetworkManager : même chose dans `netplan` ou `systemd-networkd`
+     (`RouteMetric=`, `UseRoutes=false` ou pas de passerelle sur l'Ethernet).
+   - **Windows** : désactive la métrique automatique sur les deux interfaces
+     (`Set-NetIPInterface -InterfaceAlias "Ethernet" -AutomaticMetric Disabled
+     -InterfaceMetric 100`, Wi-Fi à 10), et **aucune passerelle par défaut** sur
+     l'Ethernet de l'onduleur (adresse IP statique dans le sous-réseau de
+     l'onduleur, passerelle vide).
+   - Dans tous les cas : adresse **statique** sur l'Ethernet de l'onduleur, pas de
+     DHCP, pas de DNS pris sur cette interface, et une **route spécifique** vers le
+     sous-réseau de l'onduleur seulement.
+
+   **Vérifie** avant et après le branchement : `ip route` / `route print` montre le
+   Wi-Fi comme seule route par défaut ; un `curl` vers l'extérieur passe ; le port
+   502 de l'onduleur répond par l'Ethernet. Si la session tombe quand même au
+   branchement, c'est cette étape qui a échoué : reviens-y avant tout le reste.
+   Note les commandes exactes dans `PLAN.md`, l'utilisateur les rejouera au prochain
+   test.
 
 1. Trouve l'onduleur sur le réseau (mDNS, `arp`, scan du port 502 et 80/443 sur le
    segment). Relève modèle, firmware, numéro de série masqué.
