@@ -227,13 +227,35 @@ mod tests {
     use serial_test::serial;
     static CALL_COUNT: Mutex<u32> = Mutex::new(0);
     fn counter_handler(_h: u64, _p: &[u8]) {
-        if let Ok(mut g) = CALL_COUNT.lock() {
-            *g += 1;
-        } else {
-            // Recover from poisoning transparently for test purposes
-            CALL_COUNT.clear_poison();
-            *CALL_COUNT.lock().unwrap() += 1;
-        }
+        // Recover from poisoning transparently for test purposes. `into_inner`
+        // and not a second `lock()`: a poisoned `lock()` hands the guard back
+        // *inside* the error, and that temporary is alive for the whole `if
+        // let`, so locking again in the `else` branch deadlocks on a lock this
+        // thread already holds — which is exactly the case the branch existed
+        // to handle (clippy::if_let_mutex, found 2026-10-09 by the gate).
+        let mut g = CALL_COUNT.lock().unwrap_or_else(|e| e.into_inner());
+        *g += 1;
+    }
+
+    #[test]
+    #[serial]
+    fn counter_handler_survives_a_poisoned_mutex() {
+        // The defect this pins was latent since the baseline commit because it
+        // cannot be caught by a failing assertion: before the fix this test
+        // *deadlocked* instead of failing. A panicking thread poisons the
+        // mutex exactly as a panicking test would. (The thread prints its own
+        // panic message to stderr; that is the poison being set, not a failure.)
+        CALL_COUNT.clear_poison();
+        *CALL_COUNT.lock().unwrap() = 7;
+        let t = std::thread::spawn(|| {
+            let _g = CALL_COUNT.lock().unwrap();
+            panic!("poisoning CALL_COUNT on purpose");
+        });
+        assert!(t.join().is_err());
+        assert!(CALL_COUNT.is_poisoned());
+        counter_handler(0, b"");
+        assert_eq!(*CALL_COUNT.lock().unwrap_or_else(|e| e.into_inner()), 8);
+        CALL_COUNT.clear_poison();
     }
 
     #[test]

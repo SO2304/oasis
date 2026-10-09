@@ -1,6 +1,6 @@
 # Ce PC comme automate de test — HMI → agent → passerelle → appareil, en vrais processus
 
-**2026-10-09.** Trois exécutions, **55 cas sur 55** chacune. Reproduire :
+**2026-10-09.** Trois exécutions, **69 cas sur 69** chacune. Reproduire :
 
 ```bash
 cargo build --release -p oasis-rt -p oasis-test-plc
@@ -9,9 +9,9 @@ bash tools/pilot_campaign.sh /tmp/camp
 
 | | |
 |---|---|
-| Résultat | **55/55**, trois fois ([`run1.log`](run1.log), [`run2.log`](run2.log), [`run3.log`](run3.log)) |
+| Résultat | **69/69**, trois fois ([`run1.log`](run1.log), [`run2.log`](run2.log), [`run3.log`](run3.log)) |
 | Écritures appliquées par l'appareil | 208 par exécution, comptées **par l'appareil** |
-| Latence bout en bout | **791 / 951 / 711 µs** médiane, ±**17 / 15 / 23 %** (K=10 × 20, une socket tenue) — lus dans [`run1.log`](run1.log), [`run2.log`](run2.log), [`run3.log`](run3.log) |
+| Latence bout en bout | **849 / 609 / 725 µs** médiane, ±**18 / 31 / 23 %** (K=10 × 20, une socket tenue) — lus dans [`run1.log`](run1.log), [`run2.log`](run2.log), [`run3.log`](run3.log) |
 | Journal | **intact, exit 0**, et un refus réécrit en acceptation → **exit 1** |
 
 ## 1. Pourquoi ce n'est pas le test d'intégration qui existait déjà
@@ -35,7 +35,7 @@ hmi_client.py  --Modbus TCP-->  oasis_mbtcp_agent  --v0B-->  oasis_mbtcp_gateway
 Python sans aucun import. Quand l'appareil applique une trame, OASIS ne se donne pas raison
 à lui-même — la même propriété que la carte A sous `rmodbus` en phase 1.4.
 
-## 2. Les 55 cas
+## 2. Les 69 cas
 
 | # | Ce qui est vérifié | Vérité de terrain |
 |---|---|---|
@@ -50,6 +50,11 @@ Python sans aucun import. Quand l'appareil applique une trame, OASIS ne se donne
 | C9 | un **refus réécrit en acceptation** est détecté | `exit 1` |
 | C10 | un redémarrage de passerelle change le `boot_id` et ouvre une chaîne neuve, intacte | deux `JRN_BOOT` différents, deux `exit 0` |
 | C11 | la latence à travers les **vrais binaires** | 711–951 µs, ±15–23 % |
+| C23 | l'agent écrit **son** registre | accepté, l'appareil compte une écriture |
+| C24 | l'agent **ne peut pas** écrire le registre de l'autre, bien qu'il soit dans la carte de la passerelle | `RegisterNotAllowed(12)`, appareil intact |
+| C25 | la **plage** est par origine : 500 refusé à hmi2 (plafond 9), autorisé à l'agent (plafond 1000) sur le **même** registre | `ValueOutOfRange(10, 500)` |
+| C26 | chaque refus est **attribué** à son origine | `origin=aa00` et `origin=ee00` |
+| C27 | compter par origine **n'affaiblit pas** l'anti-rejeu de cette origine | `Reject(StaleOrReplayed)`, `origin=ee00` |
 | C19 | un `ORV1` signé par **deux opérateurs distincts** satisfait k=2 de n=3 | `REVOCATION Applied`, `Change(Revocation) flags=0x10` |
 | C20 | **une** signature ne satisfait pas k=2 | `Reject(BadOperatorSig)`, journalisé non appliqué |
 | C21 | **le même opérateur deux fois** ne fait pas deux voix | `Reject(BadOperatorSig)` |
@@ -103,9 +108,16 @@ l'HMI — la passerelle et le lien vers l'appareil l'avaient, celle-là non — 
 **pas** la cause : la mesure n'a pas bougé, et c'est dit ici plutôt que présenté comme un
 gain.
 
-Reste donc ~770 µs au-dessus du chiffre en processus : les deux `flush` du journal et les
-frontières de processus. **La preuve coûte de la latence**, et le chiffre honnête est 1,2 ms
-par écriture autorisée, journal persisté compris.
+Reste donc ~140 à 390 µs au-dessus du chiffre en processus : les deux `flush` du journal et
+les frontières de processus. **La preuve coûte de la latence**, et le chiffre honnête est
+**609–849 µs** par écriture autorisée (médianes des trois exécutions), journal persisté
+compris.
+
+⚠️ Ce paragraphe a porté « 1,2 ms » jusqu'au 2026-10-09 alors que le tableau d'en-tête du
+même document donnait déjà 711–951 µs : le 1,2 ms datait de l'exécution où le défaut des
+13,2 ms venait d'être corrigé, et la phrase n'avait pas suivi les mesures suivantes. Une
+incohérence **interne au document de preuve**, trouvée en recomptant, et corrigée ici plutôt
+que laissée au lecteur.
 
 ## 3ter. Le journal des changements (1.1.9 al. 5) est enfin **démontré**
 
@@ -200,7 +212,7 @@ redémarre.
    cherche maintenant une entrée dont l'octet n'est pas `00`, et **abandonne** s'il n'en
    trouve aucune.
 3. **Une latence de 151 ms.** C11 lançait un processus Python par écriture et appelait le
-   résultat une latence. Mesuré dans un seul processus sur une socket tenue : 1,2 ms.
+   résultat une latence. Mesuré dans un seul processus sur une socket tenue : 609–849 µs.
 4. **C12 passait sur le mauvais refus.** Le second agent avait ses propres fichiers de
    séquence et de compteur — ils sont nommés d'après le **fichier de config**, alors qu'ils
    appartiennent à l'**identité** — donc son compteur v0B repartait à 1, la fenêtre de la
