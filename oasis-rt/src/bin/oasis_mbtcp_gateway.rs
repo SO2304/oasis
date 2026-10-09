@@ -66,7 +66,14 @@ fn main() {
     // A fresh boot id per process start is what makes an order from a previous run
     // refusable; reusing one would reopen the replay window the gate exists to close.
     let boot_id = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as u64;
-    let router = MeshRouter::new_v0b(conf.our_fp, conf.network_id, conf.our_seed.clone(), conf.registry.clone());
+    let mut router = MeshRouter::new_v0b(conf.our_fp, conf.network_id, conf.our_seed.clone(), conf.registry.clone());
+    // Revocation now has an effect on this path: the gate reads `router.is_revoked`, which
+    // was hard-coded false until 2026-10-09. The list comes from the config, because this
+    // gateway does not handle a signed ORV1 over its link yet — that is the real gap.
+    for fp in &conf.revoked {
+        router.revoke(*fp);
+        println!("GATEWAY revoked fp={}", fp.iter().map(|b| format!("{b:02x}")).collect::<String>());
+    }
 
     // Where the journal is written. Without it the chain lives in RAM and dies with the
     // process, which is what this binary did until 2026-10-09 while its own header said

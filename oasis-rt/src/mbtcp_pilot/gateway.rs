@@ -304,6 +304,13 @@ pub fn handle_frame(sock: &mut TcpStream, st: &mut GatewayState, conf: &Config, 
     };
 
     let inner = inner_slice(&arrived);
+    // Bytes 14..22 of a v0B envelope are the origin fingerprint, and it is signed — the
+    // signature covers origin, counter, length and payload digest, so by the time the
+    // mesh layer has accepted this frame the fingerprint is attributable.
+    let mut origin_fp = [0u8; 8];
+    if arrived.len() >= 22 {
+        origin_fp.copy_from_slice(&arrived[14..22]);
+    }
 
     // A read, if that is what arrived. It is authenticated by the envelope above and
     // bounded by the same register map as a write, but it does **not** go through the
@@ -322,12 +329,47 @@ pub fn handle_frame(sock: &mut TcpStream, st: &mut GatewayState, conf: &Config, 
         }
     };
 
-    let ctx = OrderContext { v0b_ok: true, authorized: true, revoked: false, actuator_boot_id: st.boot_id, now_ms: now_ms(), r14_safe: true };
+    // The gate is Part F's, unchanged — but it is only as good as what it is fed, and three
+    // of these were constants until 2026-10-09 while the firmware fed the same gate real
+    // values. `authorized: true` meant `gateway_id` was never compared, so an order
+    // addressed to another gateway was executed by this one; `revoked: false` meant
+    // revocation did nothing on this path at all.
+    let ctx = OrderContext {
+        // True by construction: the mesh layer verified this envelope above, and a frame
+        // that failed is dropped before reaching here.
+        v0b_ok: true,
+        // The config's key registry is the authorisation list on this path, so holding a
+        // key in it is what "authorised" means — plus the order must be addressed to THIS
+        // gateway. ⚠️ Weaker than the firmware, which also requires the `ACTUATE`
+        // permission from an enrolment attestation; the TCP config has keys, not
+        // permissions, so a key in it can command anything in the register map.
+        authorized: order.gateway_id == conf.gateway_id,
+        // Defence in depth, not the primary check: a revoked origin is dropped by the
+        // **mesh layer** above, before the gate and before its signature is even verified
+        // (v0B enforces revocation at the first hop, proved on silicon). So this can only
+        // matter for a path that reaches the gate without that check — a locally injected
+        // order, say. Measured in the campaign: a revoked origin produces a MeshDrop and a
+        // `Reject(NotVerified)` entry, never a `Reject(Revoked)` one.
+        revoked: st.router.is_revoked(&origin_fp),
+        actuator_boot_id: st.boot_id,
+        now_ms: now_ms(),
+        // No sensor on a host: there is no entropy signal to read, so this is honest
+        // rather than lenient. A gateway co-located with sensing must feed it.
+        r14_safe: true,
+    };
     let tid = (order.cmd_seq & 0xFFFF) as u16;
     let (decision, rules, frame) = decide_tcp(&mut st.gw, &ctx, &order, conf.unit, &conf.map, tid);
 
     st.journal_and_persist(
-        [0u8; 8],
+        // The real origin, not eight zero bytes. Without it the journal records that a
+        // decision happened and not who caused it, which is most of what makes a record
+        // evidence of a *legitimate or illegitimate* intervention.
+        //
+        // Only on a **verified** decision. A dropped envelope keeps `0000` (see the
+        // MeshDrop arm): its origin field is attacker-controlled until the signature has
+        // been checked, and writing an unverified claim into the evidence as if it were
+        // fact is worse than writing nothing.
+        origin_fp,
         order.cmd_seq,
         OrderClass::Act,
         match decision {

@@ -37,6 +37,15 @@ pub struct Config {
     pub gateway_id: u16,
     /// Register map: address → allowed range. Ordered, so a dump is reproducible.
     pub map: Vec<RegRule>,
+    /// Fingerprints refused at the gate, from `revoked = <16 hex>` lines.
+    ///
+    /// ⚠️ This is a **config-time** revocation list: the operator edits the file and
+    /// restarts. The mesh carries a signed `ORV1` list with a monotone epoch, persisted
+    /// before apply and proved on silicon — and this gateway does **not** handle one over
+    /// its link, so that is the gap, not this. Until it does, revoking here means an edit
+    /// and a restart, which is slower than a broadcast and auditable in the same way a
+    /// config is.
+    pub revoked: Vec<[u8; FP_LEN]>,
 }
 
 fn parse_hex(s: &str, out: &mut [u8]) -> Result<(), String> {
@@ -56,6 +65,7 @@ impl Config {
         let mut kv: BTreeMap<String, String> = BTreeMap::new();
         let mut regs: Vec<RegRule> = Vec::new();
         let mut peers: Vec<(String, String)> = Vec::new();
+        let mut revoked_hex: Vec<String> = Vec::new();
 
         for (n, raw) in text.lines().enumerate() {
             let line = raw.split('#').next().unwrap_or("").trim();
@@ -80,6 +90,8 @@ impl Config {
                     };
                     regs.push(RegRule { addr: num(p[0])?, min: num(p[1])?, max: num(p[2])? });
                 }
+                // revoked = <fp hex 16>
+                "revoked" => revoked_hex.push(v.to_string()),
                 // peer = <fp hex 16>,<seed file>   (the seed file yields the public key)
                 "peer" => {
                     let (fp, seed) = v.split_once(',').ok_or_else(|| format!("{path}:{}: peer wants fp,seedfile", n + 1))?;
@@ -126,6 +138,15 @@ impl Config {
             peer_fp,
             gateway_id: need("gateway_id").unwrap_or_else(|_| "1".into()).parse().unwrap_or(1),
             map: regs,
+            revoked: {
+                let mut v = Vec::new();
+                for h in &revoked_hex {
+                    let mut fp = [0u8; FP_LEN];
+                    parse_hex(h, &mut fp).map_err(|e| format!("revoked {h}: {e}"))?;
+                    v.push(fp);
+                }
+                v
+            },
         })
     }
 }

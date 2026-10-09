@@ -372,6 +372,87 @@ case "$MEDOUT" in
      PASS=$((PASS+1));;
 esac
 
+note "C12 an order addressed to ANOTHER gateway_id is refused"
+# Until 2026-10-09 the gate was fed `authorized: true`, so `gateway_id` was never compared
+# and gateway 1 executed orders addressed to gateway 7. The firmware folds that comparison
+# into `authorized`; the TCP path hard-coded it. A second agent config, same keys, different
+# gateway_id, is the whole test.
+sed 's/^gateway_id = 1$/gateway_id = 7/' "$OUT/agent.conf" > "$OUT/agent7.conf"
+# The sequence and counter stores are named after the CONFIG file, but they belong to the
+# IDENTITY -- and this config reuses the same keys. Starting it with fresh stores made its
+# v0B counter restart at 1, the gateway's window refused the envelope as stale, and the
+# order never reached the gate: the case passed on 0x0B while claiming to test gateway_id.
+# Copying them is the fix for the test; the design note is that these paths should derive
+# from the fingerprint, not the filename.
+cp "$OUT/agent.conf.seq" "$OUT/agent7.conf.seq" 2>/dev/null || true
+cp "$OUT/agent.conf.txc" "$OUT/agent7.conf.txc" 2>/dev/null || true
+kill "$AGENT_PID" 2>/dev/null; sleep 0.6
+"$BIN/oasis_mbtcp_agent" --config "$(winpath "$OUT/agent7.conf")" >> "$OUT/agent7.log" 2>&1 &
+AGENT_PID=$!; PIDS="$PIDS $AGENT_PID"
+for i in $(seq 1 20); do ready $AGENT_PORT && break; sleep 0.25; done
+W12=$(plc_writes)
+OUT12=$(hmi write $REG_OK 601)
+check "C12 refused" "EXC" "$OUT12"
+sleep 0.4
+check_eq "C12 the device was not touched" "$W12" "$(plc_writes)"
+cat "$OUT/jrn.head" "$OUT/jrn.entries" > "$OUT/jrn12.txt"
+J12=$("$BIN/oasis_journal_verify" "$(winpath "$OUT/jrn12.txt")" 2>&1 | grep -E '^  \[' | tail -1)
+check "C12 journalled as NotAuthorized" "Reject(NotAuthorized)" "$J12"
+
+note "C13 a REVOKED origin is refused, and revocation now has an effect at all"
+# `revoked: false` was hard-coded, so revoking a node did nothing on this path while
+# revocation is a headline feature proved on silicon. The list is config-time here; a
+# signed ORV1 over this link is still not handled, and that is the remaining gap.
+# Append the key rather than inject it with sed: the first version put a real newline
+# inside the sed expression, which split the command across two lines and produced a
+# config the gateway could not parse ("missing network_id"). Order does not matter in a
+# key=value file.
+{ cat "$OUT/gateway.conf"; echo "revoked = $AGENT_FP"; } > "$OUT/gateway_rev.conf"
+kill "$GW_PID" 2>/dev/null; sleep 0.6
+"$BIN/oasis_mbtcp_gateway" --config "$(winpath "$OUT/gateway_rev.conf")" --journal "$(winpath "$OUT/jrnrev")" >> "$OUT/gateway_rev.log" 2>&1 &
+GW_PID=$!; PIDS="$PIDS $GW_PID"
+for i in $(seq 1 20); do ready $GW_PORT && break; sleep 0.25; done
+check "C13 the gateway says it revoked the fingerprint" "revoked fp=$AGENT_FP" "$(cat "$OUT/gateway_rev.log")"
+# Back to a correctly addressed agent so the refusal can only be the revocation.
+kill "$AGENT_PID" 2>/dev/null; sleep 0.6
+start_agent
+for i in $(seq 1 20); do ready $AGENT_PORT && break; sleep 0.25; done
+W13=$(plc_writes)
+OUT13=$(hmi write $REG_OK 602)
+check "C13 refused" "EXC" "$OUT13"
+sleep 0.4
+check_eq "C13 the device was not touched" "$W13" "$(plc_writes)"
+cat "$OUT/jrnrev.head" "$OUT/jrnrev.entries" > "$OUT/jrn13.txt"
+J13=$("$BIN/oasis_journal_verify" "$(winpath "$OUT/jrn13.txt")" 2>&1 | grep -E '^  \[' | tail -1)
+# What actually happens, which is stronger than what the case first asserted: the MESH
+# layer drops a revoked origin before the gate and before verifying its signature, so the
+# entry is `Reject(NotVerified)` and never `Reject(Revoked)`. Wiring `revoked` into the
+# gate is therefore defence in depth on this path, and the case says so rather than
+# pretending the gate is what stopped it.
+check "C13 refused at the mesh layer, before the gate" "Reject(NotVerified)" "$J13"
+say "  NOTE  C13 revocation bites one layer ABOVE the gate (v0B, first hop); ctx.revoked is defence in depth"
+check "C13 the gateway logged the mesh drop" "MESH_DROP" "$(cat "$OUT/gateway_rev.log")"
+
+note "C14 the journal attributes the decision to an origin, not to eight zero bytes"
+# Every entry recorded origin=0000 until 2026-10-09, so the record said a decision
+# happened and not who caused it -- and para 5 is about a legitimate OR illegitimate
+# intervention, which is an attribution claim.
+# Read a VERIFIED decision (C12's refusal by the gate), not C13's mesh drop: a dropped
+# envelope keeps origin 0000 on purpose, because its origin field is attacker-controlled
+# until the signature is checked. The first version of this case read C13's entry and so
+# tested the one place the property deliberately does not hold.
+ORIG=$(printf '%s' "$J12" | grep -oE 'origin=[0-9a-f]+' | head -1)
+say "  the gate's refusal carries $ORIG (agent fp starts ${AGENT_FP:0:4})"
+say "  and C13's mesh drop carries $(printf '%s' "$J13" | grep -oE 'origin=[0-9a-f]+' | head -1) -- unverified, so not recorded as fact"
+# An empty value is not an attribution. The first version only tested for "origin=0000"
+# and so reported PASS on the empty string left behind by a failing C13 — a case that
+# passes when its input is missing is worse than no case.
+case "$ORIG" in
+  origin=0000) say "  FAIL  C14 the origin is still eight zero bytes"; FAIL=$((FAIL+1));;
+  origin=[0-9a-f]*) say "  PASS  C14 the decision is attributed to $ORIG"; PASS=$((PASS+1));;
+  *) say "  FAIL  C14 no origin field found at all (got '$ORIG')"; FAIL=$((FAIL+1));;
+esac
+
 note "summary"
 say "  PLC: $(plc_writes) applied writes, $(plc_frames) frames received"
 say "  cases: $PASS passed, $FAIL failed"

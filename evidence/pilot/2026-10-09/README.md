@@ -1,6 +1,6 @@
 # Ce PC comme automate de test — HMI → agent → passerelle → appareil, en vrais processus
 
-**2026-10-09.** Trois exécutions, **23 cas sur 23** chacune. Reproduire :
+**2026-10-09.** Trois exécutions, **32 cas sur 32** chacune. Reproduire :
 
 ```bash
 cargo build --release -p oasis-rt -p oasis-test-plc
@@ -9,7 +9,7 @@ bash tools/pilot_campaign.sh /tmp/camp
 
 | | |
 |---|---|
-| Résultat | **23/23**, trois fois ([`run1.log`](run1.log), [`run2.log`](run2.log), [`run3.log`](run3.log)) |
+| Résultat | **32/32**, trois fois ([`run1.log`](run1.log), [`run2.log`](run2.log), [`run3.log`](run3.log)) |
 | Écritures appliquées par l'appareil | 208 par exécution, comptées **par l'appareil** |
 | Latence bout en bout | **1 017 / 1 159 / 1 248 µs** médiane, ±8–15 % (K=10 × 20, une socket tenue) |
 | Journal | **intact, exit 0**, et un refus réécrit en acceptation → **exit 1** |
@@ -35,7 +35,7 @@ hmi_client.py  --Modbus TCP-->  oasis_mbtcp_agent  --v0B-->  oasis_mbtcp_gateway
 Python sans aucun import. Quand l'appareil applique une trame, OASIS ne se donne pas raison
 à lui-même — la même propriété que la carte A sous `rmodbus` en phase 1.4.
 
-## 2. Les 23 cas
+## 2. Les 32 cas
 
 | # | Ce qui est vérifié | Vérité de terrain |
 |---|---|---|
@@ -50,6 +50,9 @@ Python sans aucun import. Quand l'appareil applique une trame, OASIS ne se donne
 | C9 | un **refus réécrit en acceptation** est détecté | `exit 1` |
 | C10 | un redémarrage de passerelle change le `boot_id` et ouvre une chaîne neuve, intacte | deux `JRN_BOOT` différents, deux `exit 0` |
 | C11 | la latence à travers les **vrais binaires** | 1 017–1 248 µs |
+| C12 | un ordre adressé à **un autre `gateway_id`** est refusé | 0x0A, journal `Reject(NotAuthorized)`, compteur inchangé |
+| C13 | une origine **révoquée** est refusée — **au niveau mesh, au-dessus du portail** | `MESH_DROP why="origin revoked"`, journal `Reject(NotVerified)` |
+| C14 | le journal **attribue** la décision à une origine | `origin=aa00` sur une décision vérifiée |
 
 ## 3. Trois défauts trouvés en faisant tourner les vrais programmes
 
@@ -96,7 +99,44 @@ Reste donc ~770 µs au-dessus du chiffre en processus : les deux `flush` du jour
 frontières de processus. **La preuve coûte de la latence**, et le chiffre honnête est 1,2 ms
 par écriture autorisée, journal persisté compris.
 
-## 4. Trois défauts de la campagne elle-même
+## 3bis. Le portail tournait sur trois entrées constantes
+
+Trouvé en relisant ce que la campagne exerçait réellement. Le portail est bien celui de la
+partie F, **inchangé** — mais il ne vaut que ce qu'on lui donne, et la voie TCP lui donnait :
+
+```rust
+OrderContext { v0b_ok: true, authorized: true, revoked: false, ..., r14_safe: true }
+```
+
+là où le firmware lui donne `registry.allows(origin, ACTUATE)`, `router.is_revoked(origin)`
+et `efs.r14_safe_now()`. Conséquences, et ce qui en a été fait :
+
+- **`gateway_id` n'était jamais comparé.** Le firmware plie cette comparaison dans
+  `authorized` ; la voie TCP la codait à `true`, donc la passerelle 1 exécutait un ordre
+  adressé à la passerelle 7. C'est le défaut réel des trois, et **C12** le montre : mêmes
+  clés, `gateway_id = 7`, refus 0x0A, `Reject(NotAuthorized)` au journal, appareil intact.
+- **La révocation ne faisait rien** sur cette voie. Elle en fait maintenant — mais **C13**
+  montre que le vrai garde-fou est **une couche au-dessus** : v0B jette une origine révoquée
+  au premier saut, avant même de vérifier sa signature, donc l'entrée `revoked` du portail
+  est de la **défense en profondeur** et ne se déclenche pas ici. C'est dit comme ça plutôt
+  que de laisser croire que le portail a arrêté quelque chose. ⚠️ La liste est de
+  **configuration** : un `ORV1` signé sur ce lien n'est pas traité, et c'est le manque.
+- **Le journal écrivait `origin=0000`** à chaque entrée : il disait qu'une décision avait eu
+  lieu, pas **qui** l'avait causée, alors que l'alinéa 5 parle d'une intervention
+  légitime *ou illégitime* — une affirmation d'attribution. **C14** : `origin=aa00` sur une
+  décision vérifiée. Et `0000` est **conservé** sur une enveloppe rejetée, délibérément :
+  son champ d'origine est contrôlé par l'attaquant jusqu'à vérification de la signature, et
+  inscrire une prétention non vérifiée dans la preuve est pire que de n'en inscrire aucune.
+
+Deux des quatre constantes restent, en commentaires et non en code : `v0b_ok` est vraie par
+construction (la couche mesh a vérifié l'enveloppe au-dessus) et `r14_safe` n'a **aucun
+capteur à lire** sur un hôte — une passerelle colocée avec de la mesure devra l'alimenter.
+
+⚠️ Reste plus faible que le firmware : la config TCP porte des **clés**, pas des
+**permissions**, donc une clé qui y figure peut commander tout ce que la carte de registres
+autorise. Le modèle d'enrôlement (`ACTUATE`) n'est pas sur cette voie.
+
+## 4. Six défauts de la campagne elle-même
 
 Écrits ici parce qu'un harnais qui mentait une fois mentira encore.
 
@@ -115,6 +155,20 @@ par écriture autorisée, journal persisté compris.
    trouve aucune.
 3. **Une latence de 151 ms.** C11 lançait un processus Python par écriture et appelait le
    résultat une latence. Mesuré dans un seul processus sur une socket tenue : 1,2 ms.
+4. **C12 passait sur le mauvais refus.** Le second agent avait ses propres fichiers de
+   séquence et de compteur — ils sont nommés d'après le **fichier de config**, alors qu'ils
+   appartiennent à l'**identité** — donc son compteur v0B repartait à 1, la fenêtre de la
+   passerelle refusait l'enveloppe comme périmée, et le cas était vert sur un 0x0B sans que
+   l'ordre ait jamais atteint le portail. Corrigé en partageant les deux fichiers ; la note
+   de conception est que ces chemins devraient dériver de l'empreinte, pas du nom de
+   fichier.
+5. **Un `sed` coupé en deux.** Un patch avait écrit un vrai retour à la ligne dans
+   l'expression `sed` qui ajoutait la ligne `revoked`, ce qui cassait la commande en deux et
+   produisait une config que la passerelle refusait (`missing network_id`). Remplaçé par un
+   `cat` + `echo`.
+6. **C14 passait sur une chaîne vide.** Il ne testait que l'égalité à `origin=0000`, donc la
+   valeur vide laissée par un C13 en échec passait. Un cas qui passe quand son entrée manque
+   est pire que pas de cas.
 
 ## 5. Ce que cette campagne ne prouve pas
 

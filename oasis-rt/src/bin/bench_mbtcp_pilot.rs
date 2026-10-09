@@ -76,6 +76,7 @@ fn conf(listen: &str, peer: &str, our: u8) -> Config {
         peer_fp: fp(0xAA),
         gateway_id: 1,
         map: vec![RegRule { addr: REG, min: 0, max: 60000 }],
+        revoked: Vec::new(),
     }
 }
 
