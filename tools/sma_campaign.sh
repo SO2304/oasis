@@ -149,22 +149,25 @@ cat "$WORK/jrn.head" "$WORK/jrn.entries" > "$OUT/journal_dump.txt" 2>/dev/null
 say "  journal_verify exit above (0 = intact)"
 
 say ""
-say "== tamper control: flip one hex digit of one entry, verify must now fail =="
+say "== tamper control: rewrite the last refusal as an acceptance, verify must now fail =="
 TD="$WORK/tampered.txt"
-# Deterministic flip: on the first JRN_E line, swap the first entry hex digit 0<->1 (any
-# other value becomes 0). A single changed digit breaks the hash chain.
+# The canonical tamper of the prompt: a refusal rewritten as an acceptance. The decision
+# byte is byte 25 of the 32-byte entry, i.e. hex chars at line position 57..58 after
+# "JRN_E ". Setting it to "00" turns a Reject into Act without touching the sequence, so the
+# hash chain breaks (verdict Broken, exit 1) rather than merely a sequence gap. Applied to
+# the LAST JRN_E line, which in this campaign is the no-ACTUATE refusal.
 awk '
-  !done && /^JRN_E / {
-    n = index($0, "JRN_E ") + 6
-    c = substr($0, n, 1)
-    nc = (c == "0") ? "1" : "0"
-    $0 = substr($0, 1, n-1) nc substr($0, n+1)
-    done = 1
+  /^JRN_E / { last = NR }
+  { lines[NR] = $0 }
+  END {
+    for (i = 1; i <= NR; i++) {
+      if (i == last) lines[i] = substr(lines[i], 1, 56) "00" substr(lines[i], 59)
+      print lines[i]
+    }
   }
-  { print }
 ' "$OUT/journal_dump.txt" > "$TD"
 "$BIN/oasis_journal_verify" "$(winpath "$TD")" >> "$LOG" 2>&1; TRC=$?
-say "  tampered journal_verify exit=$TRC (non-zero = detected)"
+say "  tampered journal_verify exit=$TRC (1 = broken chain detected)"
 
 say ""
 say "tree=$STAMP  done"
