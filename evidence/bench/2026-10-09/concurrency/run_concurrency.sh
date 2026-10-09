@@ -54,6 +54,14 @@ for i in 1 2 3; do
   cargo test -p oasis-rt --release --test mbtcp_pilot_sockets concurrent 2>&1 \
     | grep -E 'test result:|were refused|out of order' | sed "s/^/run $i: /" | tee -a "$HERE/test_mutant.log"
 done
+echo
+echo "== 5. le banc sous la mutation : le taux de refus, pour qu'il soit reproductible =="
+# The ~0.9 % figure quoted in the spec, CLAUDE.md and section G has to come from a run
+# anyone can repeat, not from a tree that no longer exists. The gateway's own decision
+# record is what names the reason; the exception code alone would only say "refused".
+cargo run --release --quiet --bin bench_mbtcp_concurrency -- --rounds 10 --writes 10 \
+  2>&1 | tee "$HERE/bench_mutant_delay0.log"
+
 git apply -R "$PATCHFILE"
 git diff --quiet -- oasis-rt/src/mbtcp_pilot/agent.rs && echo "  mutation retiree, arbre identique"
 echo
