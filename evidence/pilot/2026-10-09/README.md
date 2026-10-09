@@ -1,6 +1,6 @@
 # Ce PC comme automate de test — HMI → agent → passerelle → appareil, en vrais processus
 
-**2026-10-09.** Trois exécutions, **47 cas sur 47** chacune. Reproduire :
+**2026-10-09.** Trois exécutions, **55 cas sur 55** chacune. Reproduire :
 
 ```bash
 cargo build --release -p oasis-rt -p oasis-test-plc
@@ -9,9 +9,9 @@ bash tools/pilot_campaign.sh /tmp/camp
 
 | | |
 |---|---|
-| Résultat | **47/47**, trois fois ([`run1.log`](run1.log), [`run2.log`](run2.log), [`run3.log`](run3.log)) |
+| Résultat | **55/55**, trois fois ([`run1.log`](run1.log), [`run2.log`](run2.log), [`run3.log`](run3.log)) |
 | Écritures appliquées par l'appareil | 208 par exécution, comptées **par l'appareil** |
-| Latence bout en bout | **1 268 / 1 274 / 1 165 µs** médiane, ±**14 / 27 / 11 %** (K=10 × 20, une socket tenue) — lus dans [`run1.log`](run1.log), [`run2.log`](run2.log), [`run3.log`](run3.log) |
+| Latence bout en bout | **791 / 951 / 711 µs** médiane, ±**17 / 15 / 23 %** (K=10 × 20, une socket tenue) — lus dans [`run1.log`](run1.log), [`run2.log`](run2.log), [`run3.log`](run3.log) |
 | Journal | **intact, exit 0**, et un refus réécrit en acceptation → **exit 1** |
 
 ## 1. Pourquoi ce n'est pas le test d'intégration qui existait déjà
@@ -35,7 +35,7 @@ hmi_client.py  --Modbus TCP-->  oasis_mbtcp_agent  --v0B-->  oasis_mbtcp_gateway
 Python sans aucun import. Quand l'appareil applique une trame, OASIS ne se donne pas raison
 à lui-même — la même propriété que la carte A sous `rmodbus` en phase 1.4.
 
-## 2. Les 47 cas
+## 2. Les 55 cas
 
 | # | Ce qui est vérifié | Vérité de terrain |
 |---|---|---|
@@ -49,7 +49,11 @@ Python sans aucun import. Quand l'appareil applique une trame, OASIS ne se donne
 | C8 | le journal est **sur disque** et vérifie avec le vérificateur indépendant | `exit 0`, acceptations **et** refus nommés |
 | C9 | un **refus réécrit en acceptation** est détecté | `exit 1` |
 | C10 | un redémarrage de passerelle change le `boot_id` et ouvre une chaîne neuve, intacte | deux `JRN_BOOT` différents, deux `exit 0` |
-| C11 | la latence à travers les **vrais binaires** | 1 165–1 274 µs, ±11–27 % |
+| C11 | la latence à travers les **vrais binaires** | 711–951 µs, ±15–23 % |
+| C19 | un `ORV1` signé par **deux opérateurs distincts** satisfait k=2 de n=3 | `REVOCATION Applied`, `Change(Revocation) flags=0x10` |
+| C20 | **une** signature ne satisfait pas k=2 | `Reject(BadOperatorSig)`, journalisé non appliqué |
+| C21 | **le même opérateur deux fois** ne fait pas deux voix | `Reject(BadOperatorSig)` |
+| C22 | le coût du quorum, K=10 | 110 µs (une clé), 234 µs (k=2), 318 µs (k=3) |
 | C15 | un `ORV1` **signé** arrive sur le lien, est appliqué, et **le changement est journalisé** | `Change(Revocation)`, `flags=0x10`, `origin=bb00` |
 | C16 | une époque non supérieure est refusée, **et le refus est journalisé aussi** | `Change(Revocation)`, `flags=0x00` |
 | C17 | une liste signée par un opérateur non approuvé est refusée et journalisée | `Reject(BadOperatorSig)`, `flags=0x00` |
@@ -238,6 +242,36 @@ Trouvés par un audit externe, vérifiés ici contre l'arbre, et tous deux de mo
    commit ne contenant pas ce qu'elle a mesuré n'est pas une preuve. La règle en est
    simple : **commiter d'abord, mesurer ensuite**. Les journaux portent maintenant
    `tree=97a4441`, qui contient bien les 47 cas.
+
+## 4ter. Un cycle de dépendances coûtait une capacité entière
+
+La passerelle refusait **toute** liste multi-signée, par son nom, et la raison n'était pas
+cryptographique : `OperatorAuthority` vit dans `oasis-operator-key`, qui déclarait une
+dépendance vers `oasis-rt`. Comme `oasis-rt` a besoin de ce crate pour les tests de quorum,
+cela formait un **cycle** — toléré dans un espace de travail — et un cycle oblige l'une des
+deux arêtes à être une dépendance de développement. Or **un `[[bin]]` ne peut pas utiliser
+une dépendance de développement**. D'où le refus.
+
+Le cycle était un artefact : `grep -rn oasis_rt oasis-operator-key/src/` ne rend **rien** —
+seuls ses tests et ses exemples s'en servent. Déplacé dans *ses* dépendances de
+développement, le cycle disparaît, `oasis-rt` prend ce crate normalement (optionnel, derrière
+`std`, car un quorum ne se vérifie que sur un hôte) et la règle de quorum revient à celui qui
+la possède.
+
+Ce que cela apporte en plus du simple fait de fonctionner : `verify_authorization` exige **k
+clés distinctes**. Le contrôle à une clé écrit à la main que cette fonction remplace n'avait
+pas cette propriété, et **C21** la montre — le même opérateur signant deux fois est une voix,
+pas deux. Un quorum de clés identiques n'en est pas un, et la configuration refuse aussi un
+doublon dans ses propres lignes `operator`.
+
+⚠️ **Un quorum n'est pas un limiteur de débit**, et la mesure le dit dans le sens inverse de
+l'intuition : un refus coûte environ **une** vérification (le vérificateur s'arrête dès que
+l'issue est jouée), mais un attaquant qui présente n signatures bien formées fait quand même
+faire n vérifications à la passerelle avant qu'elle puisse juger le compte. C'est borné par
+le n de la configuration, pas par l'attaquant.
+
+⚠️ **Rien sur silicium** : aucune carte ne détient un *jeu* de clés opérateur, donc le k
+parmi n sur un nœud reste non démontré.
 
 ## 5. Ce que cette campagne ne prouve pas
 
