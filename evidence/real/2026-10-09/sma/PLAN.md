@@ -157,3 +157,33 @@ Deux façons de la débloquer, au choix :
 Je ne tenterai ni mot de passe par défaut, ni endpoint non authentifié, ni aucune autre
 forme de contournement de l'authentification de l'onduleur : ce serait de l'accès non
 autorisé, et c'est hors de ce que je fais même sur ton propre matériel.
+
+---
+
+## 8. Appareil identifié (plaque signalétique)
+
+L'utilisateur a fourni une photo de la plaque. Relevé, conformément à la phase 0 point 1
+(« relève modèle, firmware, numéro de série masqué ») :
+
+| | |
+|---|---|
+| **Fabricant** | SMA Solar Technology AG, Niestetal, Allemagne |
+| **Modèle** | **SB4.0-1AV-40** — Sunny Boy 4.0, onduleur **monophasé** |
+| **Puissance** | P_AC 4000 W, S_max 4000 VA, 220/230/240 V, 50/60 Hz |
+| **Numéro de série** | `199212xxxx` (4 derniers masqués, règle 10) |
+| **Date de fabrication** | 2018-08-08 |
+| **Firmware** | **non relevé** — lisible seulement après connexion au web ou activation du Modbus |
+
+Conséquences pour la campagne :
+
+- **Monophasé** → pour la puissance AC de la ligne de base, le modèle SunSpec attendu est
+  le **101** (*single phase AC monitoring*), pas le 103.
+- Série **1AV-40** « Smart Connected », fabriquée en 2018 : le profil SunSpec effectif
+  (1.1 ou 2.0) dépend du jeu de données pays, à confirmer par `oasis_sma_probe` une fois le
+  Modbus actif. Le modèle de contrôle sera donc **123** ou **704**, l'outil le dira.
+
+⚠️ **Codes de la plaque délibérément NON consignés** (règle 10) : la clé WPA2-PSK (point
+d'accès Wi-Fi de l'onduleur), le RID et le PIC (enregistrement Sunny Portal). Aucun n'est
+le mot de passe du **groupe Installateur** de l'interface web locale, lequel est défini à
+la mise en service et ne figure pas sur la plaque. Il reste donc le seul élément nécessaire
+pour activer le Modbus, et il n'a pas de contournement acceptable.
