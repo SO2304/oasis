@@ -2,7 +2,10 @@ name: OASIS-RT CI
 
 on:
   push:
-    branches: [main, master]
+    # Every branch, not just main. A work branch got no run at all unless someone
+    # remembered the manual button, so the gate that matters most — the one on the
+    # branch being written — was the one that never ran (noticed 2026-10-09).
+    branches: ['**']
   pull_request:
   # Manual trigger. Two reasons: a branch that is neither main nor a PR gets no run
   # otherwise, and if this button is absent from the Actions tab then Actions is
@@ -45,8 +48,20 @@ jobs:
         run: cargo clippy --release --bins --lib
       - name: cargo build --release
         run: cargo build --release --bins --lib
-      - name: cargo test --release --lib
-        run: cargo test --release --lib
+      - name: cargo test --release --workspace
+        # NOT `--lib`: that ran the library's own tests and nothing else, so the
+        # integration tests under oasis-rt/tests/ — the ones that drive real sockets
+        # against an rmodbus device, including the concurrency regression test — never ran
+        # in CI at all (noticed 2026-10-09).
+        run: cargo test --release --workspace
+      - name: cargo test (oasis-lora-transport, outside the workspace)
+        # This crate is deliberately not a workspace member: it unconditionally enables
+        # oasis-rt/mesh_bloom_mcu, which inside the workspace would shrink the host Bloom
+        # filter for every crate. The consequence was that `--workspace` never reached it
+        # and its 31 tests ran nowhere — including the ones that pin the radio budget
+        # figures six documents quote.
+        working-directory: oasis-lora-transport
+        run: cargo test --release
       - name: Smoke test drone_bridge (Linux/macOS)
         if: runner.os != 'Windows'
         env:
@@ -147,7 +162,10 @@ jobs:
       # why it belongs in CI rather than in a one-off log.
       - name: Build the binaries and the device
         run: cargo build --release -p oasis-rt -p oasis-test-plc
-      - name: Run the campaign (23 cases; the device's own write counter is the ground truth)
+      # No case count in this name: it said 23 while the campaign was at 69, and a number
+      # in a step title is a number nothing checks. The script prints its own count and
+      # fails on any case; `tools/check_claims.sh` compares the count to the archived log.
+      - name: Run the campaign (the device's own write counter is the ground truth)
         run: bash tools/pilot_campaign.sh "$RUNNER_TEMP/campaign"
       - name: Keep the logs whatever happened
         if: always()
@@ -158,6 +176,32 @@ jobs:
             ${{ runner.temp }}/campaign/*.log
             ${{ runner.temp }}/campaign/jrn*.txt
           if-no-files-found: warn
+
+  claims:
+    name: Documented counts match the tree (tools/check_claims.sh --full)
+    runs-on: ubuntu-latest
+    needs: rust-tests
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: .
+      # The drift checker re-derives every count in CLAUDE.md, README.md and SECURITY.md
+      # from the tree, verifies each evidence manifest against the committed blobs, checks
+      # that every file under evidence/ is covered by one, runs the MCU build command
+      # printed in CLAUDE.md, and refuses a broken relative link or a markdown table row
+      # whose width does not match its header. It ran only on a developer's machine until
+      # 2026-10-09, which is the one place a tired developer skips it.
+      # Two targets: the build command printed in CLAUDE.md is thumbv7em (the matrix's
+      # "MCU cross-compile" row), while the firmware size table is measured on thumbv6m
+      # ELFs. The checker uses both, so both must be installed or it reports a failure that
+      # is the runner's, not the tree's.
+      - name: Install the MCU targets the checker uses
+        run: rustup target add thumbv7em-none-eabi thumbv6m-none-eabi
+      - name: bash tools/check_claims.sh --full
+        run: bash tools/check_claims.sh --full
 
   docker-build:
     name: Docker image build + healthcheck
