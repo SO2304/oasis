@@ -79,3 +79,4 @@ oasis_shared/
 
 # Prebuilt/compiled binaries — never commit (regenerable via cargo build)
 oasis-lab-pack/binaries/
+twohost/
