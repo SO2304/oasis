@@ -85,6 +85,26 @@ if [ -n "$hs" ]; then
 fi
 
 echo
+echo "== chaque membre du workspace est copie dans le Dockerfile =="
+# Cargo parses the whole workspace manifest before compiling anything, so a member the
+# Dockerfile does not COPY fails the image build before a crate is touched. That broke CI
+# twice in one day (oasis-operator-key, then oasis-test-plc), both times only visible on
+# a push. Checked here instead.
+miss=0; n=0
+for p in $(awk '/^members = \[/{f=1;next} f&&/^\]/{exit} f&&/^[[:space:]]*#/{next} f&&/"/{gsub(/[",]/,"");print $1}' Cargo.toml); do
+  n=$((n + 1))
+  grep -q "^COPY $p " oasis-rt/Dockerfile || { echo "  MANQUE COPY $p dans oasis-rt/Dockerfile"; miss=$((miss + 1)); }
+done
+if [ "$miss" = 0 ]; then
+  printf '  ok    %-34s %s membres
+' "membres copies dans Dockerfile" "$n"
+else
+  printf '  DRIFT %-34s %s membre(s) absent(s)
+' "membres copies dans Dockerfile" "$miss"
+  fail=$((fail + 1))
+fi
+
+echo
 echo "== inventaire 1.1.9 al. 3 : chaque chemin cite doit exister =="
 # Annex III 1.1.9 para 3 wants the safety-critical software "identified as such". A list
 # written once drifts into fiction the first time a module is renamed, so every path in

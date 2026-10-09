@@ -25,6 +25,12 @@ COPY oasis-rt ./oasis-rt
 COPY oasis-operator-key ./oasis-operator-key
 COPY oasis-secure-element ./oasis-secure-element
 COPY oasis-trl-harness ./oasis-trl-harness
+# Every member must be here even when the image needs none of its code: Cargo parses the
+# whole workspace manifest before compiling anything, so one missing directory fails the
+# build before a crate is touched. Adding `oasis-test-plc` as a member broke this build
+# for exactly that reason, which is the second time in one day — the first was
+# `oasis-operator-key`. If you add a member, add it here.
+COPY oasis-test-plc ./oasis-test-plc
 RUN cargo build --release -p oasis-rt --bin drone_bridge
 RUN cargo test --release -p oasis-rt --lib
 
