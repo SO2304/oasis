@@ -101,12 +101,12 @@ qui réclame ce qu'elle a déjà est une spec que personne ne relit.
   fichier aussi lisible qu'un autre sur l'hôte.
 - **Les ordres sont servis un à la fois**, et c'est désormais **mesuré** et non seulement
   affirmé (`bench_mbtcp_concurrency`, K=10, 2026-10-09). Avec 1, 2, 5 puis 10 IHM
-  concurrentes sur une boucle locale : débit **1 333 → 2 175 acquittements/s** mais au
-  plafond dès **N=5**, et latence **663 → 4 401 µs**, soit ~6× pour 10 fois plus de
-  clients. En donnant à l'appareil un temps de réponse de **2 ms** — un automate réel a un
-  cycle de scrutation, la boucle locale n'en a pas — le débit est **plat à ~325/s de N=1 à
-  N=10** et la latence croît **exactement** linéairement : 2 885 / 6 275 / 15 049 /
-  30 344 µs. C'est de l'attente, pas du travail.
+  concurrentes sur une boucle locale : débit **1 843 → 2 169 acquittements/s** mais à
+  moins de 10 % de son maximum dès **N=2**, et latence **450 → 4 447 µs**, soit **×9,9**
+  pour dix fois plus de clients. En donnant à l'appareil un temps de réponse de **2 ms** —
+  un automate réel a un cycle de scrutation, la boucle locale n'en a pas — le débit est
+  **plat à 307–324/s de N=1 à N=10** et la latence croît linéairement **à ±3 % près** :
+  3 100 / 6 156 / 15 368 / 30 505 µs. C'est de l'attente, pas du travail.
 
   ⚠️ **Découper le verrou n'y changerait rien**, et c'est la conclusion honnête contre
   l'intuition : la ressource sérialisée n'est pas l'état de la passerelle mais **la
@@ -122,10 +122,17 @@ qui réclame ce qu'elle a déjà est une spec que personne ne relit.
   l'aller-retour en dehors : deux IHM pouvaient réserver 5 et 6 et faire arriver 6 en
   premier, après quoi 5 devenait `Reject(StaleOrReplayed)` — **une écriture légitime
   refusée**, montrée à l'opérateur en 0x0A, ce qu'un opérateur lit « non autorisé ». Le
-  banc en a compté **16 sur 1 784 acquittements** (~0,9 %) à N=5 et N=10, lues dans le
-  registre de décisions de la passerelle elle-même et non déduites du code d'exception.
-  L'agent signe et émet maintenant dans la même section critique : **0 refus** aux mêmes
-  N, pour un débit qui passe de ~3 065 à ~2 175/s. Prix payé volontiers.
+  banc en a compté **32 sur 1 800** (1,8 % ; 4 à N=5, 28 à N=10), **toutes** en
+  `Reject(StaleOrReplayed)` contre 1 768 `Act`, lues dans le registre de décisions de la
+  passerelle elle-même et **non déduites** du code d'exception — un 0x0A ne dit que « la
+  porte a refusé », et laquelle des neuf conditions a tiré est exactement là qu'une
+  explication plausible et fausse s'écrit. L'agent signe et émet maintenant dans la même
+  section critique : **0 refus** aux mêmes N, au prix de **46 % du débit à N=5**
+  (3 975 → 2 150/s) et d'une latence doublée (1 078 → 2 198 µs). C'est près de la moitié,
+  et c'est dit plutôt qu'arrondi : une passerelle qui refuse 1,8 % des écritures légitimes
+  en affichant « non autorisé » n'est pas utilisable, et le débit perdu se récupère par des
+  origines distinctes. Empreinte `aae60da`,
+  `evidence/bench/2026-10-09/concurrency/`.
 - **Une injection Modbus brute ne laisse aucune entrée de journal** : elle est refusée par
   le cadrage avant de devenir une décision. C'est une limite connue de la piste d'audit,
   pas un oubli.

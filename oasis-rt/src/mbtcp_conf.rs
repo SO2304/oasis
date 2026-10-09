@@ -15,7 +15,7 @@ use std::collections::BTreeMap;
 use std::fs;
 
 use crate::enrollment::{perm, Entry, Registry};
-use crate::mesh::{mesh_v10_pubkey_from_seed, MeshEdSeed, MeshPubRegistry, FP_LEN, MESH_V0B_NETWORK_LEN};
+use crate::mesh::{mesh_v10_pubkey_from_seed, MeshEdPub, MeshEdSeed, MeshPubRegistry, ED25519_PUB_LEN, FP_LEN, MESH_V0B_NETWORK_LEN};
 use crate::modbus_gateway::{OriginRule, RegRule};
 
 #[derive(Clone)]
@@ -96,6 +96,7 @@ impl Config {
         let mut kv: BTreeMap<String, String> = BTreeMap::new();
         let mut regs: Vec<RegRule> = Vec::new();
         let mut peers: Vec<(String, String, String)> = Vec::new();
+        let mut peer_pks: Vec<(String, String, String)> = Vec::new();
         let mut revoked_hex: Vec<String> = Vec::new();
         let mut origin_regs: Vec<(String, String, String, String)> = Vec::new();
         let mut operator_hex: Vec<String> = Vec::new();
@@ -136,8 +137,29 @@ impl Config {
                 "revoked" => revoked_hex.push(v.to_string()),
                 "operator" => operator_hex.push(v.to_string()),
                 "quorum" => quorum = Some(v.trim().to_string()),
+                // peer_pk = <fp hex 16>,<Ed25519 public key, 64 hex>[,<PERM|PERM…>]
+                //
+                // The form to deploy with. `peer` below derives a peer's public key from
+                // its **seed**, which is its private key: a gateway configured that way
+                // holds the signing key of every node it trusts, the operator's included,
+                // so taking the machine-side host yields the ability to forge the orders
+                // it is there to check. On one lab host both ends share a directory and it
+                // never showed; on two machines (A.6) it is a blocker, which is why this
+                // exists. `oasis_mbtcp_revoke --print-pub <seedfile>` prints the hex to
+                // put here — not `oasis_fingerprint`, which handles the spore layer's
+                // X25519 keys and takes a public key as input rather than deriving one.
+                "peer_pk" => {
+                    let mut it = v.splitn(3, ',');
+                    let fp = it.next().ok_or_else(|| format!("{path}:{}: peer_pk wants fp,pubkey", n + 1))?;
+                    let pk = it.next().ok_or_else(|| format!("{path}:{}: peer_pk wants fp,pubkey", n + 1))?;
+                    let perms = it.next().unwrap_or("").trim().to_string();
+                    peer_pks.push((fp.trim().to_string(), pk.trim().to_string(), perms));
+                }
                 // peer = <fp hex 16>,<seed file>   (the seed file yields the public key)
                 // peer = <fp hex 16>,<seed file>[,<PERM|PERM…>]
+                //
+                // ⚠️ Keeps a **private** seed in this host's reach. Fine for a single-host
+                // test, wrong for a deployment: prefer `peer_pk`.
                 "peer" => {
                     let mut it = v.splitn(3, ',');
                     let fp = it.next().ok_or_else(|| format!("{path}:{}: peer wants fp,seedfile", n + 1))?;
@@ -174,6 +196,20 @@ impl Config {
             let pk = mesh_v10_pubkey_from_seed(&s).map_err(|e| format!("peer key: {e}"))?;
             registry.insert(fp, pk);
             let bits = parse_perms(&perm_spec).map_err(|e| format!("peer {fp_hex}: {e}"))?;
+            perms.entries.push(Entry { fp, pk: pk.0, role: 0, permissions: bits, seq: 0 });
+        }
+
+        // The deployable form: a public key, written out, no private material on this
+        // host. Same registry, same permission rule — only where the key comes from
+        // differs, so nothing about verification changes.
+        for (fp_hex, pk_hex, perm_spec) in peer_pks {
+            let mut fp = [0u8; FP_LEN];
+            parse_hex(&fp_hex, &mut fp).map_err(|e| format!("peer_pk fp: {e}"))?;
+            let mut pkb = [0u8; ED25519_PUB_LEN];
+            parse_hex(&pk_hex, &mut pkb).map_err(|e| format!("peer_pk {fp_hex}: {e}"))?;
+            let pk = MeshEdPub(pkb);
+            registry.insert(fp, pk);
+            let bits = parse_perms(&perm_spec).map_err(|e| format!("peer_pk {fp_hex}: {e}"))?;
             perms.entries.push(Entry { fp, pk: pk.0, role: 0, permissions: bits, seq: 0 });
         }
 
@@ -283,4 +319,103 @@ pub fn read_seed(path: &str) -> Result<MeshEdSeed, String> {
     let mut s = [0u8; 32];
     parse_hex(text.trim(), &mut s).map_err(|e| format!("{path}: {e}"))?;
     Ok(MeshEdSeed(s))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn tmp(name: &str, body: &str) -> String {
+        let p = std::env::temp_dir().join(format!("oasis_conf_{}_{}", std::process::id(), name));
+        fs::write(&p, body).unwrap();
+        p.to_str().unwrap().to_string()
+    }
+
+    fn seed_bytes(byte: u8) -> [u8; 32] {
+        let mut s = [0u8; 32];
+        for (i, b) in s.iter_mut().enumerate() {
+            *b = byte.wrapping_add(i as u8);
+        }
+        s
+    }
+
+    fn hex(b: &[u8]) -> String {
+        b.iter().map(|x| format!("{x:02x}")).collect()
+    }
+
+    /// `peer_pk` must be exactly equivalent to `peer`, minus the private material.
+    ///
+    /// The point of `peer_pk` is deployment: `peer` derives a trusted node's public key
+    /// from its **seed**, so a gateway configured that way holds the signing key of every
+    /// node it trusts — the operator's included — and taking the machine-side host yields
+    /// the ability to forge the very orders the gateway exists to check. On one lab host
+    /// both ends share a directory and it never showed. This test is what says the safe
+    /// form grants the same trust and the same permissions, so switching to it changes
+    /// nothing about verification.
+    #[test]
+    fn peer_pk_is_equivalent_to_peer_without_the_private_seed() {
+        let sk = seed_bytes(0xAA);
+        let pk = mesh_v10_pubkey_from_seed(&MeshEdSeed(sk)).unwrap();
+        let our = tmp("our.seed", &hex(&seed_bytes(0xCC)));
+        let theirs = tmp("their.seed", &hex(&sk));
+
+        let common = format!(
+            "listen = 127.0.0.1:0\npeer_addr = 127.0.0.1:1\nunit = 0x11\n\
+             network_id = 4f415349536e6574\nour_fp = cc00000000000000\n\
+             our_seed_file = {}\nregister = 10,0,1000\n",
+            our.replace('\\', "/")
+        );
+        let with_seed = Config::load(&tmp("a.conf", &format!("{common}peer = aa00000000000000,{},ACTUATE\n", theirs.replace('\\', "/")))).unwrap();
+        let with_pub = Config::load(&tmp("b.conf", &format!("{common}peer_pk = aa00000000000000,{},ACTUATE\n", hex(&pk.0)))).unwrap();
+
+        let fp: [u8; FP_LEN] = [0xAA, 0, 0, 0, 0, 0, 0, 0];
+        assert_eq!(with_seed.registry.get(&fp).map(|k| k.0), Some(pk.0), "the seed form trusts this key");
+        assert_eq!(with_pub.registry.get(&fp).map(|k| k.0), Some(pk.0), "the public form trusts the same key");
+        assert_eq!(with_pub.perms.entries.len(), with_seed.perms.entries.len());
+        assert!(with_pub.perms.allows(&fp, perm::ACTUATE), "and grants the same permission");
+        assert!(with_seed.perms.allows(&fp, perm::ACTUATE));
+
+        // The whole point: the deployed file contains no private key.
+        let text = fs::read_to_string(tmp("b.conf", &format!("{common}peer_pk = aa00000000000000,{},ACTUATE\n", hex(&pk.0)))).unwrap();
+        assert!(!text.contains(&hex(&sk)), "a peer_pk config must not carry the peer's seed");
+    }
+
+    /// A malformed public key is refused at load, not at the first order.
+    #[test]
+    fn peer_pk_refuses_a_key_that_is_not_32_bytes() {
+        let our = tmp("our2.seed", &hex(&seed_bytes(0xCC)));
+        let body = format!(
+            "listen = 127.0.0.1:0\npeer_addr = 127.0.0.1:1\nunit = 0x11\n\
+             network_id = 4f415349536e6574\nour_fp = cc00000000000000\n\
+             our_seed_file = {}\npeer_pk = aa00000000000000,abcd,ACTUATE\n",
+            our.replace('\\', "/")
+        );
+        // Not `unwrap_err()`: `Config` has no `Debug`, deliberately — deriving it would
+        // print `our_seed`, a private key, into test output and panic messages.
+        let e = match Config::load(&tmp("c.conf", &body)) {
+            Err(e) => e,
+            Ok(_) => panic!("a 2-byte public key was accepted"),
+        };
+        assert!(e.contains("peer_pk"), "the error must name the line: {e}");
+    }
+
+    /// Fail closed: a `peer_pk` with no permission field grants nothing, exactly as a
+    /// `peer` line with none does. The opposite default would hand actuation to every key
+    /// in the file.
+    #[test]
+    fn peer_pk_without_a_permission_grants_nothing() {
+        let pk = mesh_v10_pubkey_from_seed(&MeshEdSeed(seed_bytes(0xAA))).unwrap();
+        let our = tmp("our3.seed", &hex(&seed_bytes(0xCC)));
+        let body = format!(
+            "listen = 127.0.0.1:0\npeer_addr = 127.0.0.1:1\nunit = 0x11\n\
+             network_id = 4f415349536e6574\nour_fp = cc00000000000000\n\
+             our_seed_file = {}\npeer_pk = aa00000000000000,{}\n",
+            our.replace('\\', "/"),
+            hex(&pk.0)
+        );
+        let c = Config::load(&tmp("d.conf", &body)).unwrap();
+        let fp: [u8; FP_LEN] = [0xAA, 0, 0, 0, 0, 0, 0, 0];
+        assert!(c.registry.get(&fp).is_some(), "the key is still trusted for verification");
+        assert!(!c.perms.allows(&fp, perm::ACTUATE), "but it may not actuate");
+    }
 }

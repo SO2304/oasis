@@ -211,6 +211,30 @@ else
 fi
 
 echo
+echo "== liens relatifs casses dans les documents =="
+# A document that points at a file which has moved is a document the reader stops
+# trusting. These paths are not checked by any compiler, so nothing notices when a spec
+# is renamed. Skips http(s)/mailto and pure #anchors; judges only on-disk paths.
+lnbad=0; lnseen=0
+while IFS= read -r f; do
+  d=$(dirname "$f")
+  while IFS= read -r l; do
+    case "$l" in http*|mailto:*|\#*|"") continue ;; esac
+    t="$d/${l%%#*}"
+    # Normalise ../ without realpath, which refuses a non-existent path on some hosts.
+    t=$(printf '%s\n' "$t" | sed -e 's|/\./|/|g' -e ':a' -e 's|/[^/][^/]*/\.\.\(/\|$\)|\1|' -e 'ta' -e 's|^\./||')
+    lnseen=$((lnseen + 1))
+    [ -e "$t" ] || { printf '  CASSE %s -> %s\n' "$f" "$l"; lnbad=$((lnbad + 1)); }
+  done < <(grep -oE '\]\([^)]+\)' "$f" 2>/dev/null | sed 's/^](//; s/)$//')
+done < <(find CLAUDE.md README.md docs partners -name '*.md' 2>/dev/null)
+if [ "$lnbad" = 0 ]; then
+  printf '  ok    %-34s %s liens verifies\n' "liens relatifs" "$lnseen"
+else
+  printf '  DRIFT %-34s %s lien(s) casse(s) sur %s\n' "liens relatifs" "$lnbad" "$lnseen"
+  fail=$((fail + 1))
+fi
+
+echo
 echo "== lignes de tableau dont la largeur ne suit pas leur en-tete =="
 # An unescaped `|` inside a cell adds a column, and every renderer drops what follows
 # it: the text sits in the file and is invisible to the reader. Found 2026-10-09 in

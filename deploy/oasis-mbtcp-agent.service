@@ -1,0 +1,47 @@
+[Unit]
+# Operator side. The HMI writes plain Modbus TCP to this; it signs an order and forwards
+# it. The HMI is not modified. Nothing here is part of an emergency-stop chain: see
+# docs/PILOT_INSTALL.md §8.
+Description=OASIS Modbus TCP agent (operator side)
+Documentation=file:/usr/share/doc/oasis/PILOT_INSTALL.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=oasis
+Group=oasis
+ExecStart=/usr/local/bin/oasis_mbtcp_agent --config /etc/oasis/agent.conf
+
+# The sequence and the v0B send counter are leased on disk **before** an order goes out,
+# so a restart can lose numbers and never reuse one. That is why restarting is safe; an
+# agent whose counter reset to 1 would be refused by its own gateway, which is the defect
+# the end-to-end campaign found.
+Restart=always
+RestartSec=1
+StartLimitIntervalSec=0
+
+# ⚠️ No WatchdogSec, for the same reason as the gateway: no sd_notify keepalive is sent.
+# A crashed agent is restarted; a hung one is not detected here. The HMI notices, because
+# its connection stops being answered — but it is told by silence, not by an exception,
+# which is weaker than the gateway case and is stated as such.
+
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6
+RestrictNamespaces=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+# The lease files live here; without write access the agent cannot claim a number and
+# will refuse to send rather than risk reusing one.
+ReadWritePaths=/var/lib/oasis
+ReadOnlyPaths=/etc/oasis
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,49 @@
+[Unit]
+# Machine side. Verifies a signed order, runs the unchanged Part F gate, and writes to
+# the PLC only on `Act`. Nothing here is part of an emergency-stop chain: see
+# docs/PILOT_INSTALL.md §8.
+Description=OASIS Modbus TCP gateway (machine side)
+Documentation=file:/usr/share/doc/oasis/PILOT_INSTALL.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=oasis
+Group=oasis
+ExecStart=/usr/local/bin/oasis_mbtcp_gateway --config /etc/oasis/gateway.conf --journal /var/lib/oasis/jrn
+
+# A crash must not leave the machine without a gateway, because the fallback is an HMI
+# wired straight to the PLC — exactly what this exists to prevent. The journal and the
+# v0B counter window are both on disk, so a restart resumes rather than resets.
+Restart=always
+RestartSec=1
+# No StartLimitBurst cap: a gateway that refuses to come back after five crashes is worse
+# than one that keeps trying, since a dead gateway means no authorised writes at all.
+StartLimitIntervalSec=0
+
+# ⚠️ No WatchdogSec. A watchdog needs the process to send sd_notify keepalives, and this
+# binary does not; declaring one would make systemd kill a healthy process. So systemd
+# restarts a **crashed** gateway and cannot detect a **hung** one. What covers a hang is
+# the other end: the agent's timeout turns silence into Modbus exception 0x0B, so the HMI
+# is told, and no write reaches the machine. Pinned by
+# `a_dead_gateway_still_answers_the_hmi`. Named here rather than papered over.
+
+# The config file holds this node's private seed, so the process needs no more than that.
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6
+RestrictNamespaces=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+ReadWritePaths=/var/lib/oasis
+ReadOnlyPaths=/etc/oasis
+
+[Install]
+WantedBy=multi-user.target
