@@ -27,16 +27,29 @@ STAMP="$(git rev-parse --short HEAD)"
 echo "tree=$STAMP  $(date -u +%FT%TZ)  $(cargo +nightly-2025-11-21 fuzz --version 2>&1 | head -1)"
 echo
 
+ROOT="$PWD"
 for t in modbus_tcp link_frames; do
   echo "== $t, ${SECS}s =="
+  LOG="$ROOT/$HERE/$t.log"
   ( cd oasis-rt && cargo +nightly-2025-11-21 fuzz run "$t" -O -- \
-      -max_total_time="$SECS" -print_final_stats=1 ) > "../$HERE/$t.log" 2>&1
+      -max_total_time="$SECS" -print_final_stats=1 ) > "$LOG" 2>&1
   rc=$?
+  # The first version of this script wrote its log outside the repo and then reported
+  # "0 plantage" for a run that never happened: `grep -q` on a missing file returns
+  # non-zero, which took the else branch. A verdict must never be reachable without the
+  # evidence it is a verdict about.
+  [ -s "$LOG" ] || { echo "ABANDON: $LOG vide ou absent — rien n'a tourne"; exit 4; }
+  grep -q 'Done .* runs' "$LOG" || grep -qE '#[0-9]+[[:space:]]+DONE' "$LOG" || {
+    echo "ABANDON: $t n'a pas termine une campagne (ni 'Done ... runs' ni '#N DONE')"
+    sed -n '1,12p' "$LOG"
+    exit 4
+  }
   printf 'exit=%s  ' "$rc"
-  grep -oE 'stat::number_of_executed_units: *[0-9]+|#[0-9]+[[:space:]]+DONE' "$HERE/$t.log" | tail -2 | tr '\n' ' '
+  grep -oE 'stat::number_of_executed_units: *[0-9]+' "$LOG" | tail -1 | tr '\n' ' '
+  grep -oE 'Done [0-9]+ runs' "$LOG" | tail -1 | tr '\n' ' '
   echo
   # A crash leaves an artifact; libFuzzer also prints the word. Judge on both.
-  if grep -qE 'ERROR: libFuzzer|SUMMARY: AddressSanitizer|panicked at' "$HERE/$t.log"; then
+  if grep -qE 'ERROR: libFuzzer|SUMMARY: AddressSanitizer|panicked at' "$LOG"; then
     echo "  PLANTAGE — voir $HERE/$t.log et oasis-rt/fuzz/artifacts/$t/"
   else
     echo "  0 plantage"
