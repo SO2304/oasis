@@ -119,3 +119,41 @@ et sans effet sur la valeur.
 - T2 : agent et passerelle sur la même machine (§2).
 - La phrase « non testé sur automate du commerce » **reste vraie** : un onduleur n'est pas
   un automate, et elle doit rester écrite dans `CLAUDE.md`.
+
+---
+
+## 7. Outil de découverte prêt — `oasis_sma_probe` (lecture seule)
+
+Ajouté le 2026-10-09 pour satisfaire la règle 1 **sans forum et sans contournement** :
+`oasis-rt/src/bin/oasis_sma_probe.rs`, un client Modbus TCP qui **n'émet que du FC03**
+(lecture de registres) — il ne peut pas écrire. Il parcourt la chaîne des modèles SunSpec
+(`"SunS"` → en-tête id+longueur par modèle, §4 de SMA), liste les modèles présents, lit
+l'identité du modèle commun 1 (numéro de série masqué, 4 derniers caractères, règle 10) et
+**affiche** le bloc du modèle 123 ou 704 pour que l'offset de `WMaxLimPct` et de son facteur
+d'échelle soit confirmé contre la définition SunSpec avant qu'aucune écriture ne soit
+planifiée.
+
+Le cœur (parcours de chaîne, parse FC03, masquage) est **testé sans matériel** : 8 tests
+unitaires verts. Lancé contre l'onduleur avec le Modbus encore éteint, il échoue proprement
+(`TimedOut` sur le port 502, exit 1) et nomme la cause.
+
+```text
+oasis_sma_probe --addr 169.254.12.3:502 --unit 126
+```
+
+⚠️ **Il ne tournera pour de vrai qu'une fois le serveur Modbus activé.** Cette activation
+est la seule chose qui reste bloquée, et elle n'a pas de contournement acceptable : elle se
+fait par l'interface web de l'onduleur, avec le mot de passe installateur, sur ton appareil.
+Deux façons de la débloquer, au choix :
+
+1. **Tu actives le Modbus toi-même** (c'est l'exception prévue par le prompt à « l'utilisateur
+   ne fait que le câblage ») : interface web → assistant d'installation → **Configuration
+   réseau > Modbus** → type de communication = Modbus, port TCP **502**, version de profil
+   « Standard (recommandé) ». Dis-moi ensuite l'Unit ID affiché.
+2. **Tu me donnes le mot de passe installateur pour la session** (oralement/ici, jamais
+   écrit dans le dépôt, règle 10) et je fais les mêmes clics par l'interface web — en
+   l'utilisant comme prévu, pas en la contournant.
+
+Je ne tenterai ni mot de passe par défaut, ni endpoint non authentifié, ni aucune autre
+forme de contournement de l'authentification de l'onduleur : ce serait de l'accès non
+autorisé, et c'est hors de ce que je fais même sur ton propre matériel.

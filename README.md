@@ -5,7 +5,7 @@
 
 Bio-inspired agentic middleware: tension fields, Hebbian/STDP synapses, emotional
 modulation, reflex arcs, federated learning. Runtime in Rust (49 modules, 672 lib tests,
-716 passing across the workspace, 196 Kani proof harnesses of which 182 are verified on
+724 passing across the workspace, 196 Kani proof harnesses of which 182 are verified on
 CI). `tools/check_claims.sh` re-derives every one of those numbers from the tree.
 Validated on:
 
@@ -78,7 +78,7 @@ federated resonance.
 
 Source layout:
 ```
-oasis-rt/                # Rust — production runtime (49 modules, 672 lib tests, 28 bins)
+oasis-rt/                # Rust — production runtime (49 modules, 672 lib tests, 29 bins)
   src/vec.rs              # 128D vector algebra, zero-alloc
   src/hyper_state.rs      # Mechanism 2 — continuous state + entropy gate
   src/tension.rs          # Mechanism 1 — tension field, interference
@@ -104,7 +104,7 @@ docker run --rm oasis-rt
 ```bash
 cd oasis-rt
 cargo build --release
-cargo test --workspace --release # 716 pass, 2 doc-test blocks marked `ignore`
+cargo test --workspace --release # 724 pass, 2 doc-test blocks marked `ignore`
 ./target/release/drone_bridge patrol1 0 < sensor_stream.jsonl
 ```
 
