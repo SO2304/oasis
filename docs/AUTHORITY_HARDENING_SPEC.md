@@ -390,7 +390,7 @@ msgs/h      = floor(36 / ToA)
 SX1276 est derrière un portail commercial
 ([`compliance/PQC.md`](compliance/PQC.md)). Elle est **recoupée** : elle reproduit au
 dixième de milliseconde la valeur publiée dans ce document (PL = 64 à SF12 → 2 793,5 ms),
-et le script `lora_budget.py` échoue si ce n'est pas le cas.
+et le test `reproduces_the_published_2793_5_ms_at_sf12_64_bytes` de `oasis-lora-transport` échoue si ce n'est pas le cas — un test que `cargo test` exécute, là où le script `lora_budget.py` qu'il remplaçait ne tournait que si quelqu'un y pensait.
 
 ### LoRa brut (plafond PHY 255 octets) — **[calcul]**
 

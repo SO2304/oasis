@@ -592,6 +592,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "oasis-operator-key"
+version = "0.1.0"
+dependencies = [
+ "ed25519-compact",
+]
+
+[[package]]
 name = "oasis-rt"
 version = "0.3.0"
 dependencies = [
@@ -603,6 +610,7 @@ dependencies = [
  "hmac",
  "libcrux-ml-dsa",
  "libm",
+ "oasis-operator-key",
  "serde",
  "serde_json",
  "sha2",

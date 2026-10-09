@@ -75,7 +75,7 @@ applicatifs par trame) :
 | **DH éphémère de spore v4/v5/v7** | **par message** | 1,7 h de budget **par message** | **exclu** |
 
 Ces quatre chiffres, et ceux du §6-d, sont reproduits et **assertés** par
-[`lora_budget.py`](lora_budget.py), qui recalcule au passage la valeur publiée par
+les tests de `budget` dans `oasis-lora-transport` (`cargo test`), qui recalculent au passage la valeur publiée par
 `PQC.md` §4 (48 trames, 3,72 h pour une signature ML-DSA-44) pour vérifier que les deux
 documents comptent de la même façon : une trame pleine = `CAP[SF]` octets applicatifs dans
 une charge PHY qui porte en plus **13 octets** de surcoût LoRaWAN. ⚠️ Ce surcoût de 13 o
@@ -290,7 +290,7 @@ elle est la plus utile à satisfaire en premier.
   **[calcul]**.
 - **Aucune mesure nouvelle** : rien n'a été exécuté sur silicium pour ce document. Les
   deux seules choses vérifiées par exécution sont le test du §6-a et les assertions de
-  `lora_budget.py`, toutes deux en logiciel.
+  `budget::tests` dans `oasis-lora-transport`, toutes deux en logiciel.
 - **E1 à E4 n'ont pas été exécutées.** C'est un plan ; aucune de ses étapes n'a tourné,
   même en simulation.
 - `SPORE\x0D` n'est associé à **aucun** algorithme : décider lequel demanderait une mesure

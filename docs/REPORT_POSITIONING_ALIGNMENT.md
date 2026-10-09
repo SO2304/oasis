@@ -14,7 +14,7 @@ request*.
 |---|---|---|---|
 | **0** | Vérifier à la source chaque ligne des sections A et B, un fichier par texte, ajouter les manques trouvés, **s'arrêter** sur une synthèse avec une recommandation de segment | [`docs/compliance/`](compliance/) : **8 fichiers**, verbatim + lien + date d'applicabilité + tableau exigence → couverture → preuve → manque, et une section « limites » listant chaque « non vérifié à la source ». **Section F** de `POSITIONING_GAPS.md` : **11 corrections** aux lignes existantes et **10 manques nouveaux** (A9–A12, B6–B7, C12–C14, D8–D9) | ✅ |
 | **1** | Comparaison chiffrée de ≤ 3 segments, **« je choisis ; ne choisis pas à ma place »** | [`partners/SEGMENT_COMPARISON.md`](../partners/SEGMENT_COMPARISON.md), avec l'argument **contre** ma recommandation écrit en clair. Choix retenu : **S1, machines mobiles autonomes** | ✅ |
-| **2** | Fermer les 🔴 bloquants ; **spec montrée avant de coder** | [`docs/AUTHORITY_HARDENING_SPEC.md`](AUTHORITY_HARDENING_SPEC.md), parties **G** (arrêt asymétrique), **H** (vivacité de la supervision), **I** (journal infalsifiable), **J** (budget radio + arrêt compact `OAS1`), **K** (`TimeView`). Plus [`docs/KEY_LIFECYCLE.md`](KEY_LIFECYCLE.md) (C6) et `docs/lora_budget.py` (C3) | ✅ |
+| **2** | Fermer les 🔴 bloquants ; **spec montrée avant de coder** | [`docs/AUTHORITY_HARDENING_SPEC.md`](AUTHORITY_HARDENING_SPEC.md), parties **G** (arrêt asymétrique), **H** (vivacité de la supervision), **I** (journal infalsifiable), **J** (budget radio + arrêt compact `OAS1`), **K** (`TimeView`). Plus [`docs/KEY_LIFECYCLE.md`](KEY_LIFECYCLE.md) (C6) et le budget radio de C3, alors `docs/lora_budget.py`, **porté en Rust le 2026-10-09** dans `oasis-lora-transport` (`budget`, plus le binaire `lora_budget`) : le script était une **seconde implémentation** de `airtime_us`, et rien ne comparait les deux | ✅ |
 | **3** | C8, C10, B1, C9, A6 | C8 vocabulaire (`5bed8f8`, 10 documents, 0 fichier Rust) ; C10 fuzzing + `cargo-audit`/`deny` + SBOM + `SECURITY.md` ; **C9** ordres à deux signatures ; **A6** [`docs/CRYPTO_MIGRATION.md`](CRYPTO_MIGRATION.md) ; **B1** [`docs/specs/MAVLINK_ORDER_SPEC.md`](specs/MAVLINK_ORDER_SPEC.md) | ⚠️ B1 à moitié |
 | **4** | `CUSTOMER_DISCOVERY.md` pour le segment retenu | [`partners/CUSTOMER_DISCOVERY.md`](../partners/CUSTOMER_DISCOVERY.md) : 5 hypothèses falsifiables avec seuils, grille de 30 min qui ne montre rien avant la minute 25, 20 types d'organisations avec la fonction visée | ✅ |
 | **5** | Mettre à jour le positionnement avec **uniquement** ce qui est prouvé, + « Correspondance réglementaire » | **Section G** de `POSITIONING_GAPS.md` (statut des 42 manques) ; `POSITIONING.md` §10 ; `oasis_tech_en.html` §9 ; `COMPETITIVE_ANALYSIS.md` §5 ; chiffres corrigés dans 9 documents | ✅ |
@@ -110,7 +110,7 @@ un taux, pas un accident, et la règle qui en sort est écrite dans chaque corre
 
 6. **Trois chiffres de budget radio faux** dans la première version de
    `CRYPTO_MIGRATION.md` : j'avais facturé le temps d'antenne d'une trame de 64 octets en
-   comptant des fragments de 51. Trouvés par les assertions de `docs/lora_budget.py`, qui
+   comptant des fragments de 51. Trouvés par les assertions de `docs/lora_budget.py` — depuis portées en Rust dans `oasis-lora-transport`, où `cargo test` les exécute — qui
    recalcule au passage la valeur publiée par `PQC.md` pour vérifier que les deux documents
    comptent de la même façon.
 7. **Deux défauts dans mon calcul des `CRC_EXTRA` MAVLink**, trouvés parce que le contrôle

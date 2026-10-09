@@ -61,7 +61,11 @@ pub enum LoRaError {
     /// This exists because `POSITIONING_GAPS.md` C3 was real: the throttler was
     /// implemented and used by two examples, while `send_envelope` transmitted
     /// unconditionally. A duty cycle a caller may forget is not an enforced one.
-    DutyCycleExceeded { needed_us: u64, available_us: u64, retry_in_ms: u64 },
+    DutyCycleExceeded {
+        needed_us: u64,
+        available_us: u64,
+        retry_in_ms: u64,
+    },
 }
 
 /// LoRa modulation parameters — matches SX126x register layout semantics.
@@ -161,7 +165,11 @@ impl<R: LoRaRadio> LoRaTransport<R> {
     /// Same, with an explicit start time for the duty-cycle clock.
     pub fn new_at(mut radio: R, params: LoRaParams, start_ms: u64) -> Result<Self, LoRaError> {
         radio.init(&params)?;
-        Ok(Self { radio, params, duty: Some(DutyCycleThrottler::eu868_1pct(start_ms)) })
+        Ok(Self {
+            radio,
+            params,
+            duty: Some(DutyCycleThrottler::eu868_1pct(start_ms)),
+        })
     }
 
     /// No duty-cycle enforcement. For a region or band that imposes none, or for a
@@ -169,7 +177,11 @@ impl<R: LoRaRadio> LoRaTransport<R> {
     /// enough to see that the budget is off.
     pub fn new_without_duty_limit(mut radio: R, params: LoRaParams) -> Result<Self, LoRaError> {
         radio.init(&params)?;
-        Ok(Self { radio, params, duty: None })
+        Ok(Self {
+            radio,
+            params,
+            duty: None,
+        })
     }
 
     /// Wrap `envelope` in an OASIS LoRa frame header (magic + ver + len + crc) and
@@ -195,7 +207,11 @@ impl<R: LoRaRadio> LoRaTransport<R> {
                 // permille µs of airtime are earned per ms of wall clock.
                 let short = needed_us.saturating_sub(available_us);
                 let retry_in_ms = short.div_ceil(duty.duty_permille().max(1) as u64);
-                return Err(LoRaError::DutyCycleExceeded { needed_us, available_us, retry_in_ms });
+                return Err(LoRaError::DutyCycleExceeded {
+                    needed_us,
+                    available_us,
+                    retry_in_ms,
+                });
             }
         }
         self.radio.tx_payload(&frame)
@@ -315,6 +331,11 @@ pub mod sx1262;
 
 pub mod airtime;
 
+/// How many OASIS messages fit in an hour of a regional duty cycle. Replaces the deleted
+/// `docs/lora_budget.py`, which was a second implementation of `airtime_us` in another
+/// language that nothing compared against this one.
+pub mod budget;
+
 // ── Gap 2 — FHSS anti-narrowband-jam (host-only sim for now).
 
 #[cfg(feature = "std")]
@@ -389,8 +410,15 @@ mod duty_tests {
     }
 
     fn transport() -> LoRaTransport<CountingRadio> {
-        LoRaTransport::new_at(CountingRadio { tx_calls: 0, last_len: 0 }, LoRaParams::default(), 0)
-            .unwrap()
+        LoRaTransport::new_at(
+            CountingRadio {
+                tx_calls: 0,
+                last_len: 0,
+            },
+            LoRaParams::default(),
+            0,
+        )
+        .unwrap()
     }
 
     /// C3: the first frames fit the EU868 1 % burst, then the budget refuses — and the
@@ -406,7 +434,11 @@ mod duty_tests {
         for _ in 0..200 {
             match t.send_envelope(&env, 0) {
                 Ok(()) => sent += 1,
-                Err(LoRaError::DutyCycleExceeded { needed_us, available_us, retry_in_ms }) => {
+                Err(LoRaError::DutyCycleExceeded {
+                    needed_us,
+                    available_us,
+                    retry_in_ms,
+                }) => {
                     refused = Some((needed_us, available_us, retry_in_ms));
                     break;
                 }
@@ -415,11 +447,21 @@ mod duty_tests {
         }
         assert!(sent > 0, "the burst capacity must allow at least one frame");
         let (needed, available, retry) = refused.expect("the budget must run out");
-        assert!(needed > available, "refused because {needed} us > {available} us");
+        assert!(
+            needed > available,
+            "refused because {needed} us > {available} us"
+        );
         assert!(retry > 0, "a refusal must say when to try again");
         // The frame's own airtime is what was charged each time.
-        assert!(needed >= air - 1 && needed <= air + 1, "needed {needed} vs airtime {air}");
-        assert_eq!(t.radio().tx_calls, sent, "exactly the accepted frames reached the radio");
+        assert!(
+            needed >= air - 1 && needed <= air + 1,
+            "needed {needed} vs airtime {air}"
+        );
+        assert_eq!(
+            t.radio().tx_calls,
+            sent,
+            "exactly the accepted frames reached the radio"
+        );
     }
 
     /// The property that makes the enforcement real: on a refusal the radio is **not
@@ -438,7 +480,8 @@ mod duty_tests {
             }
         }
         assert_eq!(
-            t.radio().tx_calls, after_burst,
+            t.radio().tx_calls,
+            after_burst,
             "50 refused frames must not have reached the radio"
         );
     }
@@ -468,7 +511,10 @@ mod duty_tests {
     #[test]
     fn opting_out_is_explicit() {
         let mut t = LoRaTransport::new_without_duty_limit(
-            CountingRadio { tx_calls: 0, last_len: 0 },
+            CountingRadio {
+                tx_calls: 0,
+                last_len: 0,
+            },
             LoRaParams::default(),
         )
         .unwrap();
@@ -477,6 +523,10 @@ mod duty_tests {
             t.send_envelope(&env, 0).expect("no limit means no refusal");
         }
         assert_eq!(t.radio().tx_calls, 500);
-        assert_eq!(t.duty_budget_us(0), None, "no budget to report when enforcement is off");
+        assert_eq!(
+            t.duty_budget_us(0),
+            None,
+            "no budget to report when enforcement is off"
+        );
     }
 }

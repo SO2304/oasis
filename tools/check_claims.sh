@@ -211,6 +211,29 @@ else
 fi
 
 echo
+echo "== regle 7 : Rust seulement dans le code et les outils =="
+# Tolerated and declared: tools/hmi_client.py (the HMI stands in for an unmodified third
+# party, so it must NOT be Rust) and the counter-proof scripts that already exist under
+# evidence/ and are part of a dated, checksummed campaign. Anything else is a new Python
+# file in the repo, which rule 7 of the prompt forbids. `docs/lora_budget.py` was one and
+# was ported to oasis-lora-transport's `budget` on 2026-10-09.
+pybad=0; pyn=0
+while IFS= read -r f; do
+  pyn=$((pyn + 1))
+  case "$f" in
+    tools/hmi_client.py) ;;
+    evidence/*) ;;
+    *) printf '  NOUVEAU %s\n' "$f"; pybad=$((pybad + 1)) ;;
+  esac
+done < <(git ls-files '*.py' 2>/dev/null)
+if [ "$pybad" = 0 ]; then
+  printf '  ok    %-34s %s fichier(s) .py, tous declares\n' "regle 7 (pas de nouveau Python)" "$pyn"
+else
+  printf '  DRIFT %-34s %s fichier(s) .py hors exceptions declarees\n' "regle 7 (pas de nouveau Python)" "$pybad"
+  fail=$((fail + 1))
+fi
+
+echo
 echo "== cibles et points d'entree de fuzz =="
 # SECURITY.md's C10 row is a claim about what is fuzzed, and it was wrong twice: it said
 # "13 parsers in 9 targets" while the tree had 11 targets reaching 26 distinct parsing and
@@ -333,6 +356,27 @@ if [ "$FULL" = 1 ]; then
       fail=$((fail + 1))
     fi
   done
+  echo
+  echo "== les crates hors espace de travail ont aussi des tests (--full) =="
+  # `cargo test --workspace` never reaches a crate that is not a member, and
+  # oasis-lora-transport is deliberately excluded: it unconditionally enables
+  # `oasis-rt/mesh_bloom_mcu`, which inside the workspace would shrink the host Bloom
+  # filter for everyone (the 2026-05-11 feature-unification leak). The consequence went
+  # unnoticed until 2026-10-09: **its tests ran nowhere at all** — not here, not in CI,
+  # not in `--workspace` — and they are the ones that pin the radio budget figures six
+  # documents quote. Run from its own directory, which is what makes `-p` fail.
+  for c in oasis-lora-transport; do
+    if [ -d "$c" ]; then
+      n=$( (cd "$c" && cargo test --release 2>/dev/null) | awk '/^test result:/{s+=$4} END{print s+0}')
+      if [ "${n:-0}" -gt 0 ]; then
+        printf '  ok    %-34s %s tests passent\n' "$c" "$n"
+      else
+        printf '  ECHEC %-34s aucun test ne passe\n' "$c"
+        fail=$((fail + 1))
+      fi
+    fi
+  done
+
   echo
   echo "== le build MCU que CLAUDE.md imprime doit compiler (--full) =="
   # The matrix claimed 0 errors for a command that failed with 4, because nothing ran it.
