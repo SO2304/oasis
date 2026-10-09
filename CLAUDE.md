@@ -56,6 +56,21 @@ Both faces share the `oasis-rt` crate. No TS runtime is deployed.
 
 ---
 
+## Segment and sales plan: both, and they are not the same thing
+
+**The segment of record is S1** (autonomous mobile machinery): that is what the authority
+hardening of Phase 2 parts G/H/I/J/K was built for, and what the Machinery Regulation work
+in `docs/compliance/` targets. **The sales plan is the gateway** (S2, brownfield PLCs over
+Modbus RTU and TCP): that is what a customer can buy today, because it sits beside a
+machine that already exists instead of requiring one to be designed around it.
+
+They coexist on purpose and the documents must say so rather than contradict each other:
+**the gateway funds the work, S1 is the direction.** A document that presents S1 as the
+only segment is wrong about what is sellable; one that presents the gateway as the goal is
+wrong about where the authority model is going. See `partners/SEGMENT_COMPARISON.md`.
+
+---
+
 ## What OASIS IS NOT
 
 - Not a PX4 replacement — it's a layer ABOVE PX4
@@ -233,7 +248,7 @@ Performance trade across the 3 mesh variants (Linux WSL, K=10 medians):
 | RFC 8439 ChaCha20-Poly1305 vector | test vector matches byte-for-byte | ✅ |
 | All 11 mechanisms compile + test | 643 `oasis-rt` lib tests across 47 modules | ✅ |
 | Android daemon 3h+ run | session_v0_5 on S23 FE, 121 290 ticks | ⚠️ claimed; logs not in repo |
-| **MCU cross-compile** (`thumbv7em-none-eabi`) | `cargo build --target thumbv7em-none-eabi --lib --no-default-features --features mesh_bloom_mcu --release` | ✅ 0 errors |
+| **MCU cross-compile** (`thumbv7em-none-eabi`) | `cargo build **-p oasis-rt** --target thumbv7em-none-eabi --lib --no-default-features --features mesh_bloom_mcu --release` | ✅ 0 errors. ⚠️ **`-p oasis-rt` is required and was missing from this row until 2026-10-09**: without it a workspace-root build unifies features across members, pulls `getrandom` in, and fails with "target is not supported" — 4 errors. Verified not to be a regression from the fifth member: the command without `-p` also fails at `bc68ef9`, which predates `oasis-test-plc`. So this row documented a command that could not work, while claiming zero errors for it |
 | **A/B vs ROS 2 Jazzy** (Linux intra-process, K=10 medians) | OASIS 241 ns vs rclcpp intra 5 624 ns vs rclcpp DDS 52 411 ns at 16 B — 23–217× faster | ✅ measured |
 | 7/7 rclcpp core primitives matched | pub/sub + services + actions + tf2 + timer + parameters + params-events (8/8 incl. tf) | ✅ |
 | Real hardware test (Pixhawk + quad) | **none** | ❌ |
@@ -380,9 +395,18 @@ payload size via function-call dispatch; rclcpp's cost is executor
 
 MCU build:
 ```
-cargo build --target thumbv7em-none-eabi --lib --no-default-features --features mesh_bloom_mcu --release
+cargo build -p oasis-rt --target thumbv7em-none-eabi --lib --no-default-features --features mesh_bloom_mcu --release
 ```
-Zero errors as of 2026-04-22.
+Zero errors, re-verified 2026-10-09.
+
+⚠️ **`-p oasis-rt` is not optional, and was missing here until 2026-10-09.** Without it the
+build is a workspace-root build: Cargo unifies features across every member, `getrandom`
+comes in through another member's graph, and the build fails with `target is not supported`
+— 4 errors. The same failure reproduces at `bc68ef9`, which predates `oasis-test-plc`, so
+this is **not** a regression from adding the fifth member: the documented command simply
+could not have worked, while the validation matrix claimed zero errors for it. This is the
+same feature-unification hazard the root manifest excludes the MCU crates to avoid, arriving
+by the other door.
 
 **Flash and RAM, measured** (`llvm-size -A -d` on the `thumbv6m-none-eabi` release ELFs,
 re-measured **2026-10-09**; flash = `.text` + `.rodata`, RAM = `.data` + `.bss`). RP2040 has

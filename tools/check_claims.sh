@@ -105,6 +105,63 @@ else
 fi
 
 echo
+echo "== campagne pilote : le document, le journal et l'empreinte doivent concorder =="
+# Four drifts an external audit found on 2026-10-09, each because nothing compared two
+# places that had to agree. The campaign log is the authority in all four.
+CAMP=evidence/pilot/2026-10-09
+if [ -d "$CAMP" ] && ls "$CAMP"/run*.log >/dev/null 2>&1; then
+  # (a) the number of cases the log reports, against what the gap register claims.
+  log_cases=$(awk '/cases: [0-9]+ passed/{for(i=1;i<=NF;i++) if($i=="cases:"){print $(i+1); exit}}' "$CAMP/run1.log")
+  doc_cases=$(grep -oE '[0-9]+ cas sur [0-9]+' partners/POSITIONING_GAPS.md | head -1 | grep -oE '^[0-9]+')
+  claim "cas de campagne (section G)" "${doc_cases:-absent}" "${log_cases:-?}"
+
+  # (b) the medians the README prints, against the medians in the logs. The README said
+  # 1 017/1 159/1 248 us while the logs beside it said something else entirely.
+  log_med=$(grep -hoE 'median [0-9]+ us' "$CAMP"/run*.log | grep -oE '[0-9]+' | sort -n | tr '\n' ' ')
+  missing=0
+  for m in $log_med; do
+    grep -qE "(^|[^0-9])$(echo "$m" | sed 's/\(.\)\(...\)$/\1 \2/')([^0-9]|$)|(^|[^0-9])$m([^0-9]|$)" "$CAMP/README.md" || missing=$((missing + 1))
+  done
+  if [ "$missing" = 0 ]; then
+    printf '  ok    %-34s %s\n' "latences du README vs journaux" "$(echo "$log_med" | wc -w | tr -d ' ') valeurs retrouvees"
+  else
+    printf '  DRIFT %-34s %s mediane(s) du journal absente(s) du README (%s)\n' "latences du README vs journaux" "$missing" "$log_med"
+    fail=$((fail + 1))
+  fi
+
+  # (c) the tree stamp must name a commit that exists. A log stamped with a commit that
+  # does not contain the code it exercised is not evidence -- which is what happened when
+  # the campaign ran before the code was committed.
+  bad_tree=0
+  for t in $(grep -hoE 'tree=[0-9a-f]+' "$CAMP"/run*.log | sed 's/tree=//' | sort -u); do
+    git cat-file -e "$t^{commit}" 2>/dev/null || { echo "  INCONNU tree=$t n'est pas un commit de ce depot"; bad_tree=$((bad_tree + 1)); }
+  done
+  if [ "$bad_tree" = 0 ]; then
+    printf '  ok    %-34s %s\n' "empreintes des journaux" "$(grep -hoE 'tree=[0-9a-f]+' "$CAMP"/run*.log | sort -u | tr '\n' ' ')"
+  else
+    fail=$((fail + 1))
+  fi
+else
+  printf '  ABSENT %-33s %s\n' "campagne pilote" "$CAMP/run*.log"
+  fail=$((fail + 1))
+fi
+
+echo
+echo "== identifiants uniques dans les tables qui s'en servent de cle =="
+# `partners/DIFFERENTIATORS.md` used M6 twice, so two different differentiators answered to
+# one name and a reader citing "M6" could not be understood.
+for f in partners/DIFFERENTIATORS.md; do
+  [ -f "$f" ] || continue
+  dup=$(grep -oE '^\| ?M[0-9]+' "$f" | tr -d '| ' | sort | uniq -d | tr '\n' ' ')
+  if [ -z "$dup" ]; then
+    printf '  ok    %-34s %s identifiants, aucun double\n' "$(basename "$f")" "$(grep -cE '^\| ?M[0-9]+' "$f" | tr -d ' ')"
+  else
+    printf '  DRIFT %-34s identifiant(s) en double : %s\n' "$(basename "$f")" "$dup"
+    fail=$((fail + 1))
+  fi
+done
+
+echo
 echo "== inventaire 1.1.9 al. 3 : chaque chemin cite doit exister =="
 # Annex III 1.1.9 para 3 wants the safety-critical software "identified as such". A list
 # written once drifts into fiction the first time a module is renamed, so every path in
@@ -191,6 +248,26 @@ if [ "$FULL" = 1 ]; then
       fail=$((fail + 1))
     fi
   done
+  echo
+  echo "== le build MCU que CLAUDE.md imprime doit compiler (--full) =="
+  # The matrix claimed 0 errors for a command that failed with 4, because nothing ran it.
+  # The command is taken FROM the document, so a wrong command in the document fails here
+  # rather than being discovered by someone following it.
+  mcu_cmd=$(awk '/^MCU build:/{f=1;next} f&&/^```$/{if(seen){exit}else{seen=1;next}} f&&seen{print;exit}' CLAUDE.md)
+  if [ -z "$mcu_cmd" ]; then
+    printf '  ABSENT %-33s %s\n' "commande MCU" "aucun bloc 'MCU build:' dans CLAUDE.md"
+    fail=$((fail + 1))
+  else
+    echo "  commande: $mcu_cmd"
+    if eval "$mcu_cmd" >/dev/null 2>&1; then
+      printf '  ok    %-34s compile\n' "build MCU de CLAUDE.md"
+    else
+      n=$(eval "$mcu_cmd" 2>&1 | grep -cE '^error')
+      printf '  ECHEC %-34s %s erreur(s)\n' "build MCU de CLAUDE.md" "$n"
+      fail=$((fail + 1))
+    fi
+  fi
+
   echo
   echo "== manifestes de preuves (--full) =="
   # The working tree is not the authority: a checkout can carry local divergence that

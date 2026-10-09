@@ -11,7 +11,7 @@ bash tools/pilot_campaign.sh /tmp/camp
 |---|---|
 | Résultat | **47/47**, trois fois ([`run1.log`](run1.log), [`run2.log`](run2.log), [`run3.log`](run3.log)) |
 | Écritures appliquées par l'appareil | 208 par exécution, comptées **par l'appareil** |
-| Latence bout en bout | **1 017 / 1 159 / 1 248 µs** médiane, ±8–15 % (K=10 × 20, une socket tenue) |
+| Latence bout en bout | **1 268 / 1 274 / 1 165 µs** médiane, ±**14 / 27 / 11 %** (K=10 × 20, une socket tenue) — lus dans [`run1.log`](run1.log), [`run2.log`](run2.log), [`run3.log`](run3.log) |
 | Journal | **intact, exit 0**, et un refus réécrit en acceptation → **exit 1** |
 
 ## 1. Pourquoi ce n'est pas le test d'intégration qui existait déjà
@@ -49,7 +49,7 @@ Python sans aucun import. Quand l'appareil applique une trame, OASIS ne se donne
 | C8 | le journal est **sur disque** et vérifie avec le vérificateur indépendant | `exit 0`, acceptations **et** refus nommés |
 | C9 | un **refus réécrit en acceptation** est détecté | `exit 1` |
 | C10 | un redémarrage de passerelle change le `boot_id` et ouvre une chaîne neuve, intacte | deux `JRN_BOOT` différents, deux `exit 0` |
-| C11 | la latence à travers les **vrais binaires** | 1 017–1 248 µs |
+| C11 | la latence à travers les **vrais binaires** | 1 165–1 274 µs, ±11–27 % |
 | C15 | un `ORV1` **signé** arrive sur le lien, est appliqué, et **le changement est journalisé** | `Change(Revocation)`, `flags=0x10`, `origin=bb00` |
 | C16 | une époque non supérieure est refusée, **et le refus est journalisé aussi** | `Change(Revocation)`, `flags=0x00` |
 | C17 | une liste signée par un opérateur non approuvé est refusée et journalisée | `Reject(BadOperatorSig)`, `flags=0x00` |
@@ -219,6 +219,25 @@ redémarre.
    persiste désormais son compteur d'émission : trois invocations d'un outil à usage unique
    repartaient toutes à 1, donc la deuxième était refusée comme un rejeu. Le compteur
    appartient à l'identité, pas au processus — pour la deuxième fois dans cette campagne.
+
+## 4bis. Deux défauts de preuve corrigés le 2026-10-09
+
+Trouvés par un audit externe, vérifiés ici contre l'arbre, et tous deux de mon fait.
+
+1. **La latence annoncée ne venait pas des journaux.** Ce README disait
+   « 1 017 / 1 159 / 1 248 µs, ±8–15 % » pendant que les journaux posés à côté disaient
+   autre chose. Les chiffres ci-dessus sont désormais **lus dans les trois journaux
+   archivés**, et `tools/check_claims.sh` compare désormais les deux à chaque passage.
+   ⚠️ L'écart entre exécutions est large : le même code a mesuré 697–771 µs dans une
+   série antérieure et 1 165–1 274 µs dans celle-ci. Un seul tir ne veut rien dire ici, et
+   la fourchette honnête est **0,7 à 1,3 ms** selon la charge de la machine.
+2. **L'empreinte des journaux ne désignait pas le code testé.** Les trois journaux
+   portaient `tree=6865f43` alors qu'ils exerçaient les cas C18 (permissions), dont le code
+   n'était **pas encore commité** au moment de la mesure : le script imprime
+   `git rev-parse HEAD`, qui pointait sur le commit précédent. Une preuve qui nomme un
+   commit ne contenant pas ce qu'elle a mesuré n'est pas une preuve. La règle en est
+   simple : **commiter d'abord, mesurer ensuite**. Les journaux portent maintenant
+   `tree=97a4441`, qui contient bien les 47 cas.
 
 ## 5. Ce que cette campagne ne prouve pas
 
